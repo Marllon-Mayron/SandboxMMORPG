@@ -1,20 +1,22 @@
+// File: MapEditorScreen.java - VERSÃO COMPLETA CORRIGIDA
 package com.sandbox.client.editor;
 
 import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.Screen;
 import com.badlogic.gdx.files.FileHandle;
+import com.badlogic.gdx.graphics.Color;
+import com.badlogic.gdx.graphics.Pixmap;
 import com.badlogic.gdx.graphics.Texture;
 import com.badlogic.gdx.scenes.scene2d.Stage;
 import com.badlogic.gdx.scenes.scene2d.ui.*;
+import com.badlogic.gdx.scenes.scene2d.utils.Drawable;
+import com.badlogic.gdx.scenes.scene2d.utils.TextureRegionDrawable;
 import com.badlogic.gdx.utils.viewport.ScreenViewport;
 import com.common.sandbox.model.MapJSON;
 import com.sandbox.client.SandboxClient;
-import com.sandbox.client.editor.core.EditorCamera;
-import com.sandbox.client.editor.core.EditorInputHandler;
-import com.sandbox.client.editor.core.EditorRenderer;
-import com.sandbox.client.editor.core.InputMultiplexer;
+import com.sandbox.client.editor.core.*;
 import com.sandbox.client.editor.models.*;
-import com.sandbox.client.editor.ui.EditorWindow;
+import com.sandbox.client.editor.ui.FixedLayoutUI;
 import com.sandbox.client.editor.utils.MapExporter;
 import com.common.sandbox.network.packets.MapLoadResponse;
 import org.slf4j.Logger;
@@ -24,7 +26,7 @@ import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 
-public class MapEditorScreen implements Screen {
+public class MapEditorScreen implements Screen, IEditorScreen {
     private static final Logger logger = LoggerFactory.getLogger(MapEditorScreen.class);
 
     private final SandboxClient game;
@@ -34,8 +36,8 @@ public class MapEditorScreen implements Screen {
     private EditorCamera editorCamera;
     private EditorRenderer renderer;
     private EditorInputHandler inputHandler;
-    private EditorWindow editorWindow;
     private MapExporter mapExporter;
+    private FixedLayoutUI fixedUI;
 
     private boolean initialized = false;
     private boolean loadingMap = true;
@@ -48,24 +50,24 @@ public class MapEditorScreen implements Screen {
     @Override
     public void show() {
         state = new EditorState();
-
         editorCamera = new EditorCamera();
         editorCamera.resize(Gdx.graphics.getWidth(), Gdx.graphics.getHeight());
 
         uiStage = new Stage(new ScreenViewport());
+
+        // Criar skin PRIMEIRO
         createSkin();
 
-        editorWindow = new EditorWindow(skin, game, editorCamera, state, mapExporter);
-        renderer = new EditorRenderer(editorCamera, editorWindow, state);
-        inputHandler = new EditorInputHandler(editorCamera, editorWindow, renderer, state);
+        // Depois criar UI fixa (agora o skin já tem todos os drawables)
+        fixedUI = new FixedLayoutUI(uiStage, skin, state, editorCamera, game);
 
-        uiStage.addActor(editorWindow.getWindow());
+        renderer = new EditorRenderer(editorCamera, this, state);
+        inputHandler = new EditorInputHandler(editorCamera, this, renderer, state);
 
         InputMultiplexer multiplexer = new InputMultiplexer(uiStage, inputHandler);
         Gdx.input.setInputProcessor(multiplexer);
 
         setupCallbacks();
-
         loadMapFromServer();
     }
 
@@ -73,9 +75,11 @@ public class MapEditorScreen implements Screen {
         game.getNetworkClient().setMapSaveCallback(response -> {
             Gdx.app.postRunnable(() -> {
                 if (response.success) {
-                    logger.info("✅ Map saved successfully: {}", response.message);
+                    logger.info("Map saved successfully");
+                    showNotification("Map saved successfully!", Color.GREEN);
                 } else {
-                    logger.error("❌ Map save failed: {}", response.message);
+                    logger.error("Map save failed: {}", response.message);
+                    showNotification("Map save failed: " + response.message, Color.RED);
                 }
             });
         });
@@ -92,13 +96,8 @@ public class MapEditorScreen implements Screen {
             if (response.success && response.mapJson != null) {
                 logger.info("Map loaded successfully with {} chunks", response.mapJson.getChunks().size());
 
-                // Primeiro carrega o mapa e coleta os paths dos spritesheets usados
                 Set<String> requiredSpritesheets = loadChunksAndCollectSpritesheets(response.mapJson);
-
-                // Depois carrega APENAS os spritesheets necessários
                 loadRequiredSpritesheets(requiredSpritesheets);
-
-                // Agora sim, carrega os tiles no editor
                 loadChunksIntoEditor(response.mapJson);
             } else {
                 logger.error("Failed to load map from server: {}", response.message);
@@ -106,9 +105,8 @@ public class MapEditorScreen implements Screen {
                 state.setCurrentChunk(0, 0);
             }
 
-            if (editorWindow != null) {
-                editorWindow.refreshTilePalette();
-                editorWindow.refreshUI();
+            if (fixedUI != null) {
+                fixedUI.refreshAll();
             }
 
             editorCamera.centerOnChunk(state.getCurrentChunkX(), state.getCurrentChunkY());
@@ -116,19 +114,15 @@ public class MapEditorScreen implements Screen {
 
             loadingMap = false;
             initialized = true;
-            logger.info("Map Editor ready - spritesheets: {}", state.getSpritesheets().keySet());
+            logger.info("Map Editor ready");
+            showNotification("Map Editor Ready!", Color.GREEN);
         });
     }
 
-    /**
-     * Carrega o mapa e coleta todos os paths de spritesheets usados
-     */
     private Set<String> loadChunksAndCollectSpritesheets(MapJSON mapJson) {
         Set<String> spritesheetPaths = new HashSet<>();
-
         for (Map.Entry<String, MapJSON.ChunkData> entry : mapJson.getChunks().entrySet()) {
             MapJSON.ChunkData jsonChunk = entry.getValue();
-
             for (int layer = 0; layer < 3; layer++) {
                 for (int x = 0; x < 32; x++) {
                     for (int y = 0; y < 32; y++) {
@@ -143,14 +137,9 @@ public class MapEditorScreen implements Screen {
                 }
             }
         }
-
-        logger.info("Spritesheets used in map: {}", spritesheetPaths);
         return spritesheetPaths;
     }
 
-    /**
-     * Carrega APENAS os spritesheets necessários para o mapa
-     */
     private void loadRequiredSpritesheets(Set<String> requiredPaths) {
         logger.info("Loading required spritesheets...");
         state.getSpritesheets().clear();
@@ -158,11 +147,10 @@ public class MapEditorScreen implements Screen {
         for (String path : requiredPaths) {
             FileHandle file = Gdx.files.internal(path);
             if (!file.exists()) {
-                // Tentar caminhos alternativos
                 file = Gdx.files.internal("assets/" + path);
-                if (!file.exists()) {
-                    file = Gdx.files.internal("client/assets/" + path);
-                }
+            }
+            if (!file.exists()) {
+                file = Gdx.files.internal("client/assets/" + path);
             }
 
             if (file.exists()) {
@@ -172,27 +160,27 @@ public class MapEditorScreen implements Screen {
                     String name = file.nameWithoutExtension();
                     SpritesheetData sheet = new SpritesheetData(name, path, texture);
                     state.getSpritesheets().put(path, sheet);
-                    logger.info("✅ Loaded required spritesheet: {} -> {}", name, path);
+                    logger.info("Loaded spritesheet: {}", path);
                 } catch (Exception e) {
-                    logger.error("Failed to load required spritesheet: {}", path, e);
+                    logger.error("Failed to load spritesheet: {}", path, e);
                 }
             } else {
-                logger.error("❌ Required spritesheet not found: {}", path);
-                logger.error("   Please ensure the file exists and restart the editor");
+                logger.error("Spritesheet not found: {}", path);
             }
         }
 
         if (!state.getSpritesheets().isEmpty()) {
             SpritesheetData first = state.getSpritesheets().values().iterator().next();
             state.setCurrentSpritesheet(first);
-            logger.info("Selected first spritesheet: {} ({})", first.getName(), first.getPath());
+        }
+
+        if (fixedUI != null) {
+            fixedUI.refreshAll();
         }
     }
 
     private void loadChunksIntoEditor(MapJSON mapJson) {
         state.getChunks().clear();
-
-        logger.info("Loading {} chunks from JSON map", mapJson.getChunks().size());
 
         for (Map.Entry<String, MapJSON.ChunkData> entry : mapJson.getChunks().entrySet()) {
             String[] coords = entry.getKey().split(":");
@@ -200,204 +188,210 @@ public class MapEditorScreen implements Screen {
             int chunkY = Integer.parseInt(coords[1]);
 
             MapJSON.ChunkData jsonChunk = entry.getValue();
-
             state.createChunk(chunkX, chunkY);
             ChunkData editorChunk = state.getChunks().get(chunkX + ":" + chunkY);
 
             if (editorChunk != null) {
-                int tilesLoaded = 0;
-
                 for (int layer = 0; layer < 3; layer++) {
                     for (int x = 0; x < 32; x++) {
                         for (int y = 0; y < 32; y++) {
                             MapJSON.TileData tileData = jsonChunk.getTile(layer, x, y);
-
-                            if (tileData != null && !tileData.isEmpty()) {
+                            if (tileData != null && !tileData.isEmpty() && tileData.getTileId() >= 0) {
                                 String spritesheetPath = tileData.getSpritesheetPath();
                                 int tileId = tileData.getTileId();
-
                                 if (state.getSpritesheets().containsKey(spritesheetPath)) {
                                     editorChunk.setTile(LayerType.fromId(layer), x, y, spritesheetPath, tileId);
-                                    tilesLoaded++;
-                                } else {
-                                    logger.warn("Spritesheet '{}' not loaded, tile will not appear", spritesheetPath);
+                                    logger.debug("Loaded tile layer={} ({},{}): path={}, id={}, tag={}",
+                                            layer, x, y, spritesheetPath, tileId, tileData.getTag());
                                 }
                             }
                         }
                     }
                 }
-                logger.info("Loaded chunk [{},{}] with {} tiles", chunkX, chunkY, tilesLoaded);
             }
         }
 
         if (state.getChunks().isEmpty()) {
-            logger.info("No chunks in map, creating empty chunk [0,0]");
             state.createChunk(0, 0);
             state.setCurrentChunk(0, 0);
         } else {
             ChunkData firstChunk = state.getChunks().values().iterator().next();
             state.setCurrentChunk(firstChunk.getX(), firstChunk.getY());
-            logger.info("Selected current chunk: [{},{}]", firstChunk.getX(), firstChunk.getY());
         }
     }
 
-    public void refreshTilePalette() {
-        if (editorWindow != null) {
-            editorWindow.refreshTilePalette();
+    @Override
+    public void saveMap() {
+        logger.info("Saving map...");
+        mapExporter.saveMap(state);
+    }
+
+    @Override
+    public void refreshUI() {
+        if (fixedUI != null) {
+            fixedUI.refreshAll();
         }
+    }
+
+    @Override
+    public boolean isMouseOverUI(int screenX, int screenY) {
+        if (fixedUI != null && fixedUI.getStage() != null) {
+            return fixedUI.getStage().hit(screenX, screenY, true) != null;
+        }
+        return false;
+    }
+
+    private void showNotification(String message, Color color) {
+        logger.info(message);
+        // Opcional: implementar um popup temporário
     }
 
     private void createSkin() {
         skin = new Skin();
 
+        // Criar fonte
         com.badlogic.gdx.graphics.g2d.BitmapFont font = new com.badlogic.gdx.graphics.g2d.BitmapFont();
         font.getData().setScale(0.9f);
 
-        com.badlogic.gdx.graphics.Pixmap darkPixmap = new com.badlogic.gdx.graphics.Pixmap(1, 1, com.badlogic.gdx.graphics.Pixmap.Format.RGBA8888);
-        darkPixmap.setColor(0.12f, 0.12f, 0.16f, 1);
-        darkPixmap.fill();
-        com.badlogic.gdx.graphics.Texture darkTexture = new com.badlogic.gdx.graphics.Texture(darkPixmap);
-        darkPixmap.dispose();
-        com.badlogic.gdx.scenes.scene2d.utils.Drawable darkDrawable = new com.badlogic.gdx.scenes.scene2d.utils.TextureRegionDrawable(darkTexture);
+        // Definir cores
+        Color darkColor = new Color(0.12f, 0.12f, 0.16f, 1);
+        Color lightColor = new Color(0.22f, 0.22f, 0.28f, 1);
+        Color greenColor = new Color(0.2f, 0.6f, 0.2f, 1);
+        Color redColor = new Color(0.7f, 0.2f, 0.2f, 1);
+        Color blueColor = new Color(0.2f, 0.4f, 0.7f, 1);
+        Color orangeColor = new Color(0.8f, 0.5f, 0.2f, 1);
+        Color yellowColor = new Color(0.9f, 0.8f, 0.2f, 1);
 
-        com.badlogic.gdx.graphics.Pixmap lightPixmap = new com.badlogic.gdx.graphics.Pixmap(1, 1, com.badlogic.gdx.graphics.Pixmap.Format.RGBA8888);
-        lightPixmap.setColor(0.22f, 0.22f, 0.28f, 1);
-        lightPixmap.fill();
-        com.badlogic.gdx.graphics.Texture lightTexture = new com.badlogic.gdx.graphics.Texture(lightPixmap);
-        lightPixmap.dispose();
-        com.badlogic.gdx.scenes.scene2d.utils.Drawable lightDrawable = new com.badlogic.gdx.scenes.scene2d.utils.TextureRegionDrawable(lightTexture);
+        // Criar drawables
+        Drawable darkDrawable = createColorDrawable(darkColor);
+        Drawable lightDrawable = createColorDrawable(lightColor);
+        Drawable greenDrawable = createColorDrawable(greenColor);
+        Drawable redDrawable = createColorDrawable(redColor);
+        Drawable blueDrawable = createColorDrawable(blueColor);
+        Drawable orangeDrawable = createColorDrawable(orangeColor);
+        Drawable yellowDrawable = createColorDrawable(yellowColor);
 
-        com.badlogic.gdx.graphics.Pixmap greenPixmap = new com.badlogic.gdx.graphics.Pixmap(1, 1, com.badlogic.gdx.graphics.Pixmap.Format.RGBA8888);
-        greenPixmap.setColor(0.2f, 0.6f, 0.2f, 1);
-        greenPixmap.fill();
-        com.badlogic.gdx.graphics.Texture greenTexture = new com.badlogic.gdx.graphics.Texture(greenPixmap);
-        greenPixmap.dispose();
-        com.badlogic.gdx.scenes.scene2d.utils.Drawable greenDrawable = new com.badlogic.gdx.scenes.scene2d.utils.TextureRegionDrawable(greenTexture);
+        // Registrar drawables
+        skin.add("window-bg", darkDrawable);
+        skin.add("white", darkDrawable);
+        skin.add("green", greenDrawable);
+        skin.add("red", redDrawable);
+        skin.add("blue", blueDrawable);
+        skin.add("orange", orangeDrawable);
+        skin.add("yellow", yellowDrawable);
 
-        com.badlogic.gdx.graphics.Pixmap redPixmap = new com.badlogic.gdx.graphics.Pixmap(1, 1, com.badlogic.gdx.graphics.Pixmap.Format.RGBA8888);
-        redPixmap.setColor(0.7f, 0.2f, 0.2f, 1);
-        redPixmap.fill();
-        com.badlogic.gdx.graphics.Texture redTexture = new com.badlogic.gdx.graphics.Texture(redPixmap);
-        redPixmap.dispose();
-        com.badlogic.gdx.scenes.scene2d.utils.Drawable redDrawable = new com.badlogic.gdx.scenes.scene2d.utils.TextureRegionDrawable(redTexture);
-
-        com.badlogic.gdx.graphics.Pixmap bluePixmap = new com.badlogic.gdx.graphics.Pixmap(1, 1, com.badlogic.gdx.graphics.Pixmap.Format.RGBA8888);
-        bluePixmap.setColor(0.2f, 0.4f, 0.7f, 1);
-        bluePixmap.fill();
-        com.badlogic.gdx.graphics.Texture blueTexture = new com.badlogic.gdx.graphics.Texture(bluePixmap);
-        bluePixmap.dispose();
-        com.badlogic.gdx.scenes.scene2d.utils.Drawable blueDrawable = new com.badlogic.gdx.scenes.scene2d.utils.TextureRegionDrawable(blueTexture);
-
-        com.badlogic.gdx.graphics.Pixmap orangePixmap = new com.badlogic.gdx.graphics.Pixmap(1, 1, com.badlogic.gdx.graphics.Pixmap.Format.RGBA8888);
-        orangePixmap.setColor(0.8f, 0.5f, 0.2f, 1);
-        orangePixmap.fill();
-        com.badlogic.gdx.graphics.Texture orangeTexture = new com.badlogic.gdx.graphics.Texture(orangePixmap);
-        orangePixmap.dispose();
-        com.badlogic.gdx.scenes.scene2d.utils.Drawable orangeDrawable = new com.badlogic.gdx.scenes.scene2d.utils.TextureRegionDrawable(orangeTexture);
-
-        // Label styles
+        // Estilos de label
         Label.LabelStyle defaultLabel = new Label.LabelStyle();
         defaultLabel.font = font;
-        defaultLabel.fontColor = com.badlogic.gdx.graphics.Color.WHITE;
+        defaultLabel.fontColor = Color.WHITE;
         skin.add("default", defaultLabel);
-
-        Label.LabelStyle titleLabel = new Label.LabelStyle();
-        titleLabel.font = font;
-        titleLabel.fontColor = com.badlogic.gdx.graphics.Color.GOLD;
-        skin.add("title", titleLabel);
 
         Label.LabelStyle sectionLabel = new Label.LabelStyle();
         sectionLabel.font = font;
-        sectionLabel.fontColor = com.badlogic.gdx.graphics.Color.CYAN;
+        sectionLabel.fontColor = Color.CYAN;
         skin.add("section", sectionLabel);
 
         Label.LabelStyle statusLabel = new Label.LabelStyle();
         statusLabel.font = font;
-        statusLabel.fontColor = com.badlogic.gdx.graphics.Color.LIGHT_GRAY;
+        statusLabel.fontColor = Color.LIGHT_GRAY;
         skin.add("status", statusLabel);
 
-        // TextField style
-        TextField.TextFieldStyle textFieldStyle = new TextField.TextFieldStyle();
-        textFieldStyle.font = font;
-        textFieldStyle.fontColor = com.badlogic.gdx.graphics.Color.WHITE;
-        textFieldStyle.background = darkDrawable;
-        textFieldStyle.cursor = lightDrawable;
-        skin.add("default", textFieldStyle);
-
-        // Button styles
+        // Estilos de botão
         TextButton.TextButtonStyle defaultButton = new TextButton.TextButtonStyle();
         defaultButton.font = font;
-        defaultButton.fontColor = com.badlogic.gdx.graphics.Color.WHITE;
+        defaultButton.fontColor = Color.WHITE;
         defaultButton.up = darkDrawable;
         defaultButton.down = lightDrawable;
+        defaultButton.over = lightDrawable;
         skin.add("default", defaultButton);
 
         TextButton.TextButtonStyle successButton = new TextButton.TextButtonStyle();
         successButton.font = font;
-        successButton.fontColor = com.badlogic.gdx.graphics.Color.WHITE;
+        successButton.fontColor = Color.WHITE;
         successButton.up = greenDrawable;
         successButton.down = lightDrawable;
+        successButton.over = lightDrawable;
         skin.add("success", successButton);
 
         TextButton.TextButtonStyle dangerButton = new TextButton.TextButtonStyle();
         dangerButton.font = font;
-        dangerButton.fontColor = com.badlogic.gdx.graphics.Color.WHITE;
+        dangerButton.fontColor = Color.WHITE;
         dangerButton.up = redDrawable;
         dangerButton.down = lightDrawable;
+        dangerButton.over = lightDrawable;
         skin.add("danger", dangerButton);
 
         TextButton.TextButtonStyle primaryButton = new TextButton.TextButtonStyle();
         primaryButton.font = font;
-        primaryButton.fontColor = com.badlogic.gdx.graphics.Color.WHITE;
+        primaryButton.fontColor = Color.WHITE;
         primaryButton.up = blueDrawable;
         primaryButton.down = lightDrawable;
+        primaryButton.over = lightDrawable;
         skin.add("primary", primaryButton);
 
         TextButton.TextButtonStyle warningButton = new TextButton.TextButtonStyle();
         warningButton.font = font;
-        warningButton.fontColor = com.badlogic.gdx.graphics.Color.WHITE;
+        warningButton.fontColor = Color.WHITE;
         warningButton.up = orangeDrawable;
         warningButton.down = lightDrawable;
+        warningButton.over = lightDrawable;
         skin.add("warning", warningButton);
 
-        // CheckBox style
+        // Estilo de texto
+        TextField.TextFieldStyle textFieldStyle = new TextField.TextFieldStyle();
+        textFieldStyle.font = font;
+        textFieldStyle.fontColor = Color.WHITE;
+        textFieldStyle.background = darkDrawable;
+        textFieldStyle.cursor = lightDrawable;
+        textFieldStyle.selection = blueDrawable;
+        skin.add("default", textFieldStyle);
+
+        // Estilo de checkbox
         CheckBox.CheckBoxStyle checkBoxStyle = new CheckBox.CheckBoxStyle();
         checkBoxStyle.font = font;
-        checkBoxStyle.fontColor = com.badlogic.gdx.graphics.Color.WHITE;
+        checkBoxStyle.fontColor = Color.WHITE;
+        checkBoxStyle.checkboxOn = blueDrawable;
+        checkBoxStyle.checkboxOff = darkDrawable;
         skin.add("default", checkBoxStyle);
 
-        // SelectBox style
-        SelectBox.SelectBoxStyle selectBoxStyle = new SelectBox.SelectBoxStyle();
-        selectBoxStyle.font = font;
-        selectBoxStyle.fontColor = com.badlogic.gdx.graphics.Color.WHITE;
-        selectBoxStyle.background = darkDrawable;
-        selectBoxStyle.scrollStyle = new ScrollPane.ScrollPaneStyle();
-        selectBoxStyle.scrollStyle.background = darkDrawable;
-        selectBoxStyle.scrollStyle.vScroll = darkDrawable;
-        selectBoxStyle.scrollStyle.vScrollKnob = lightDrawable;
-
-        List.ListStyle listStyle = new List.ListStyle();
-        listStyle.font = font;
-        listStyle.fontColorSelected = com.badlogic.gdx.graphics.Color.WHITE;
-        listStyle.fontColorUnselected = com.badlogic.gdx.graphics.Color.LIGHT_GRAY;
-        listStyle.selection = blueDrawable;
-        listStyle.background = darkDrawable;
-        selectBoxStyle.listStyle = listStyle;
-        skin.add("default", selectBoxStyle);
-
-        // Window style
+        // Estilo de janela
         Window.WindowStyle windowStyle = new Window.WindowStyle();
         windowStyle.titleFont = font;
-        windowStyle.titleFontColor = com.badlogic.gdx.graphics.Color.GOLD;
+        windowStyle.titleFontColor = Color.GOLD;
         windowStyle.background = darkDrawable;
         skin.add("default", windowStyle);
 
-        // ScrollPane style
+        // Estilo de scroll
         ScrollPane.ScrollPaneStyle scrollStyle = new ScrollPane.ScrollPaneStyle();
         scrollStyle.background = darkDrawable;
         scrollStyle.vScroll = darkDrawable;
         scrollStyle.vScrollKnob = lightDrawable;
+        scrollStyle.hScroll = darkDrawable;
+        scrollStyle.hScrollKnob = lightDrawable;
         skin.add("default", scrollStyle);
+
+        // Estilo de select box
+        SelectBox.SelectBoxStyle selectBoxStyle = new SelectBox.SelectBoxStyle();
+        selectBoxStyle.font = font;
+        selectBoxStyle.fontColor = Color.WHITE;
+        selectBoxStyle.background = darkDrawable;
+        selectBoxStyle.scrollStyle = scrollStyle;
+        selectBoxStyle.listStyle = new List.ListStyle();
+        selectBoxStyle.listStyle.font = font;
+        selectBoxStyle.listStyle.fontColorSelected = Color.WHITE;
+        selectBoxStyle.listStyle.fontColorUnselected = Color.LIGHT_GRAY;
+        selectBoxStyle.listStyle.selection = blueDrawable;
+        selectBoxStyle.listStyle.background = darkDrawable;
+        skin.add("default", selectBoxStyle);
+    }
+
+    private Drawable createColorDrawable(Color color) {
+        Pixmap pixmap = new Pixmap(1, 1, Pixmap.Format.RGBA8888);
+        pixmap.setColor(color);
+        pixmap.fill();
+        Texture texture = new Texture(pixmap);
+        pixmap.dispose();
+        return new TextureRegionDrawable(texture);
     }
 
     @Override
@@ -412,14 +406,13 @@ public class MapEditorScreen implements Screen {
     @Override
     public void resize(int width, int height) {
         if (editorCamera != null) editorCamera.resize(width, height);
-        if (uiStage != null) uiStage.getViewport().update(width, height, true);
-        if (editorWindow != null) editorWindow.resize(width, height);
+        if (fixedUI != null) fixedUI.resize(width, height);
     }
 
     @Override
     public void dispose() {
         if (renderer != null) renderer.dispose();
-        if (uiStage != null) uiStage.dispose();
+        if (fixedUI != null) fixedUI.dispose();
         if (skin != null) skin.dispose();
         logger.info("Map Editor disposed");
     }

@@ -10,7 +10,7 @@ public class TileRef implements Serializable {
 
     public TileRef() {
         this.spritesheetPath = "";
-        this.tileId = 0;
+        this.tileId = -1;
         this.tag = new TileTag("default");
     }
 
@@ -37,12 +37,12 @@ public class TileRef implements Serializable {
     public void setTag(TileTag tag) { this.tag = tag; }
 
     public boolean isValid() {
-        return spritesheetPath != null && !spritesheetPath.isEmpty() && tileId > 0;
+        return spritesheetPath != null && !spritesheetPath.isEmpty() && tileId >= 0;
     }
 
     public void clear() {
         spritesheetPath = "";
-        tileId = 0;
+        tileId = -1;
         tag = new TileTag("default");
     }
 }

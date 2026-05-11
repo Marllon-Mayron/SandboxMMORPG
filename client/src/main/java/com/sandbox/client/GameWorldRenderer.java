@@ -298,17 +298,25 @@ public class GameWorldRenderer implements Screen {
                             int tileId = tileData.getTileId();
                             String tag = tileData.getTag();
 
-                            // O campo 'solid' é ignorado, usamos a tag
+                            // CORREÇÃO: tileId 0 também é válido!
+                            // Apenas tileId negativo ou path vazio indica vazio
+                            if (tileId < 0) continue;
+
+                            // DETERMINAR SE É SÓLIDO BASEADO NA TAG
                             boolean isSolidTile = "solid".equals(tag);
 
                             chunk.setTile(x, y, path, tileId, isSolidTile, tag);
                             totalTiles++;
+
+                            if (isSolidTile) {
+                                logger.debug("Loaded solid tile at [{},{}] layer{}: id={}", x, y, layer, tileId);
+                            }
                         }
                     }
                 }
             }
             loadedChunks.put(entry.getKey(), chunk);
-            logger.debug("Loaded chunk [{},{}]", chunkX, chunkY);
+            logger.debug("Loaded chunk [{},{}] with {} tiles", chunkX, chunkY, totalTiles);
         }
         logger.info("Total tiles loaded: {}", totalTiles);
     }
@@ -489,13 +497,19 @@ public class GameWorldRenderer implements Screen {
         for (int x = 0; x < CHUNK_SIZE; x++) {
             for (int y = 0; y < CHUNK_SIZE; y++) {
                 WorldTile tile = chunk.getTile(x, y);
-                if (tile != null && tile.tileId != 0 && tile.spritesheetPath != null && !tile.spritesheetPath.isEmpty()) {
+                // CORREÇÃO: tileId >= 0 (incluindo 0) é válido se tiver spritesheetPath
+                if (tile != null && tile.tileId >= 0 && tile.spritesheetPath != null && !tile.spritesheetPath.isEmpty()) {
                     TextureRegion region = getTileRegion(tile.spritesheetPath, tile.tileId);
                     if (region != null) {
                         batch.draw(region,
                                 offsetX + x * WORLD_TILE_SIZE,
                                 offsetY + y * WORLD_TILE_SIZE,
                                 WORLD_TILE_SIZE, WORLD_TILE_SIZE);
+                    } else {
+                        // Debug: desenhar retângulo vermelho para tiles faltando
+                        if (tile.tileId >= 0) {
+                            logger.warn("Missing region for tile: path={}, id={}", tile.spritesheetPath, tile.tileId);
+                        }
                     }
                 }
             }
@@ -586,14 +600,14 @@ public class GameWorldRenderer implements Screen {
             font.setColor(1f, 1f, 1f, 1f);
             font.draw(batch, player.getUsername(),
                     player.getX() - (player.getUsername().length() * 5),
-                    player.getY() + PLAYER_SIZE/2 + 15);
+                    player.getY() + PLAYER_SIZE/2 + 25);
         }
 
         if (currentPlayer != null) {
             font.setColor(1f, 0.9f, 0.2f, 1f);
             font.draw(batch, currentPlayer.getUsername(),
                     currentPlayer.getX() - (currentPlayer.getUsername().length() * 5),
-                    currentPlayer.getY() + PLAYER_SIZE/2 + 15);
+                    currentPlayer.getY() + PLAYER_SIZE/2 + 25);
         }
         batch.end();
     }
@@ -602,34 +616,81 @@ public class GameWorldRenderer implements Screen {
         if (uiStage.getKeyboardFocus() == chatInput) return;
         if (currentPlayer == null) return;
 
-        float speed = 400f * delta;
+        // VELOCIDADE BASE
+        float baseSpeed = 400f;
+
+        // OBTER VELOCIDADE DO TERRA ATUAL
+        float terrainSpeed = getCurrentTerrainSpeed();
+        float speed = baseSpeed * terrainSpeed * delta;
+
         float moveX = 0, moveY = 0;
         String newDirection = currentPlayer.getDirection();
 
-        if (Gdx.input.isKeyPressed(Input.Keys.W)) { moveY += speed; newDirection = "UP"; }
-        if (Gdx.input.isKeyPressed(Input.Keys.S)) { moveY -= speed; newDirection = "DOWN"; }
-        if (Gdx.input.isKeyPressed(Input.Keys.A)) { moveX -= speed; newDirection = "LEFT"; }
-        if (Gdx.input.isKeyPressed(Input.Keys.D)) { moveX += speed; newDirection = "RIGHT"; }
+        if (Gdx.input.isKeyPressed(Input.Keys.W)) { moveY += 1; newDirection = "UP"; }
+        if (Gdx.input.isKeyPressed(Input.Keys.S)) { moveY -= 1; newDirection = "DOWN"; }
+        if (Gdx.input.isKeyPressed(Input.Keys.A)) { moveX -= 1; newDirection = "LEFT"; }
+        if (Gdx.input.isKeyPressed(Input.Keys.D)) { moveX += 1; newDirection = "RIGHT"; }
 
         if (moveX != 0 || moveY != 0) {
-            float newX = currentPlayer.getX() + moveX;
-            float newY = currentPlayer.getY() + moveY;
+            // NORMALIZAR VETOR PARA MOVIMENTO DIAGONAL NÃO SER MAIS RÁPIDO
+            float length = (float) Math.sqrt(moveX * moveX + moveY * moveY);
+            if (length > 0) {
+                moveX /= length;
+                moveY /= length;
+            }
 
-            if (!isColliding(newX, newY)) {
+            float newX = currentPlayer.getX() + moveX * speed;
+            float newY = currentPlayer.getY() + moveY * speed;
+
+            // Verificar colisão separadamente para X e Y
+            if (!isColliding(newX, currentPlayer.getY())) {
                 currentPlayer.setX(newX);
+            }
+            if (!isColliding(currentPlayer.getX(), newY)) {
                 currentPlayer.setY(newY);
-                currentPlayer.setDirection(newDirection);
-                game.getNetworkClient().sendMovement(currentPlayer.getId(), newX, newY, newDirection);
-            } else {
-                if (!isColliding(newX, currentPlayer.getY())) {
-                    currentPlayer.setX(newX);
-                    game.getNetworkClient().sendMovement(currentPlayer.getId(), newX, currentPlayer.getY(), newDirection);
-                } else if (!isColliding(currentPlayer.getX(), newY)) {
-                    currentPlayer.setY(newY);
-                    game.getNetworkClient().sendMovement(currentPlayer.getId(), currentPlayer.getX(), newY, newDirection);
+            }
+
+            currentPlayer.setDirection(newDirection);
+            game.getNetworkClient().sendMovement(
+                    currentPlayer.getId(),
+                    currentPlayer.getX(),
+                    currentPlayer.getY(),
+                    newDirection
+            );
+        }
+    }
+
+    // NOVO MÉTODO: Obter velocidade do terreno baseado na tag do tile
+    private float getCurrentTerrainSpeed() {
+        if (currentPlayer == null) return 1.0f;
+
+        float playerX = currentPlayer.getX();
+        float playerY = currentPlayer.getY();
+        float halfSize = PLAYER_SIZE / 2;
+
+        // Verificar o centro do jogador (ou o pé)
+        float checkX = playerX;
+        float checkY = playerY - halfSize + 10; // pé do personagem
+
+        int chunkX = (int) Math.floor(checkX / (CHUNK_SIZE * WORLD_TILE_SIZE));
+        int chunkY = (int) Math.floor(checkY / (CHUNK_SIZE * WORLD_TILE_SIZE));
+        int localX = (int) (checkX % (CHUNK_SIZE * WORLD_TILE_SIZE)) / WORLD_TILE_SIZE;
+        int localY = (int) (checkY % (CHUNK_SIZE * WORLD_TILE_SIZE)) / WORLD_TILE_SIZE;
+
+        if (localX < 0) localX += CHUNK_SIZE;
+        if (localY < 0) localY += CHUNK_SIZE;
+
+        if (localX >= 0 && localX < CHUNK_SIZE && localY >= 0 && localY < CHUNK_SIZE) {
+            Chunk chunk = loadedChunks.get(chunkX + ":" + chunkY);
+            if (chunk != null) {
+                WorldTile tile = chunk.getTile(localX, localY);
+                if (tile != null && !tile.isEmpty()) {
+                    return tile.getWalkSpeed();
                 }
             }
         }
+
+        return 1.0f;
     }
 
     @Override

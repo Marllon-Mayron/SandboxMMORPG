@@ -12,7 +12,7 @@ public class WorldTile implements Serializable {
 
     public WorldTile() {
         this.spritesheetPath = "";
-        this.tileId = 0;
+        this.tileId = -1;
         this.solid = false;
         this.tag = "default";
     }
@@ -29,7 +29,7 @@ public class WorldTile implements Serializable {
     }
 
     public boolean isEmpty() {
-        return tileId == 0 || spritesheetPath == null || spritesheetPath.isEmpty();
+        return tileId < 0 || spritesheetPath == null || spritesheetPath.isEmpty();
     }
 
     public boolean isSolid() {

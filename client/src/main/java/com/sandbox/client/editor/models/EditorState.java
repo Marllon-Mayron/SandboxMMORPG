@@ -14,6 +14,7 @@ public class EditorState {
     private boolean showGrid;
     private boolean showChunkBounds;
     private float zoom;
+    private ToolType currentTool;
 
     public EditorState() {
         this.chunks = new HashMap<>();
@@ -23,6 +24,7 @@ public class EditorState {
         this.showGrid = true;
         this.showChunkBounds = true;
         this.zoom = 0.5f;
+        this.currentTool = ToolType.BRUSH;
     }
 
     public Map<String, ChunkData> getChunks() { return chunks; }
@@ -43,6 +45,8 @@ public class EditorState {
     public void setShowChunkBounds(boolean show) { this.showChunkBounds = show; }
     public float getZoom() { return zoom; }
     public void setZoom(float zoom) { this.zoom = zoom; }
+    public ToolType getCurrentTool() { return currentTool; }
+    public void setCurrentTool(ToolType tool) { this.currentTool = tool; }
 
     public ChunkData getCurrentChunk() {
         return chunks.get(currentChunkX + ":" + currentChunkY);

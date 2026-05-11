@@ -42,7 +42,11 @@ public class Chunk implements Serializable {
 
     public void setTile(int x, int y, String spritesheetPath, int tileId, boolean solid, String tag) {
         if (x >= 0 && x < SIZE && y >= 0 && y < SIZE) {
-            tiles[x][y] = new WorldTile(spritesheetPath, tileId, solid, tag);
+            if (tileId >= 0 && spritesheetPath != null && !spritesheetPath.isEmpty()) {
+                tiles[x][y] = new WorldTile(spritesheetPath, tileId, solid, tag);
+            } else {
+                tiles[x][y] = new WorldTile();
+            }
         }
     }
 
@@ -63,7 +67,9 @@ public class Chunk implements Serializable {
         for (int x = 0; x < SIZE; x++) {
             for (int y = 0; y < SIZE; y++) {
                 WorldTile tile = tiles[x][y];
-                if (tile != null && tile.tileId > 0) return false;
+                if (tile != null && tile.tileId >= 0 && !tile.spritesheetPath.isEmpty()) {
+                    return false;
+                }
             }
         }
         return true;

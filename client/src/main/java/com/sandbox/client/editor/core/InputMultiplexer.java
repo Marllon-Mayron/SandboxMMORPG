@@ -1,11 +1,9 @@
+// File: InputMultiplexer.java - VERIFICADO E CORRETO
 package com.sandbox.client.editor.core;
 
 import com.badlogic.gdx.InputProcessor;
 import com.badlogic.gdx.scenes.scene2d.Stage;
 
-/**
- * Processa inputs primeiro no Stage (UI) e depois no handler do editor
- */
 public class InputMultiplexer implements InputProcessor {
     private final Stage stage;
     private final InputProcessor editorHandler;
@@ -17,9 +15,7 @@ public class InputMultiplexer implements InputProcessor {
 
     @Override
     public boolean keyDown(int keycode) {
-        // Primeiro tenta processar no Stage (UI)
         if (stage.keyDown(keycode)) return true;
-        // Depois no editor
         return editorHandler.keyDown(keycode);
     }
 
@@ -37,9 +33,7 @@ public class InputMultiplexer implements InputProcessor {
 
     @Override
     public boolean touchDown(int screenX, int screenY, int pointer, int button) {
-        // Primeiro tenta processar no Stage (UI)
         if (stage.touchDown(screenX, screenY, pointer, button)) return true;
-        // Depois no editor (apenas se não clicou na UI)
         return editorHandler.touchDown(screenX, screenY, pointer, button);
     }
 

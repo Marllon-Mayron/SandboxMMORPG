@@ -97,7 +97,7 @@ public class MapJSON {
         public void setTag(String tag) { this.tag = tag; }
 
         public boolean isEmpty() {
-            return spritesheetPath == null || spritesheetPath.isEmpty() || tileId == 0;
+            return spritesheetPath == null || spritesheetPath.isEmpty() || tileId < 0;
         }
 
         //Métodos para verificar tipo de tile

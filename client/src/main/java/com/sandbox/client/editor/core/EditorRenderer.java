@@ -5,27 +5,25 @@ import com.badlogic.gdx.graphics.GL20;
 import com.badlogic.gdx.graphics.Texture;
 import com.badlogic.gdx.graphics.g2d.SpriteBatch;
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
-import com.badlogic.gdx.math.Vector3;
 import com.sandbox.client.editor.models.ChunkData;
 import com.sandbox.client.editor.models.EditorState;
 import com.sandbox.client.editor.models.LayerType;
 import com.sandbox.client.editor.models.SpritesheetData;
 import com.sandbox.client.editor.models.TileRef;
-import com.sandbox.client.editor.ui.EditorWindow;
 
 public class EditorRenderer {
     private static final int TILE_SIZE = 32;
     private static final int CHUNK_SIZE = 32;
 
     private final EditorCamera editorCamera;
-    private final EditorWindow editorWindow;
+    private final IEditorScreen editorScreen;
     private final EditorState state;
     private SpriteBatch batch;
     private ShapeRenderer shapeRenderer;
 
-    public EditorRenderer(EditorCamera editorCamera, EditorWindow editorWindow, EditorState state) {
+    public EditorRenderer(EditorCamera editorCamera, IEditorScreen editorScreen, EditorState state) {
         this.editorCamera = editorCamera;
-        this.editorWindow = editorWindow;
+        this.editorScreen = editorScreen;
         this.state = state;
         this.batch = new SpriteBatch();
         this.shapeRenderer = new ShapeRenderer();
@@ -75,7 +73,7 @@ public class EditorRenderer {
         for (int x = 0; x < CHUNK_SIZE; x++) {
             for (int y = 0; y < CHUNK_SIZE; y++) {
                 TileRef tile = chunkData.getTile(layer, x, y);
-                if (tile != null && tile.isValid()) {
+                if (tile != null && tile.isValid() && tile.getTileId() >= 0) {
 
                     SpritesheetData sheet = state.getSpritesheets().get(tile.getSpritesheetPath());
                     if (sheet != null && tile.getTileId() < sheet.getTotalSprites()) {
