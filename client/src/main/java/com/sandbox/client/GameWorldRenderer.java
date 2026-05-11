@@ -2,6 +2,7 @@ package com.sandbox.client;
 
 import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.Input;
+import com.badlogic.gdx.InputProcessor;
 import com.badlogic.gdx.Screen;
 import com.badlogic.gdx.files.FileHandle;
 import com.badlogic.gdx.graphics.*;
@@ -26,6 +27,7 @@ import com.common.sandbox.network.packets.ChatMessage;
 import com.common.sandbox.network.packets.MovementBroadcast;
 import com.common.sandbox.network.packets.PlayerLeftPacket;
 import com.sandbox.client.editor.MapEditorScreen;
+import com.sandbox.client.ui.PlayerUI;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -58,11 +60,9 @@ public class GameWorldRenderer implements Screen {
 
     private Stage uiStage;
     private Skin skin;
-    private Label chatLabel;
-    private TextField chatInput;
-    private ScrollPane chatScrollPane;
     private final StringBuilder chatDisplay;
 
+    private PlayerUI playerUI;
     private boolean initialized = false;
     private boolean spritesheetsLoaded = false;
     private Set<String> pendingSpritesheets = new HashSet<>();
@@ -82,9 +82,6 @@ public class GameWorldRenderer implements Screen {
         logger.info("GameWorldRenderer created with {} initial nearby players", this.initialNearbyPlayers.size());
     }
 
-    /**
-     * Carrega APENAS os spritesheets necessários para o mapa (na thread principal)
-     */
     private void loadRequiredSpritesheets(Set<String> requiredPaths, MapJSON mapJson) {
         logger.info("Loading required spritesheets (on main thread): {}", requiredPaths);
 
@@ -111,28 +108,24 @@ public class GameWorldRenderer implements Screen {
                     TextureRegion[][] regions = TextureRegion.split(texture, TILE_SIZE, TILE_SIZE);
                     spritesheetRegions.put(path, regions);
 
-                    logger.info("✅ Loaded spritesheet: {} ({}x{} tiles)", path, cols, rows);
+                    logger.info("Loaded spritesheet: {} ({}x{} tiles)", path, cols, rows);
                 } catch (Exception e) {
                     logger.error("Failed to load spritesheet: {}", path, e);
                 }
             } else {
-                logger.error("❌ Required spritesheet not found: {}", path);
+                logger.error("Required spritesheet not found: {}", path);
             }
         }
 
         logger.info("Total spritesheets loaded: {}", spritesheets.size());
         spritesheetsLoaded = true;
 
-        // Agora carrega o mapa no mundo
         if (pendingMap != null) {
             loadMapIntoWorld(pendingMap);
             pendingMap = null;
         }
     }
 
-    /**
-     * Coleta todos os paths de spritesheets usados no mapa
-     */
     private Set<String> collectSpritesheetPaths(MapJSON mapJson) {
         Set<String> paths = new HashSet<>();
 
@@ -164,16 +157,14 @@ public class GameWorldRenderer implements Screen {
 
         chatDisplay.append("*** Welcome to Sandbox Experiment! ***\n");
         chatDisplay.append("*** Use WASD to move ***\n");
-        chatDisplay.append("*** Press ENTER to chat ***\n\n");
+        chatDisplay.append("*** Press ENTER to chat | H to hide chat ***\n\n");
         if (adminMode) {
             chatDisplay.append("*** ADMIN MODE: Press F12 for Map Editor ***\n");
         }
 
-        if (chatLabel != null) {
-            chatLabel.setText(chatDisplay.toString());
-            if (chatScrollPane != null) {
-                chatScrollPane.setScrollPercentY(1);
-            }
+        if (playerUI != null) {
+            playerUI.update(currentPlayer, 1.0f);
+            playerUI.updateChatHistory(chatDisplay.toString());
         }
 
         if (camera != null) {
@@ -190,14 +181,10 @@ public class GameWorldRenderer implements Screen {
             if (response.success && response.mapJson != null) {
                 logger.info("Map loaded, processing...");
 
-                // Coletar paths necessários
                 Set<String> requiredPaths = collectSpritesheetPaths(response.mapJson);
-
-                // Guardar o mapa para processar depois que os spritesheets carregarem
                 pendingMap = response.mapJson;
                 spritesheetsLoaded = false;
 
-                // Carregar spritesheets na thread principal
                 Gdx.app.postRunnable(() -> {
                     loadRequiredSpritesheets(requiredPaths, response.mapJson);
                 });
@@ -225,11 +212,11 @@ public class GameWorldRenderer implements Screen {
         Gdx.app.postRunnable(() -> {
             Player removed = otherPlayers.remove(packet.playerId);
             if (removed != null) {
-                logger.info("👋 Jogador removido do mundo: {}", packet.playerName);
-                // Atualizar chat se quiser mostrar mensagem
-                chatDisplay.append("*** " + packet.playerName + " saiu do mundo ***\n");
-                if (chatLabel != null) {
-                    chatLabel.setText(chatDisplay.toString());
+                logger.info("Player removed from world: {}", packet.playerName);
+                chatDisplay.append("*** " + packet.playerName + " left the world ***\n");
+                if (playerUI != null) {
+                    playerUI.updateChatHistory(chatDisplay.toString());
+                    playerUI.addChatMessage("*** " + packet.playerName + " left the world ***");
                 }
             }
         });
@@ -253,18 +240,17 @@ public class GameWorldRenderer implements Screen {
                 }
             }
 
-            if (chatLabel != null) {
-                chatLabel.setText(chatDisplay.toString());
-                if (chatScrollPane != null) {
-                    chatScrollPane.setScrollPercentY(1);
-                }
+            if (playerUI != null) {
+                playerUI.updateChatHistory(chatDisplay.toString());
+                playerUI.addChatMessage(formattedMsg);
             }
         });
     }
 
     private void onChunkReceived(Chunk chunk) {
         Gdx.app.postRunnable(() -> {
-            loadedChunks.put(chunk.chunkX + ":" + chunk.chunkY, chunk);
+            String key = chunk.chunkX + ":" + chunk.chunkY;
+            loadedChunks.put(key, chunk);
             logger.debug("Chunk [{},{}] received", chunk.chunkX, chunk.chunkY);
         });
     }
@@ -298,25 +284,18 @@ public class GameWorldRenderer implements Screen {
                             int tileId = tileData.getTileId();
                             String tag = tileData.getTag();
 
-                            // CORREÇÃO: tileId 0 também é válido!
-                            // Apenas tileId negativo ou path vazio indica vazio
                             if (tileId < 0) continue;
 
-                            // DETERMINAR SE É SÓLIDO BASEADO NA TAG
                             boolean isSolidTile = "solid".equals(tag);
 
                             chunk.setTile(x, y, path, tileId, isSolidTile, tag);
                             totalTiles++;
-
-                            if (isSolidTile) {
-                                logger.debug("Loaded solid tile at [{},{}] layer{}: id={}", x, y, layer, tileId);
-                            }
                         }
                     }
                 }
             }
             loadedChunks.put(entry.getKey(), chunk);
-            logger.debug("Loaded chunk [{},{}] with {} tiles", chunkX, chunkY, totalTiles);
+            logger.debug("Loaded chunk [{},{}]", chunkX, chunkY);
         }
         logger.info("Total tiles loaded: {}", totalTiles);
     }
@@ -326,7 +305,6 @@ public class GameWorldRenderer implements Screen {
         logger.info("GameWorldRenderer show()");
         setupCallbacks();
 
-        // Adicionar jogadores iniciais antes de qualquer outra coisa
         if (initialNearbyPlayers != null && !initialNearbyPlayers.isEmpty()) {
             logger.info("Adding {} initial nearby players to world", initialNearbyPlayers.size());
             for (Player player : initialNearbyPlayers.values()) {
@@ -347,7 +325,7 @@ public class GameWorldRenderer implements Screen {
         try {
             FreeTypeFontGenerator generator = new FreeTypeFontGenerator(Gdx.files.internal("fonts/arial.ttf"));
             FreeTypeFontGenerator.FreeTypeFontParameter parameter = new FreeTypeFontGenerator.FreeTypeFontParameter();
-            parameter.size = 20;
+            parameter.size = 18;
             parameter.borderWidth = 1;
             parameter.borderColor = Color.BLACK;
             parameter.color = Color.WHITE;
@@ -355,120 +333,256 @@ public class GameWorldRenderer implements Screen {
             generator.dispose();
         } catch (Exception e) {
             font = new BitmapFont();
-            font.getData().setScale(1.2f);
+            font.getData().setScale(1.0f);
         }
 
         createSkin();
-        createUI();
-        initialized = true;
+        createPlayerUI();
 
-        // Request map - isso vai trigger o callback e carregar os spritesheets na thread principal
+        initialized = true;
         game.getNetworkClient().requestMapLoad("11111111-1111-1111-1111-111111111111");
     }
 
     private void createSkin() {
         skin = new Skin();
-        Pixmap pixmap = new Pixmap(1, 1, Pixmap.Format.RGBA8888);
-        pixmap.setColor(0.15f, 0.15f, 0.2f, 0.9f);
-        pixmap.fill();
-        Texture buttonTexture = new Texture(pixmap);
-        pixmap.dispose();
+        skin.add("default-font", font);
+
+        // Criar drawables básicos
+        Pixmap darkPixmap = new Pixmap(1, 1, Pixmap.Format.RGBA8888);
+        darkPixmap.setColor(0.12f, 0.12f, 0.16f, 0.95f);
+        darkPixmap.fill();
+        Texture darkTexture = new Texture(darkPixmap);
+        darkPixmap.dispose();
+        Drawable darkDrawable = new TextureRegionDrawable(darkTexture);
+
+        Pixmap lightPixmap = new Pixmap(1, 1, Pixmap.Format.RGBA8888);
+        lightPixmap.setColor(0.22f, 0.22f, 0.28f, 0.95f);
+        lightPixmap.fill();
+        Texture lightTexture = new Texture(lightPixmap);
+        lightPixmap.dispose();
+        Drawable lightDrawable = new TextureRegionDrawable(lightTexture);
+
+        Pixmap buttonPixmap = new Pixmap(1, 1, Pixmap.Format.RGBA8888);
+        buttonPixmap.setColor(0.2f, 0.2f, 0.25f, 1);
+        buttonPixmap.fill();
+        Texture buttonTexture = new Texture(buttonPixmap);
+        buttonPixmap.dispose();
         Drawable buttonDrawable = new TextureRegionDrawable(buttonTexture);
 
+        Pixmap greenPixmap = new Pixmap(1, 1, Pixmap.Format.RGBA8888);
+        greenPixmap.setColor(0.2f, 0.6f, 0.2f, 1);
+        greenPixmap.fill();
+        Texture greenTexture = new Texture(greenPixmap);
+        greenPixmap.dispose();
+        Drawable greenDrawable = new TextureRegionDrawable(greenTexture);
+
+        Pixmap redPixmap = new Pixmap(1, 1, Pixmap.Format.RGBA8888);
+        redPixmap.setColor(0.7f, 0.2f, 0.2f, 1);
+        redPixmap.fill();
+        Texture redTexture = new Texture(redPixmap);
+        redPixmap.dispose();
+        Drawable redDrawable = new TextureRegionDrawable(redTexture);
+
+        Pixmap bluePixmap = new Pixmap(1, 1, Pixmap.Format.RGBA8888);
+        bluePixmap.setColor(0.2f, 0.4f, 0.7f, 1);
+        bluePixmap.fill();
+        Texture blueTexture = new Texture(bluePixmap);
+        bluePixmap.dispose();
+        Drawable blueDrawable = new TextureRegionDrawable(blueTexture);
+
+        Pixmap goldPixmap = new Pixmap(1, 1, Pixmap.Format.RGBA8888);
+        goldPixmap.setColor(0.8f, 0.6f, 0.1f, 1);
+        goldPixmap.fill();
+        Texture goldTexture = new Texture(goldPixmap);
+        goldPixmap.dispose();
+        Drawable goldDrawable = new TextureRegionDrawable(goldTexture);
+
+        // Registrar drawables
+        skin.add("window-bg", darkDrawable);
+        skin.add("button-bg", buttonDrawable);
+        skin.add("green", greenDrawable);
+        skin.add("red", redDrawable);
+        skin.add("blue", blueDrawable);
+        skin.add("gold", goldDrawable);
+
+        // Label styles
         Label.LabelStyle labelStyle = new Label.LabelStyle();
         labelStyle.font = font;
         labelStyle.fontColor = Color.WHITE;
         skin.add("default", labelStyle);
 
+        Label.LabelStyle titleStyle = new Label.LabelStyle();
+        titleStyle.font = font;
+        titleStyle.fontColor = Color.GOLD;
+        skin.add("title", titleStyle);
+
+        Label.LabelStyle statusStyle = new Label.LabelStyle();
+        statusStyle.font = font;
+        statusStyle.fontColor = Color.LIGHT_GRAY;
+        skin.add("status", statusStyle);
+
+        // TextButton style
         TextButton.TextButtonStyle textButtonStyle = new TextButton.TextButtonStyle();
         textButtonStyle.font = font;
         textButtonStyle.fontColor = Color.WHITE;
         textButtonStyle.up = buttonDrawable;
+        textButtonStyle.down = darkDrawable;
+        textButtonStyle.over = blueDrawable;
         skin.add("default", textButtonStyle);
 
+        TextButton.TextButtonStyle successStyle = new TextButton.TextButtonStyle();
+        successStyle.font = font;
+        successStyle.fontColor = Color.WHITE;
+        successStyle.up = greenDrawable;
+        successStyle.down = darkDrawable;
+        successStyle.over = blueDrawable;
+        skin.add("success", successStyle);
+
+        TextButton.TextButtonStyle primaryStyle = new TextButton.TextButtonStyle();
+        primaryStyle.font = font;
+        primaryStyle.fontColor = Color.WHITE;
+        primaryStyle.up = blueDrawable;
+        primaryStyle.down = darkDrawable;
+        primaryStyle.over = buttonDrawable;
+        skin.add("primary", primaryStyle);
+
+        // TextField style
         TextField.TextFieldStyle textFieldStyle = new TextField.TextFieldStyle();
         textFieldStyle.font = font;
         textFieldStyle.fontColor = Color.WHITE;
         textFieldStyle.background = buttonDrawable;
+        textFieldStyle.cursor = blueDrawable;
+        textFieldStyle.selection = blueDrawable;
         skin.add("default", textFieldStyle);
 
+        // ScrollPane style
         ScrollPane.ScrollPaneStyle scrollStyle = new ScrollPane.ScrollPaneStyle();
-        scrollStyle.background = buttonDrawable;
+        scrollStyle.background = darkDrawable;
+        scrollStyle.vScroll = buttonDrawable;
+        scrollStyle.vScrollKnob = blueDrawable;
+        scrollStyle.hScroll = buttonDrawable;
+        scrollStyle.hScrollKnob = blueDrawable;
         skin.add("default", scrollStyle);
     }
 
-    private void createUI() {
-        uiStage = new Stage(new ScreenViewport());
-        Gdx.input.setInputProcessor(uiStage);
-
-        Table chatContainer = new Table(skin);
-        chatContainer.setWidth(500);
-        chatContainer.setHeight(350);
-        chatContainer.setPosition(10, 10);
-
-        chatLabel = new Label("", skin);
-        chatLabel.setWrap(true);
-        chatLabel.setAlignment(Align.topLeft);
-        chatLabel.setWidth(480);
-
-        chatScrollPane = new ScrollPane(chatLabel, skin);
-        chatScrollPane.setFadeScrollBars(false);
-        chatScrollPane.setScrollingDisabled(true, false);
-        chatScrollPane.setSize(490, 280);
-
-        chatInput = new TextField("", skin);
-        chatInput.setMessageText("Press ENTER to chat...");
-        chatInput.setSize(420, 35);
-
-        TextButton sendButton = new TextButton("Send", skin);
-        sendButton.setSize(70, 35);
-        sendButton.addListener(new ChangeListener() {
-            @Override
-            public void changed(ChangeEvent event, Actor actor) {
-                sendChatMessage();
+    private void createPlayerUI() {
+        playerUI = new PlayerUI(skin);
+        playerUI.setChatInputProcessor(chatInput -> {
+            String message = chatInput.trim();
+            if (!message.isEmpty() && currentPlayer != null) {
+                game.getNetworkClient().sendChat(currentPlayer.getId(), currentPlayer.getUsername(), message);
             }
         });
 
-        chatContainer.add(chatScrollPane).width(490).height(280).padBottom(5);
-        chatContainer.row();
-
-        Table inputTable = new Table();
-        inputTable.add(chatInput).width(420).padRight(5);
-        inputTable.add(sendButton).width(70);
-        chatContainer.add(inputTable).width(500);
-        uiStage.addActor(chatContainer);
-
-        String instructions = "WASD = Movement | ENTER = Chat | ESC = Exit chat";
-        if (adminMode) instructions += " | F12 = Map Editor";
-
-        Label infoLabel = new Label(instructions, skin);
-        infoLabel.setFontScale(0.9f);
-        infoLabel.setPosition(Gdx.graphics.getWidth() / 2 - instructions.length() * 4, Gdx.graphics.getHeight() - 30);
-        uiStage.addActor(infoLabel);
-
-        if (adminMode) {
-            Label adminLabel = new Label("ADMIN MODE", skin);
-            adminLabel.setColor(Color.GOLD);
-            adminLabel.setFontScale(0.8f);
-            adminLabel.setPosition(Gdx.graphics.getWidth() - 120, Gdx.graphics.getHeight() - 25);
-            uiStage.addActor(adminLabel);
-        }
+        uiStage = playerUI.getStage();
+        Gdx.input.setInputProcessor(createInputProcessor());
     }
 
-    private void sendChatMessage() {
-        String message = chatInput.getText().trim();
-        if (!message.isEmpty() && currentPlayer != null) {
-            game.getNetworkClient().sendChat(currentPlayer.getId(), currentPlayer.getUsername(), message);
-            chatInput.setText("");
-            uiStage.setKeyboardFocus(null);
-        }
+    private InputProcessor createInputProcessor() {
+        return new com.badlogic.gdx.InputProcessor() {
+            @Override
+            public boolean keyDown(int keycode) {
+                // Verificar se o chat está focado
+                boolean chatFocused = playerUI != null && playerUI.isChatFocused();
+
+                // Tecla H - só esconde/mostra chat se o chat NÃO estiver focado
+                if (keycode == Input.Keys.H && !chatFocused) {
+                    if (playerUI != null) {
+                        playerUI.toggleChat();
+                    }
+                    return true; // CONSUMIR - não passar para ninguém
+                }
+
+                // Tecla ENTER
+                if (keycode == Input.Keys.ENTER) {
+                    if (playerUI != null) {
+                        if (playerUI.isChatFocused()) {
+                            playerUI.sendCurrentMessage();
+                        } else {
+                            playerUI.focusChat();
+                        }
+                    }
+                    return true; // CONSUMIR
+                }
+
+                // Tecla ESC
+                if (keycode == Input.Keys.ESCAPE) {
+                    if (playerUI != null && playerUI.isChatFocused()) {
+                        playerUI.unfocusChat();
+                        return true;
+                    }
+                }
+
+                // Se o chat está focado, passar TODAS as teclas para o stage (incluindo H)
+                if (chatFocused) {
+                    return uiStage != null && uiStage.keyDown(keycode);
+                }
+
+                // Se o chat NÃO está focado, não passar teclas para o stage
+                // As teclas de movimento são tratadas no handleInput
+                return false;
+            }
+
+            @Override
+            public boolean keyUp(int keycode) {
+                if (playerUI != null && playerUI.isChatFocused()) {
+                    return uiStage != null && uiStage.keyUp(keycode);
+                }
+                return false;
+            }
+
+            @Override
+            public boolean keyTyped(char character) {
+                if (playerUI != null && playerUI.isChatFocused()) {
+                    return uiStage != null && uiStage.keyTyped(character);
+                }
+                return false;
+            }
+
+            @Override
+            public boolean touchDown(int screenX, int screenY, int pointer, int button) {
+                // Se clicar fora do chat quando estiver focado, perder foco
+                if (playerUI != null && playerUI.isChatFocused()) {
+                    if (playerUI.isPointOverChat(screenX, screenY)) {
+                        return uiStage != null && uiStage.touchDown(screenX, screenY, pointer, button);
+                    } else {
+                        playerUI.unfocusChat();
+                        return false;
+                    }
+                }
+                return uiStage != null && uiStage.touchDown(screenX, screenY, pointer, button);
+            }
+
+            @Override
+            public boolean touchUp(int screenX, int screenY, int pointer, int button) {
+                return uiStage != null && uiStage.touchUp(screenX, screenY, pointer, button);
+            }
+
+            @Override
+            public boolean touchDragged(int screenX, int screenY, int pointer) {
+                return uiStage != null && uiStage.touchDragged(screenX, screenY, pointer);
+            }
+
+            @Override
+            public boolean mouseMoved(int screenX, int screenY) {
+                return uiStage != null && uiStage.mouseMoved(screenX, screenY);
+            }
+
+            @Override
+            public boolean scrolled(float amountX, float amountY) {
+                return uiStage != null && uiStage.scrolled(amountX, amountY);
+            }
+
+            @Override
+            public boolean touchCancelled(int screenX, int screenY, int pointer, int button) {
+                return uiStage != null && uiStage.touchCancelled(screenX, screenY, pointer, button);
+            }
+        };
     }
 
     private void renderChunks() {
         if (currentPlayer == null) return;
-        if (spritesheets.isEmpty()) {
-            return;
-        }
+        if (spritesheets.isEmpty()) return;
 
         batch.setProjectionMatrix(camera.combined);
         batch.begin();
@@ -497,7 +611,6 @@ public class GameWorldRenderer implements Screen {
         for (int x = 0; x < CHUNK_SIZE; x++) {
             for (int y = 0; y < CHUNK_SIZE; y++) {
                 WorldTile tile = chunk.getTile(x, y);
-                // CORREÇÃO: tileId >= 0 (incluindo 0) é válido se tiver spritesheetPath
                 if (tile != null && tile.tileId >= 0 && tile.spritesheetPath != null && !tile.spritesheetPath.isEmpty()) {
                     TextureRegion region = getTileRegion(tile.spritesheetPath, tile.tileId);
                     if (region != null) {
@@ -505,11 +618,6 @@ public class GameWorldRenderer implements Screen {
                                 offsetX + x * WORLD_TILE_SIZE,
                                 offsetY + y * WORLD_TILE_SIZE,
                                 WORLD_TILE_SIZE, WORLD_TILE_SIZE);
-                    } else {
-                        // Debug: desenhar retângulo vermelho para tiles faltando
-                        if (tile.tileId >= 0) {
-                            logger.warn("Missing region for tile: path={}, id={}", tile.spritesheetPath, tile.tileId);
-                        }
                     }
                 }
             }
@@ -518,10 +626,7 @@ public class GameWorldRenderer implements Screen {
 
     private TextureRegion getTileRegion(String path, int tileId) {
         TextureRegion[][] regions = spritesheetRegions.get(path);
-
-        if (regions == null) {
-            return null;
-        }
+        if (regions == null) return null;
 
         int cols = regions[0].length;
         int row = tileId / cols;
@@ -530,14 +635,12 @@ public class GameWorldRenderer implements Screen {
         if (row >= 0 && row < regions.length && col >= 0 && col < regions[0].length) {
             return regions[row][col];
         }
-
         return null;
     }
 
     private boolean isColliding(float x, float y) {
         float halfSize = PLAYER_SIZE / 2;
 
-        // Verificar os 4 cantos do jogador
         float[][] corners = {
                 {x - halfSize, y - halfSize},
                 {x + halfSize, y - halfSize},
@@ -558,7 +661,6 @@ public class GameWorldRenderer implements Screen {
                 Chunk chunk = loadedChunks.get(chunkX + ":" + chunkY);
                 if (chunk != null) {
                     WorldTile tile = chunk.getTile(localX, localY);
-                    // SÓ VERIFICA SE É SÓLIDO BASEADO NA TAG
                     if (tile != null && tile.isSolid()) {
                         return true;
                     }
@@ -566,6 +668,39 @@ public class GameWorldRenderer implements Screen {
             }
         }
         return false;
+    }
+
+    private float getCurrentTerrainSpeed() {
+        if (currentPlayer == null) return 1.0f;
+
+        float playerX = currentPlayer.getX();
+        float playerY = currentPlayer.getY();
+        float halfSize = PLAYER_SIZE / 2;
+
+        float checkX = playerX;
+        float checkY = playerY - halfSize + 8;
+
+        int chunkSizeWorld = CHUNK_SIZE * WORLD_TILE_SIZE;
+        int chunkX = (int) Math.floor(checkX / chunkSizeWorld);
+        int chunkY = (int) Math.floor(checkY / chunkSizeWorld);
+        int localX = (int) (checkX % chunkSizeWorld) / WORLD_TILE_SIZE;
+        int localY = (int) (checkY % chunkSizeWorld) / WORLD_TILE_SIZE;
+
+        if (localX < 0) localX += CHUNK_SIZE;
+        if (localY < 0) localY += CHUNK_SIZE;
+
+        if (localX >= 0 && localX < CHUNK_SIZE && localY >= 0 && localY < CHUNK_SIZE) {
+            String key = chunkX + ":" + chunkY;
+            Chunk chunk = loadedChunks.get(key);
+            if (chunk != null) {
+                WorldTile tile = chunk.getTile(localX, localY);
+                if (tile != null && !tile.isEmpty()) {
+                    return tile.getWalkSpeed();
+                }
+            }
+        }
+
+        return 1.0f;
     }
 
     private void renderPlayers() {
@@ -613,15 +748,14 @@ public class GameWorldRenderer implements Screen {
     }
 
     private void handleInput(float delta) {
-        if (uiStage.getKeyboardFocus() == chatInput) return;
+        if (playerUI != null && playerUI.isChatFocused()) return;
         if (currentPlayer == null) return;
 
-        // VELOCIDADE BASE
         float baseSpeed = 400f;
-
-        // OBTER VELOCIDADE DO TERRA ATUAL
         float terrainSpeed = getCurrentTerrainSpeed();
         float speed = baseSpeed * terrainSpeed * delta;
+
+        if (speed <= 0.01f) speed = baseSpeed * delta;
 
         float moveX = 0, moveY = 0;
         String newDirection = currentPlayer.getDirection();
@@ -632,17 +766,15 @@ public class GameWorldRenderer implements Screen {
         if (Gdx.input.isKeyPressed(Input.Keys.D)) { moveX += 1; newDirection = "RIGHT"; }
 
         if (moveX != 0 || moveY != 0) {
-            // NORMALIZAR VETOR PARA MOVIMENTO DIAGONAL NÃO SER MAIS RÁPIDO
             float length = (float) Math.sqrt(moveX * moveX + moveY * moveY);
             if (length > 0) {
-                moveX /= length;
-                moveY /= length;
+                moveX = moveX / length;
+                moveY = moveY / length;
             }
 
             float newX = currentPlayer.getX() + moveX * speed;
             float newY = currentPlayer.getY() + moveY * speed;
 
-            // Verificar colisão separadamente para X e Y
             if (!isColliding(newX, currentPlayer.getY())) {
                 currentPlayer.setX(newX);
             }
@@ -650,47 +782,21 @@ public class GameWorldRenderer implements Screen {
                 currentPlayer.setY(newY);
             }
 
-            currentPlayer.setDirection(newDirection);
+            if (!newDirection.equals(currentPlayer.getDirection())) {
+                currentPlayer.setDirection(newDirection);
+            }
+
             game.getNetworkClient().sendMovement(
                     currentPlayer.getId(),
                     currentPlayer.getX(),
                     currentPlayer.getY(),
-                    newDirection
+                    currentPlayer.getDirection()
             );
         }
-    }
 
-    // NOVO MÉTODO: Obter velocidade do terreno baseado na tag do tile
-    private float getCurrentTerrainSpeed() {
-        if (currentPlayer == null) return 1.0f;
-
-        float playerX = currentPlayer.getX();
-        float playerY = currentPlayer.getY();
-        float halfSize = PLAYER_SIZE / 2;
-
-        // Verificar o centro do jogador (ou o pé)
-        float checkX = playerX;
-        float checkY = playerY - halfSize + 10; // pé do personagem
-
-        int chunkX = (int) Math.floor(checkX / (CHUNK_SIZE * WORLD_TILE_SIZE));
-        int chunkY = (int) Math.floor(checkY / (CHUNK_SIZE * WORLD_TILE_SIZE));
-        int localX = (int) (checkX % (CHUNK_SIZE * WORLD_TILE_SIZE)) / WORLD_TILE_SIZE;
-        int localY = (int) (checkY % (CHUNK_SIZE * WORLD_TILE_SIZE)) / WORLD_TILE_SIZE;
-
-        if (localX < 0) localX += CHUNK_SIZE;
-        if (localY < 0) localY += CHUNK_SIZE;
-
-        if (localX >= 0 && localX < CHUNK_SIZE && localY >= 0 && localY < CHUNK_SIZE) {
-            Chunk chunk = loadedChunks.get(chunkX + ":" + chunkY);
-            if (chunk != null) {
-                WorldTile tile = chunk.getTile(localX, localY);
-                if (tile != null && !tile.isEmpty()) {
-                    return tile.getWalkSpeed();
-                }
-            }
+        if (playerUI != null && currentPlayer != null) {
+            playerUI.update(currentPlayer, terrainSpeed);
         }
-
-        return 1.0f;
     }
 
     @Override
@@ -699,19 +805,6 @@ public class GameWorldRenderer implements Screen {
 
         Gdx.gl.glClearColor(0f, 0f, 0f, 1);
         Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT);
-
-        if (Gdx.input.isKeyJustPressed(Input.Keys.ENTER)) {
-            if (uiStage.getKeyboardFocus() == chatInput) {
-                sendChatMessage();
-            } else {
-                uiStage.setKeyboardFocus(chatInput);
-                chatInput.selectAll();
-            }
-        }
-        if (Gdx.input.isKeyJustPressed(Input.Keys.ESCAPE) && uiStage.getKeyboardFocus() == chatInput) {
-            uiStage.setKeyboardFocus(null);
-            chatInput.setText("");
-        }
 
         if (adminMode && Gdx.input.isKeyJustPressed(Input.Keys.F12)) {
             game.setScreen(new MapEditorScreen(game));
@@ -729,8 +822,9 @@ public class GameWorldRenderer implements Screen {
         renderPlayers();
         renderFloatingNames();
 
-        uiStage.act(delta);
-        uiStage.draw();
+        if (playerUI != null) {
+            playerUI.render(batch);
+        }
     }
 
     @Override
@@ -738,18 +832,8 @@ public class GameWorldRenderer implements Screen {
         camera.viewportWidth = width;
         camera.viewportHeight = height;
         camera.update();
-        if (uiStage != null) {
-            uiStage.getViewport().update(width, height, true);
-            for (Actor actor : uiStage.getActors()) {
-                if (actor instanceof Label) {
-                    String text = ((Label) actor).getText().toString();
-                    if (text.contains("WASD")) {
-                        actor.setPosition(width / 2 - text.length() * 4, height - 30);
-                    } else if (text.equals("ADMIN MODE")) {
-                        actor.setPosition(width - 120, height - 25);
-                    }
-                }
-            }
+        if (playerUI != null) {
+            playerUI.resize(width, height);
         }
     }
 
@@ -758,8 +842,7 @@ public class GameWorldRenderer implements Screen {
         if (batch != null) batch.dispose();
         if (shapeRenderer != null) shapeRenderer.dispose();
         if (font != null) font.dispose();
-        if (uiStage != null) uiStage.dispose();
-        if (skin != null) skin.dispose();
+        if (playerUI != null) playerUI.dispose();
         for (Texture t : spritesheets.values()) t.dispose();
         logger.info("GameWorldRenderer disposed");
     }

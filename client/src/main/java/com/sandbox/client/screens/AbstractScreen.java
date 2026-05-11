@@ -34,6 +34,8 @@ public abstract class AbstractScreen implements Screen {
     public void show() {
         batch = new SpriteBatch();
         font = new BitmapFont();
+        font.getData().setScale(1.0f);
+
         camera = new OrthographicCamera();
         camera.setToOrtho(false, Gdx.graphics.getWidth(), Gdx.graphics.getHeight());
 
@@ -46,6 +48,8 @@ public abstract class AbstractScreen implements Screen {
 
     protected void createSkin() {
         skin = new Skin();
+
+        // Registrar fonte
         skin.add("default-font", font);
 
         // Default button texture (dark gray)
@@ -72,6 +76,24 @@ public abstract class AbstractScreen implements Screen {
         goldPixmap.dispose();
         Drawable goldDrawable = new TextureRegionDrawable(goldTexture);
 
+        // Blue button texture (for primary)
+        Pixmap bluePixmap = new Pixmap(1, 1, Pixmap.Format.RGBA8888);
+        bluePixmap.setColor(0.2f, 0.4f, 0.7f, 1);
+        bluePixmap.fill();
+        Texture blueTexture = new Texture(bluePixmap);
+        bluePixmap.dispose();
+        Drawable blueDrawable = new TextureRegionDrawable(blueTexture);
+
+        // Window background
+        Pixmap windowPixmap = new Pixmap(1, 1, Pixmap.Format.RGBA8888);
+        windowPixmap.setColor(0.12f, 0.12f, 0.16f, 0.95f);
+        windowPixmap.fill();
+        Texture windowTexture = new Texture(windowPixmap);
+        windowPixmap.dispose();
+        Drawable windowDrawable = new TextureRegionDrawable(windowTexture);
+
+        skin.add("window-bg", windowDrawable);
+
         // Label styles
         Label.LabelStyle labelStyle = new Label.LabelStyle();
         labelStyle.font = font;
@@ -93,12 +115,18 @@ public abstract class AbstractScreen implements Screen {
         successStyle.fontColor = com.badlogic.gdx.graphics.Color.GREEN;
         skin.add("success", successStyle);
 
+        Label.LabelStyle statusStyle = new Label.LabelStyle();
+        statusStyle.font = font;
+        statusStyle.fontColor = com.badlogic.gdx.graphics.Color.LIGHT_GRAY;
+        skin.add("status", statusStyle);
+
         // Button styles
         TextButton.TextButtonStyle defaultButtonStyle = new TextButton.TextButtonStyle();
         defaultButtonStyle.font = font;
         defaultButtonStyle.fontColor = com.badlogic.gdx.graphics.Color.WHITE;
         defaultButtonStyle.up = darkDrawable;
         defaultButtonStyle.down = darkDrawable;
+        defaultButtonStyle.over = blueDrawable;
         skin.add("default", defaultButtonStyle);
 
         TextButton.TextButtonStyle adminButtonStyle = new TextButton.TextButtonStyle();
@@ -106,6 +134,7 @@ public abstract class AbstractScreen implements Screen {
         adminButtonStyle.fontColor = com.badlogic.gdx.graphics.Color.WHITE;
         adminButtonStyle.up = greenDrawable;
         adminButtonStyle.down = greenDrawable;
+        adminButtonStyle.over = blueDrawable;
         skin.add("admin", adminButtonStyle);
 
         TextButton.TextButtonStyle editorButtonStyle = new TextButton.TextButtonStyle();
@@ -113,15 +142,24 @@ public abstract class AbstractScreen implements Screen {
         editorButtonStyle.fontColor = com.badlogic.gdx.graphics.Color.WHITE;
         editorButtonStyle.up = goldDrawable;
         editorButtonStyle.down = goldDrawable;
+        editorButtonStyle.over = blueDrawable;
         skin.add("editor", editorButtonStyle);
+
+        TextButton.TextButtonStyle primaryButtonStyle = new TextButton.TextButtonStyle();
+        primaryButtonStyle.font = font;
+        primaryButtonStyle.fontColor = com.badlogic.gdx.graphics.Color.WHITE;
+        primaryButtonStyle.up = blueDrawable;
+        primaryButtonStyle.down = blueDrawable;
+        primaryButtonStyle.over = darkDrawable;
+        skin.add("primary", primaryButtonStyle);
 
         // TextField style
         TextField.TextFieldStyle textFieldStyle = new TextField.TextFieldStyle();
         textFieldStyle.font = font;
         textFieldStyle.fontColor = com.badlogic.gdx.graphics.Color.WHITE;
         textFieldStyle.background = darkDrawable;
-        textFieldStyle.cursor = darkDrawable;
-        textFieldStyle.selection = darkDrawable;
+        textFieldStyle.cursor = blueDrawable;
+        textFieldStyle.selection = blueDrawable;
         skin.add("default", textFieldStyle);
 
         // CheckBox style
@@ -136,6 +174,31 @@ public abstract class AbstractScreen implements Screen {
         checkBoxStyle.checkboxOn = new TextureRegionDrawable(checkTexture);
         checkBoxStyle.checkboxOff = darkDrawable;
         skin.add("default", checkBoxStyle);
+
+        // ScrollPane style
+        ScrollPane.ScrollPaneStyle scrollStyle = new ScrollPane.ScrollPaneStyle();
+        scrollStyle.background = windowDrawable;
+        scrollStyle.vScroll = darkDrawable;
+        scrollStyle.vScrollKnob = blueDrawable;
+        scrollStyle.hScroll = darkDrawable;
+        scrollStyle.hScrollKnob = blueDrawable;
+        skin.add("default", scrollStyle);
+
+        // SelectBox style
+        SelectBox.SelectBoxStyle selectBoxStyle = new SelectBox.SelectBoxStyle();
+        selectBoxStyle.font = font;
+        selectBoxStyle.fontColor = com.badlogic.gdx.graphics.Color.WHITE;
+        selectBoxStyle.background = darkDrawable;
+        selectBoxStyle.scrollStyle = scrollStyle;
+
+        List.ListStyle listStyle = new List.ListStyle();
+        listStyle.font = font;
+        listStyle.fontColorSelected = com.badlogic.gdx.graphics.Color.WHITE;
+        listStyle.fontColorUnselected = com.badlogic.gdx.graphics.Color.LIGHT_GRAY;
+        listStyle.selection = blueDrawable;
+        listStyle.background = windowDrawable;
+        selectBoxStyle.listStyle = listStyle;
+        skin.add("default", selectBoxStyle);
     }
 
     protected abstract void initUI();
