@@ -8,7 +8,7 @@ public class LoginResponse extends Packet {
     public boolean success;
     public String message;
     public Player player;
-    public Map<String, Player> nearbyPlayers;  // String como key
+    public Map<String, Player> nearbyPlayers;
 
     public LoginResponse() {}
 

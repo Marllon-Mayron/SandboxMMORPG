@@ -93,18 +93,25 @@ public class GameServerHandler extends SimpleChannelInboundHandler<Object> {
                 LoginResponse response = new LoginResponse(true, "Login bem-sucedido!", player);
                 response.nearbyPlayers = new java.util.HashMap<>();
 
+                // ADICIONAR TODOS OS JOGADORES EXISTENTES (exceto ele mesmo)
                 for (Player p : GameWorld.getInstance().getAllPlayers()) {
                     if (!p.getId().equals(player.getId())) {
                         response.nearbyPlayers.put(p.getId(), p);
+                        logger.debug("Adicionando jogador existente: {} na posição ({}, {})",
+                                p.getUsername(), p.getX(), p.getY());
                     }
                 }
 
                 sendPacket(ctx, response);
-                logger.info(" RESPOSTA LOGIN enviada com {} jogadores próximos", response.nearbyPlayers.size());
+                logger.info("RESPOSTA LOGIN enviada com {} jogadores já conectados",
+                        response.nearbyPlayers.size());
 
+                // Anunciar para TODOS os outros que um novo jogador entrou
                 ChatMessage joinMsg = new ChatMessage(player.getId(), "SISTEMA",
                         player.getUsername() + " entrou no mundo!");
                 broadcastToAll(joinMsg);
+
+                // Enviar MOVEMENT_BROADCAST para todos os outros (para eles renderizarem o novo jogador)
                 broadcastToAll(new MovementBroadcast(player));
 
                 // Enviar o mapa para o jogador
@@ -116,7 +123,7 @@ public class GameServerHandler extends SimpleChannelInboundHandler<Object> {
                 sendPacket(ctx, response);
             }
         } catch (Exception e) {
-            logger.error(" ERRO handleLogin: {}", e.getMessage(), e);
+            logger.error("ERRO handleLogin: {}", e.getMessage(), e);
         }
     }
 

@@ -67,17 +67,19 @@ public class GameWorldRenderer implements Screen {
     private boolean spritesheetsLoaded = false;
     private Set<String> pendingSpritesheets = new HashSet<>();
     private MapJSON pendingMap = null;
+    private final Map<String, Player> initialNearbyPlayers;
 
-    public GameWorldRenderer(SandboxClient game, boolean adminMode) {
+    public GameWorldRenderer(SandboxClient game, boolean adminMode, Map<String, Player> nearbyPlayers) {
         this.game = game;
         this.adminMode = adminMode;
+        this.initialNearbyPlayers = nearbyPlayers != null ? nearbyPlayers : new HashMap<>();
         this.otherPlayers = new ConcurrentHashMap<>();
         this.loadedChunks = new ConcurrentHashMap<>();
         this.spritesheets = new HashMap<>();
         this.spritesheetRegions = new HashMap<>();
         this.chatDisplay = new StringBuilder();
 
-        logger.info("GameWorldRenderer created");
+        logger.info("GameWorldRenderer created with {} initial nearby players", this.initialNearbyPlayers.size());
     }
 
     /**
@@ -315,6 +317,18 @@ public class GameWorldRenderer implements Screen {
     public void show() {
         logger.info("GameWorldRenderer show()");
         setupCallbacks();
+
+        // Adicionar jogadores iniciais antes de qualquer outra coisa
+        if (initialNearbyPlayers != null && !initialNearbyPlayers.isEmpty()) {
+            logger.info("Adding {} initial nearby players to world", initialNearbyPlayers.size());
+            for (Player player : initialNearbyPlayers.values()) {
+                if (currentPlayer == null || !player.getId().equals(currentPlayer.getId())) {
+                    otherPlayers.put(player.getId(), player);
+                    logger.debug("Initial player loaded: {} at ({}, {})",
+                            player.getUsername(), player.getX(), player.getY());
+                }
+            }
+        }
 
         camera = new OrthographicCamera();
         camera.setToOrtho(false, Gdx.graphics.getWidth(), Gdx.graphics.getHeight());

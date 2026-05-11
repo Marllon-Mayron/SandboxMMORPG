@@ -6,6 +6,8 @@ import com.common.sandbox.model.Player;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.Map;
+
 public class SandboxClient extends Game {
     private static final Logger logger = LoggerFactory.getLogger(SandboxClient.class);
 
@@ -58,8 +60,8 @@ public class SandboxClient extends Game {
         return screenManager;
     }
 
-    public void startGame(Player player, boolean adminMode) {
-        screenManager.showGame(player, adminMode);
+    public void startGame(Player player, boolean adminMode, Map<String, Player> nearbyPlayers) {
+        screenManager.showGame(player, adminMode, nearbyPlayers);
     }
 
     public void openMapEditor() {

@@ -6,6 +6,7 @@ import com.sandbox.client.SandboxClient;
 import com.common.sandbox.model.Player;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import java.util.Map;
 
 public class GameScreen implements Screen {
     private static final Logger logger = LoggerFactory.getLogger(GameScreen.class);
@@ -13,20 +14,21 @@ public class GameScreen implements Screen {
     private final SandboxClient game;
     private final Player player;
     private final boolean adminMode;
+    private final Map<String, Player> nearbyPlayers;
     private GameWorldRenderer worldRenderer;
 
-    public GameScreen(SandboxClient game, Player player, boolean adminMode) {
+    public GameScreen(SandboxClient game, Player player, boolean adminMode, Map<String, Player> nearbyPlayers) {
         this.game = game;
         this.player = player;
         this.adminMode = adminMode;
+        this.nearbyPlayers = nearbyPlayers;
     }
 
     @Override
     public void show() {
         logger.info("GameScreen show() - Creating GameWorldRenderer");
-        worldRenderer = new GameWorldRenderer(game, adminMode);
+        worldRenderer = new GameWorldRenderer(game, adminMode, nearbyPlayers);
         worldRenderer.setCurrentPlayer(player);
-        // O próprio GameWorldRenderer gerencia seu show()
         worldRenderer.show();
     }
 

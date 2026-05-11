@@ -7,6 +7,8 @@ import com.sandbox.client.screens.auth.RegisterScreen;
 import com.sandbox.client.screens.game.GameScreen;
 import com.common.sandbox.model.Player;
 
+import java.util.Map;
+
 public class ScreenManager {
     private final SandboxClient game;
 
@@ -29,8 +31,8 @@ public class ScreenManager {
         game.setScreen(screen);
     }
 
-    public void showGame(Player player, boolean adminMode) {
-        GameScreen gameScreen = new GameScreen(game, player, adminMode);
+    public void showGame(Player player, boolean adminMode, Map<String, Player> nearbyPlayers) {
+        GameScreen gameScreen = new GameScreen(game, player, adminMode, nearbyPlayers);
         game.setScreen(gameScreen);
     }
 

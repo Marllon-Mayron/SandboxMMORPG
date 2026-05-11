@@ -205,7 +205,8 @@ public class LoginScreen extends AbstractScreen {
                     MapEditorScreen editorScreen = new MapEditorScreen(game);
                     game.setScreen(editorScreen);
                 } else {
-                    game.startGame(response.player, false);
+                    // Passar nearbyPlayers para o jogo
+                    game.startGame(response.player, false, response.nearbyPlayers);
                 }
             } else {
                 errorLabel.setText(response.message);

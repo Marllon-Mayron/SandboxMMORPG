@@ -118,7 +118,9 @@ public class GameWorldRenderer implements Screen {
 
     public void setCurrentPlayer(Player player) {
         this.currentPlayer = player;
-        logger.info("Current player set: {}", player.getUsername());
+        logger.info("Current player: {} at ({}, {})", player.getUsername(), player.getX(), player.getY());
+
+        // NÃO limpar otherPlayers aqui! Os jogadores já foram adicionados no onLoginResponse
 
         chatDisplay.append("*** Welcome to Sandbox Experiment! ***\n");
         chatDisplay.append("*** Use WASD to move ***\n");
@@ -132,6 +134,11 @@ public class GameWorldRenderer implements Screen {
             if (chatScrollPane != null) {
                 chatScrollPane.setScrollPercentY(1);
             }
+        }
+
+        if (camera != null) {
+            camera.position.set(currentPlayer.getX(), currentPlayer.getY(), 0);
+            camera.update();
         }
     }
 
