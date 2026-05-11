@@ -14,6 +14,8 @@ public class Player implements Serializable {
     private Integer lastChunkX;
     private Integer lastChunkY;
 
+    private transient long lastSaveTime; // transient = não serializa
+
     // Construtor padrão (OBRIGATÓRIO para Kryo)
     public Player() {
         this.id = "";
@@ -57,4 +59,7 @@ public class Player implements Serializable {
 
     public Integer getLastChunkY() { return lastChunkY; }
     public void setLastChunkY(Integer lastChunkY) { this.lastChunkY = lastChunkY; }
+
+    public long getLastSaveTime() { return lastSaveTime; }
+    public void setLastSaveTime(long lastSaveTime) { this.lastSaveTime = lastSaveTime; }
 }

@@ -100,10 +100,16 @@ public class SandboxServer {
 
     public void shutdown() {
         logger.info("Desligando servidor...");
+
+        // Salvar todas as posições antes de desligar
+        GameWorld.getInstance().saveAllPlayersOnShutdown();
+
         if (bossGroup != null) bossGroup.shutdownGracefully();
         if (workerGroup != null) workerGroup.shutdownGracefully();
         DatabaseManager.getInstance().close();
         RedisManager.getInstance().close();
+
+        logger.info("✅ Servidor desligado completamente");
     }
 
     public static void main(String[] args) throws Exception {

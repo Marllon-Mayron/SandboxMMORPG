@@ -158,16 +158,17 @@ public class DatabaseManager {
                     Player player = new Player(id.toString(), username, email);
                     player.setX(x);
                     player.setY(y);
-                    player.setDirection(direction);
+                    player.setDirection(direction != null ? direction : "DOWN");
 
                     updateLastLogin(id);
+                    logger.info("✅ Jogador {} carregado na posição ({}, {})", username, x, y);
                     return player;
                 }
             }
             return null;
 
         } catch (SQLException e) {
-            logger.error("Error authenticating player", e);
+            logger.error("❌ Erro ao autenticar jogador", e);
             return null;
         }
     }
@@ -194,6 +195,41 @@ public class DatabaseManager {
             pstmt.executeUpdate();
         } catch (SQLException e) {
             logger.error("Error updating player position", e);
+        }
+    }
+
+    /**
+     * Salva a posição do jogador (assíncrono para performance)
+     */
+    public void savePlayerPositionAsync(Player player) {
+        // Usar virtual thread para não bloquear
+        Thread.startVirtualThread(() -> {
+            savePlayerPosition(player);
+        });
+    }
+
+    /**
+     * Salva a posição do jogador (síncrono - usado no logout)
+     */
+    public void savePlayerPosition(Player player) {
+        String sql = "UPDATE players SET x = ?, y = ?, direction = ?, last_login = CURRENT_TIMESTAMP WHERE id = ?::uuid";
+
+        try (Connection conn = getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+
+            pstmt.setFloat(1, player.getX());
+            pstmt.setFloat(2, player.getY());
+            pstmt.setString(3, player.getDirection());
+            pstmt.setObject(4, UUID.fromString(player.getId()));
+
+            int updated = pstmt.executeUpdate();
+            if (updated > 0) {
+                logger.debug("✅ Posição salva para {}: ({}, {}) dir={}",
+                        player.getUsername(), player.getX(), player.getY(), player.getDirection());
+            }
+
+        } catch (SQLException e) {
+            logger.error("❌ Erro ao salvar posição do jogador {}", player.getUsername(), e);
         }
     }
 
