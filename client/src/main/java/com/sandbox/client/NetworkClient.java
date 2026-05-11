@@ -41,6 +41,7 @@ public class NetworkClient {
     private Consumer<MapSaveResponse> mapSaveCallback;
     private Consumer<MapLoadResponse> mapLoadCallback;
     private Consumer<Chunk> chunkCallback;
+    private Consumer<PlayerLeftPacket> playerLeftCallback;
 
     public NetworkClient(String host, int port) {
         this.host = host;
@@ -206,6 +207,9 @@ public class NetworkClient {
     public void setLoginCallback(Consumer<LoginResponse> callback) { this.loginCallback = callback; }
     public void setRegisterCallback(Consumer<RegisterResponse> callback) { this.registerCallback = callback; }
     public void setMovementCallback(Consumer<MovementBroadcast> callback) { this.movementCallback = callback; }
+    public void setPlayerLeftCallback(Consumer<PlayerLeftPacket> callback) {
+        this.playerLeftCallback = callback;
+    }
     public void setChatCallback(Consumer<ChatMessage> callback) { this.chatCallback = callback; }
     public void setChunkUpdateCallback(Consumer<ChunkUpdatePacket> callback) { this.chunkUpdateCallback = callback; }
     public void setMapSaveCallback(Consumer<MapSaveResponse> callback) { this.mapSaveCallback = callback; }
@@ -213,6 +217,8 @@ public class NetworkClient {
     public void setChunkCallback(Consumer<Chunk> callback) {
         this.chunkCallback = callback;
     }
+
+
     private class ClientHandler extends SimpleChannelInboundHandler<Object> {
         @Override
         protected void channelRead0(ChannelHandlerContext ctx, Object msg) {
@@ -225,6 +231,8 @@ public class NetworkClient {
                     registerCallback.accept((RegisterResponse) msg);
                 } else if (msg instanceof MovementBroadcast && movementCallback != null) {
                     movementCallback.accept((MovementBroadcast) msg);
+                } else if (msg instanceof PlayerLeftPacket && playerLeftCallback != null) {
+                    playerLeftCallback.accept((PlayerLeftPacket) msg);
                 } else if (msg instanceof ChatMessage && chatCallback != null) {
                     chatCallback.accept((ChatMessage) msg);
                 } else if (msg instanceof ChunkUpdatePacket && chunkUpdateCallback != null) {

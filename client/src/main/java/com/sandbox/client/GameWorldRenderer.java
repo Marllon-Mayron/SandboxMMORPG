@@ -24,6 +24,7 @@ import com.common.sandbox.model.Chunk;
 import com.common.sandbox.model.WorldTile;
 import com.common.sandbox.network.packets.ChatMessage;
 import com.common.sandbox.network.packets.MovementBroadcast;
+import com.common.sandbox.network.packets.PlayerLeftPacket;
 import com.sandbox.client.editor.MapEditorScreen;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -200,6 +201,7 @@ public class GameWorldRenderer implements Screen {
                 });
             }
         });
+        game.getNetworkClient().setPlayerLeftCallback(this::onPlayerLeft);
         logger.info("Callbacks configured");
     }
 
@@ -212,6 +214,20 @@ public class GameWorldRenderer implements Screen {
                     currentPlayer.setDirection(broadcast.player.getDirection());
                 } else {
                     otherPlayers.put(broadcast.player.getId(), broadcast.player);
+                }
+            }
+        });
+    }
+
+    private void onPlayerLeft(PlayerLeftPacket packet) {
+        Gdx.app.postRunnable(() -> {
+            Player removed = otherPlayers.remove(packet.playerId);
+            if (removed != null) {
+                logger.info("👋 Jogador removido do mundo: {}", packet.playerName);
+                // Atualizar chat se quiser mostrar mensagem
+                chatDisplay.append("*** " + packet.playerName + " saiu do mundo ***\n");
+                if (chatLabel != null) {
+                    chatLabel.setText(chatDisplay.toString());
                 }
             }
         });

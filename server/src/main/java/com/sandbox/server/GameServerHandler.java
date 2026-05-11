@@ -35,11 +35,11 @@ public class GameServerHandler extends SimpleChannelInboundHandler<Object> {
     @Override
     protected void channelRead0(ChannelHandlerContext ctx, Object msg) {
         try {
-            logger.info("📦 Pacote recebido - Tipo: {}", msg.getClass().getSimpleName());
+            logger.info("Pacote recebido - Tipo: {}", msg.getClass().getSimpleName());
 
             if (msg instanceof HandshakePacket) {
                 HandshakePacket handshake = (HandshakePacket) msg;
-                logger.info("🤝 HANDSHAKE recebido - Versão: {}, Cliente: {}", handshake.version, handshake.clientId);
+                logger.info("HANDSHAKE recebido - Versão: {}, Cliente: {}", handshake.version, handshake.clientId);
 
             } else if (msg instanceof LoginRequest) {
                 handleLogin(ctx, (LoginRequest) msg);
@@ -58,27 +58,27 @@ public class GameServerHandler extends SimpleChannelInboundHandler<Object> {
                 }
 
             } else if (msg instanceof MapSaveRequest) {
-                logger.info("🗺️ MAP_SAVE_REQUEST recebido");
+                logger.info("MAP_SAVE_REQUEST recebido");
                 handleMapSave(ctx, (MapSaveRequest) msg);
 
             } else if (msg instanceof MapLoadRequest) {
-                logger.info("🗺️ MAP_LOAD_REQUEST recebido");
+                logger.info("MAP_LOAD_REQUEST recebido");
                 handleMapLoad(ctx, (MapLoadRequest) msg);
 
             } else if (msg instanceof PingPacket) {
                 logger.debug("Ping recebido");
             } else {
-                logger.warn("⚠️ Tipo de pacote desconhecido: {}", msg.getClass().getSimpleName());
+                logger.warn("Tipo de pacote desconhecido: {}", msg.getClass().getSimpleName());
             }
 
         } catch (Exception e) {
-            logger.error("❌ Erro ao processar pacote: {}", e.getMessage(), e);
+            logger.error("Erro ao processar pacote: {}", e.getMessage(), e);
         }
     }
 
     private void handleLogin(ChannelHandlerContext ctx, LoginRequest request) {
         try {
-            logger.info("📥 LOGIN - Usuário: {}", request.username);
+            logger.info("LOGIN - Usuário: {}", request.username);
 
             Player player = DatabaseManager.getInstance().authenticatePlayer(
                     request.username,
@@ -86,7 +86,7 @@ public class GameServerHandler extends SimpleChannelInboundHandler<Object> {
             );
 
             if (player != null) {
-                logger.info("✅ LOGIN SUCESSO - Usuário: {}", request.username);
+                logger.info("LOGIN SUCESSO - Usuário: {}", request.username);
                 currentPlayer = player;
                 GameWorld.getInstance().addPlayer(player, channelId);
 
@@ -100,10 +100,10 @@ public class GameServerHandler extends SimpleChannelInboundHandler<Object> {
                 }
 
                 sendPacket(ctx, response);
-                logger.info("📤 RESPOSTA LOGIN enviada com {} jogadores próximos", response.nearbyPlayers.size());
+                logger.info(" RESPOSTA LOGIN enviada com {} jogadores próximos", response.nearbyPlayers.size());
 
                 ChatMessage joinMsg = new ChatMessage(player.getId(), "SISTEMA",
-                        "✨ " + player.getUsername() + " entrou no mundo!");
+                        player.getUsername() + " entrou no mundo!");
                 broadcastToAll(joinMsg);
                 broadcastToAll(new MovementBroadcast(player));
 
@@ -111,12 +111,12 @@ public class GameServerHandler extends SimpleChannelInboundHandler<Object> {
                 sendMapToPlayer(ctx, player);
 
             } else {
-                logger.warn("❌ LOGIN FALHOU - Usuário: {}", request.username);
+                logger.warn("LOGIN FALHOU - Usuário: {}", request.username);
                 LoginResponse response = new LoginResponse(false, "Usuário ou senha inválidos!", null);
                 sendPacket(ctx, response);
             }
         } catch (Exception e) {
-            logger.error("❌ ERRO handleLogin: {}", e.getMessage(), e);
+            logger.error(" ERRO handleLogin: {}", e.getMessage(), e);
         }
     }
 
@@ -126,7 +126,7 @@ public class GameServerHandler extends SimpleChannelInboundHandler<Object> {
             if (map != null) {
                 MapLoadResponse response = new MapLoadResponse(true, "Mapa carregado!", map);
                 sendPacket(ctx, response);
-                logger.info("📦 Mapa enviado para o jogador: {} chunks", map.getChunks().size());
+                logger.info("Mapa enviado para o jogador: {} chunks", map.getChunks().size());
             }
         } catch (Exception e) {
             logger.error("Erro ao enviar mapa para o jogador", e);
@@ -145,12 +145,12 @@ public class GameServerHandler extends SimpleChannelInboundHandler<Object> {
 
             RegisterResponse response = new RegisterResponse(
                     success,
-                    success ? "✅ Registro bem-sucedido!" : "❌ Usuário ou email já existe!"
+                    success ? "Registro bem-sucedido!" : "Usuário ou email já existe!"
             );
 
             sendPacket(ctx, response);
         } catch (Exception e) {
-            logger.error("❌ ERRO handleRegister: {}", e.getMessage(), e);
+            logger.error("ERRO handleRegister: {}", e.getMessage(), e);
         }
     }
 
@@ -172,7 +172,7 @@ public class GameServerHandler extends SimpleChannelInboundHandler<Object> {
                 broadcastToAll(new MovementBroadcast(updatedPlayer));
             }
         } catch (Exception e) {
-            logger.error("❌ ERRO handleMovement: {}", e.getMessage(), e);
+            logger.error("ERRO handleMovement: {}", e.getMessage(), e);
         }
     }
 
@@ -190,9 +190,9 @@ public class GameServerHandler extends SimpleChannelInboundHandler<Object> {
 
             GameWorld.getInstance().addChatMessage(currentPlayer.getId(), currentPlayer.getUsername(), chatMsg.message);
             broadcastToAll(chatMsg);
-            logger.info("💬 {}: {}", currentPlayer.getUsername(), chatMsg.message);
+            logger.info(" {}: {}", currentPlayer.getUsername(), chatMsg.message);
         } catch (Exception e) {
-            logger.error("❌ ERRO handleChat: {}", e.getMessage());
+            logger.error("ERRO handleChat: {}", e.getMessage());
         }
     }
 
@@ -255,9 +255,9 @@ public class GameServerHandler extends SimpleChannelInboundHandler<Object> {
     @Override
     public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
         if (cause instanceof ReadTimeoutException) {
-            logger.info("⏰ Timeout: {}", channelId);
+            logger.info(" Timeout: {}", channelId);
         } else {
-            logger.error("❌ Erro: {}", cause.getMessage());
+            logger.error(" Erro: {}", cause.getMessage());
         }
         ctx.close();
     }
@@ -265,11 +265,19 @@ public class GameServerHandler extends SimpleChannelInboundHandler<Object> {
     @Override
     public void channelInactive(ChannelHandlerContext ctx) {
         if (currentPlayer != null) {
-            GameWorld.getInstance().removePlayer(channelId);
+            // CRIA UM PACOTE DE SAÍDA PARA BROADCAST
+            PlayerLeftPacket leftPacket = new PlayerLeftPacket(currentPlayer.getId(), currentPlayer.getUsername());
+            GameServerHandler.broadcastToAll(leftPacket);
+
+            // MENSAGEM DE SAÍDA NO CHAT
             ChatMessage leaveMsg = new ChatMessage(currentPlayer.getId(), "SISTEMA",
-                    "👋 " + currentPlayer.getUsername() + " saiu!");
-            broadcastToAll(leaveMsg);
-            logger.info("📤 {} desconectado", currentPlayer.getUsername());
+                    currentPlayer.getUsername() + " saiu do mundo!");
+            GameServerHandler.broadcastToAll(leaveMsg);
+
+            // REMOVE DO MUNDO
+            GameWorld.getInstance().removePlayer(channelId);
+
+            logger.info("{} desconectado e removido do mundo", currentPlayer.getUsername());
         }
         channels.remove(ctx.channel());
         logger.info("🔌 Conexão fechada: {}", channelId);

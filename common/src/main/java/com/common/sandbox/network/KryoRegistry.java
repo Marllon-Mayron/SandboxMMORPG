@@ -19,6 +19,7 @@ public class KryoRegistry {
 
     private static final int ID_MOVEMENT_REQUEST = 20;
     private static final int ID_MOVEMENT_BROADCAST = 21;
+    private static final int ID_PLAYER_LEFT = 22;
 
     private static final int ID_CHAT_MESSAGE = 30;
 
@@ -56,7 +57,8 @@ public class KryoRegistry {
         // Movement
         kryo.register(MovementRequest.class, ID_MOVEMENT_REQUEST);
         kryo.register(MovementBroadcast.class, ID_MOVEMENT_BROADCAST);
-
+        kryo.register(PlayerLeftPacket.class, ID_PLAYER_LEFT);
+        
         // Chat
         kryo.register(ChatMessage.class, ID_CHAT_MESSAGE);
 
