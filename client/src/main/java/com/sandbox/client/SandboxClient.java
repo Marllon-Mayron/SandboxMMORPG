@@ -30,6 +30,13 @@ public class SandboxClient extends Game {
         }
     }
 
+    public void setNetworkClient(NetworkClient networkClient) {
+        if (this.networkClient != null) {
+            this.networkClient.disconnect();
+        }
+        this.networkClient = networkClient;
+    }
+
     @Override
     public void render() {
         super.render();  // Important: calls current screen's render

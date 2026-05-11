@@ -8,6 +8,7 @@ import com.badlogic.gdx.scenes.scene2d.ui.Table;
 import com.badlogic.gdx.scenes.scene2d.ui.TextButton;
 import com.badlogic.gdx.scenes.scene2d.ui.TextField;
 import com.badlogic.gdx.scenes.scene2d.utils.ChangeListener;
+import com.sandbox.client.NetworkClient;
 import com.sandbox.client.SandboxClient;
 import com.sandbox.client.editor.MapEditorScreen;
 import com.sandbox.client.screens.AbstractScreen;
@@ -17,12 +18,18 @@ public class LoginScreen extends AbstractScreen {
     private final boolean adminMode;
     private TextField usernameField;
     private TextField passwordField;
+    private TextField hostField;
+    private TextField portField;
     private Label errorLabel;
     private Label modeIndicator;
 
     // Admin credentials (only user marllon can access admin mode)
     private static final String ADMIN_USERNAME = "marllon";
     private static final String ADMIN_PASSWORD = "123456";
+
+    // Configurações padrão
+    private static final String DEFAULT_HOST = "localhost";
+    private static final int DEFAULT_PORT = 8080;
 
     public LoginScreen(SandboxClient game, boolean adminMode) {
         super(game);
@@ -41,7 +48,6 @@ public class LoginScreen extends AbstractScreen {
         table.add(titleLabel).padBottom(40);
         table.row();
 
-        // Mode indicator
         if (adminMode) {
             modeIndicator = new Label("Admin Mode - Login with admin credentials", skin, "title");
             modeIndicator.setFontScale(0.9f);
@@ -51,13 +57,27 @@ public class LoginScreen extends AbstractScreen {
 
         Table formTable = new Table();
 
-        // Username field
+        // Host
+        formTable.add(new Label("Server Host:", skin)).left().padRight(10).width(100);
+        hostField = new TextField(DEFAULT_HOST, skin);
+        hostField.setMessageText("ex: localhost or 192.168.1.100");
+        formTable.add(hostField).width(250).padBottom(10);
+        formTable.row();
+
+        // Porta
+        formTable.add(new Label("Server Port:", skin)).left().padRight(10).width(100);
+        portField = new TextField(String.valueOf(DEFAULT_PORT), skin);
+        portField.setMessageText("ex: 8080");
+        formTable.add(portField).width(250).padBottom(15);
+        formTable.row();
+
+        // Username
         formTable.add(new Label("Username:", skin)).left().padRight(10).width(100);
         usernameField = new TextField("", skin);
         formTable.add(usernameField).width(250).padBottom(15);
         formTable.row();
 
-        // Password field
+        // Password
         formTable.add(new Label("Password:", skin)).left().padRight(10).width(100);
         passwordField = new TextField("", skin);
         passwordField.setPasswordMode(true);
@@ -90,7 +110,6 @@ public class LoginScreen extends AbstractScreen {
         formTable.add(buttonTable).colspan(2);
         formTable.row();
 
-        // Back button (only in dev mode or if coming from selector)
         if (Gdx.app.getType() == com.badlogic.gdx.Application.ApplicationType.Desktop) {
             formTable.row();
             TextButton backButton = new TextButton("BACK TO MODE SELECTOR", skin, "default");
@@ -113,27 +132,67 @@ public class LoginScreen extends AbstractScreen {
     private void handleLogin() {
         String username = usernameField.getText().trim();
         String password = passwordField.getText();
+        String host = hostField.getText().trim();
+        String portStr = portField.getText().trim();
 
         if (username.isEmpty() || password.isEmpty()) {
             errorLabel.setText("Please fill all fields");
             return;
         }
 
-        // Validate admin credentials for admin mode
+        if (host.isEmpty()) {
+            host = DEFAULT_HOST;
+        }
+
+        int port;
+        try {
+            port = Integer.parseInt(portStr);
+            if (port <= 0 || port > 65535) {
+                throw new NumberFormatException();
+            }
+        } catch (NumberFormatException e) {
+            errorLabel.setText("Invalid port number (1-65535)");
+            return;
+        }
+
+
         if (adminMode) {
             if (!ADMIN_USERNAME.equals(username) || !ADMIN_PASSWORD.equals(password)) {
-                errorLabel.setText("Invalid admin credentials. Only user 'marllon' can access admin mode.");
+                errorLabel.setText("CREDENCIAIS INVALIDAS PARA ACESSAR O MODO ADM");
                 errorLabel.setColor(1, 0, 0, 1);
                 return;
             }
             errorLabel.setText("");
         }
 
-        errorLabel.setText("Connecting...");
+        errorLabel.setText("Conectando em: " + host + ":" + port + "...");
         errorLabel.setColor(1, 1, 0, 1);
 
-        game.getNetworkClient().setLoginCallback(this::onLoginResponse);
-        game.getNetworkClient().sendLogin(username, password);
+        reconnectToServer(host, port, username, password);
+    }
+
+    private void reconnectToServer(String host, int port, String username, String password) {
+        game.getNetworkClient().disconnect();
+
+        NetworkClient newClient = new NetworkClient(host, port);
+        game.setNetworkClient(newClient);
+        newClient.connect();
+
+        Thread.startVirtualThread(() -> {
+            try {
+                Thread.sleep(500);
+                Gdx.app.postRunnable(() -> {
+                    game.getNetworkClient().setLoginCallback(this::onLoginResponse);
+                    game.getNetworkClient().sendLogin(username, password);
+                });
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                Gdx.app.postRunnable(() -> {
+                    errorLabel.setText("Connection error: " + e.getMessage());
+                    errorLabel.setColor(1, 0, 0, 1);
+                });
+            }
+        });
     }
 
     private void onLoginResponse(LoginResponse response) {
@@ -141,13 +200,11 @@ public class LoginScreen extends AbstractScreen {
             if (response.success) {
                 logger.info("Login successful: {}", response.player.getUsername());
 
-                // If admin mode, open map editor directly
                 if (adminMode) {
                     logger.info("Admin mode - Opening Map Editor");
                     MapEditorScreen editorScreen = new MapEditorScreen(game);
                     game.setScreen(editorScreen);
                 } else {
-                    // Normal mode - start game
                     game.startGame(response.player, false);
                 }
             } else {
