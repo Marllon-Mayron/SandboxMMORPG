@@ -1,0 +1,41 @@
+dependencies {
+    implementation project(':common')
+
+    implementation "com.badlogicgames.gdx:gdx:1.12.1"
+    implementation "com.badlogicgames.gdx:gdx-backend-lwjgl3:1.12.1"
+    implementation "com.badlogicgames.gdx:gdx-platform:1.12.1:natives-desktop"
+
+    // ADICIONE ESTAS LINHAS para FreeTypeFont
+    implementation "com.badlogicgames.gdx:gdx-freetype:1.12.1"
+    implementation "com.badlogicgames.gdx:gdx-freetype-platform:1.12.1:natives-desktop"
+
+    implementation 'io.netty:netty-all:4.1.107.Final'
+    implementation 'com.esotericsoftware:kryo:5.5.0'
+    implementation 'org.slf4j:slf4j-simple:2.0.11'
+}
+
+application {
+    mainClass = 'com.sandbox.client.DesktopLauncher'
+}
+
+// Configuração CRÍTICA para Java 21 - Permite reflexão em módulos internos
+tasks.withType(JavaExec).configureEach {
+    jvmArgs = [
+            '--add-opens', 'java.base/java.util=ALL-UNNAMED',
+            '--add-opens', 'java.base/java.lang=ALL-UNNAMED',
+            '--add-opens', 'java.base/java.lang.reflect=ALL-UNNAMED',
+            '--add-opens', 'java.base/java.text=ALL-UNNAMED',
+            '--add-opens', 'java.desktop/java.awt.font=ALL-UNNAMED',
+            '--add-opens', 'java.base/sun.nio.ch=ALL-UNNAMED',
+            '--add-opens', 'java.base/java.util.concurrent.atomic=ALL-UNNAMED',
+            '--add-opens', 'java.base/java.io=ALL-UNNAMED'
+    ]
+}
+
+// Configuração específica para a task run
+run {
+    jvmArgs = [
+            '--add-opens', 'java.base/java.util=ALL-UNNAMED',
+            '--add-opens', 'java.base/java.lang=ALL-UNNAMED'
+    ]
+}

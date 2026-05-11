@@ -1,0 +1,38 @@
+plugins {
+    id 'java-library'
+}
+
+group = 'com.sandbox'
+version = '1.0.0'
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_21
+    targetCompatibility = JavaVersion.VERSION_21
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    // Kryo para serialização
+    api 'com.esotericsoftware:kryo:5.5.0'
+
+    // Netty (alguns pacotes do common podem precisar)
+    api 'io.netty:netty-all:4.1.107.Final'
+
+    // Logging
+    api 'org.slf4j:slf4j-api:2.0.11'
+
+    // LibGDX (modelos podem usar)
+    api "com.badlogicgames.gdx:gdx:1.12.1"
+
+    implementation 'com.fasterxml.jackson.core:jackson-databind:2.15.2'
+}
+
+// Configuração para Java 21
+tasks.withType(JavaCompile).configureEach {
+    options.compilerArgs.addAll([
+            '--add-exports', 'java.base/java.util=ALL-UNNAMED'
+    ])
+}

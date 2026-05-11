@@ -1,0 +1,81 @@
+// Configuração do root project
+allprojects {
+    repositories {
+        mavenCentral()
+    }
+}
+
+subprojects {
+    apply plugin: 'java'
+
+    group = 'com.sandbox'
+    version = '1.0.0'
+
+    // Configuração de compilação
+    tasks.withType(JavaCompile).configureEach {
+        sourceCompatibility = '21'
+        targetCompatibility = '21'
+        options.encoding = 'UTF-8'
+        options.compilerArgs.add('--enable-preview')
+    }
+
+    // Configuração para execução
+    tasks.withType(JavaExec).configureEach {
+        jvmArgs = [
+                '--enable-preview',
+                '--add-opens', 'java.base/java.util=ALL-UNNAMED',
+                '--add-opens', 'java.base/java.lang=ALL-UNNAMED',
+                '--add-opens', 'java.base/java.lang.reflect=ALL-UNNAMED'
+        ]
+    }
+}
+
+// DEPENDÊNCIAS COMUNS PARA TODOS OS MÓDULOS
+project(':common') {
+    dependencies {
+        implementation 'com.esotericsoftware:kryo:5.5.0'
+        implementation 'org.slf4j:slf4j-api:2.0.11'
+    }
+}
+
+// DEPENDÊNCIAS DO SERVIDOR
+project(':server') {
+    apply plugin: 'application'
+
+    dependencies {
+        implementation project(':common')
+
+        implementation 'io.netty:netty-all:4.1.107.Final'
+        implementation 'com.esotericsoftware:kryo:5.5.0'
+        implementation 'org.postgresql:postgresql:42.7.1'
+        implementation 'org.mindrot:jbcrypt:0.4'
+        implementation 'org.slf4j:slf4j-simple:2.0.11'
+    }
+
+    application {
+        mainClass = 'com.sandbox.server.SandboxServer'
+    }
+}
+
+// DEPENDÊNCIAS DO CLIENTE
+project(':client') {
+    apply plugin: 'application'
+
+    dependencies {
+        implementation project(':common')
+
+        implementation "com.badlogicgames.gdx:gdx:1.12.1"
+        implementation "com.badlogicgames.gdx:gdx-backend-lwjgl3:1.12.1"
+        implementation "com.badlogicgames.gdx:gdx-platform:1.12.1:natives-desktop"
+        implementation "com.badlogicgames.gdx:gdx-freetype:1.12.1"
+        implementation "com.badlogicgames.gdx:gdx-freetype-platform:1.12.1:natives-desktop"
+
+        implementation 'io.netty:netty-all:4.1.107.Final'
+        implementation 'com.esotericsoftware:kryo:5.5.0'
+        implementation 'org.slf4j:slf4j-simple:2.0.11'
+    }
+
+    application {
+        mainClass = 'com.sandbox.client.SandboxClient'
+    }
+}
