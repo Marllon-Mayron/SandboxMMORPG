@@ -42,6 +42,10 @@ public class NetworkClient {
     private Consumer<MapLoadResponse> mapLoadCallback;
     private Consumer<Chunk> chunkCallback;
     private Consumer<PlayerLeftPacket> playerLeftCallback;
+    private Consumer<FriendListResponse> friendListCallback;
+    private Consumer<FriendRequestPacket> friendRequestCallback;
+    private Consumer<PrivateMessagePacket> privateMessageCallback;
+    private Consumer<PrivateMessageHistoryResponse> privateMessageHistoryCallback;
 
     public NetworkClient(String host, int port) {
         this.host = host;
@@ -185,7 +189,12 @@ public class NetworkClient {
         sendPacket(request);
     }
 
-    private void sendPacket(Object packet) {
+    public void requestPrivateMessageHistory(String friendId, int limit) {
+        PrivateMessageHistoryRequest request = new PrivateMessageHistoryRequest(friendId, limit);
+        sendPacket(request);
+    }
+
+    public  void sendPacket(Object packet) {
         if (channel == null || !channel.isActive()) {
             logger.warn("Channel not active, cannot send packet: {}", packet.getClass().getSimpleName());
             return;
@@ -217,7 +226,12 @@ public class NetworkClient {
     public void setChunkCallback(Consumer<Chunk> callback) {
         this.chunkCallback = callback;
     }
-
+    public void setFriendListCallback(Consumer<FriendListResponse> callback) { this.friendListCallback = callback; }
+    public void setFriendRequestCallback(Consumer<FriendRequestPacket> callback) { this.friendRequestCallback = callback; }
+    public void setPrivateMessageCallback(Consumer<PrivateMessagePacket> callback) { this.privateMessageCallback = callback; }
+    public void setPrivateMessageHistoryCallback(Consumer<PrivateMessageHistoryResponse> callback) {
+        this.privateMessageHistoryCallback = callback;
+    }
 
     private class ClientHandler extends SimpleChannelInboundHandler<Object> {
         @Override
@@ -246,9 +260,17 @@ public class NetworkClient {
                     if (mapLoadCallback != null) {
                         mapLoadCallback.accept(response);
                     }
-                }else if (msg instanceof Chunk && chunkCallback != null) {
+                } else if (msg instanceof FriendListResponse && friendListCallback != null) {
+                    friendListCallback.accept((FriendListResponse) msg);
+                } else if (msg instanceof FriendRequestPacket && friendRequestCallback != null) {
+                    friendRequestCallback.accept((FriendRequestPacket) msg);
+                } else if (msg instanceof PrivateMessagePacket && privateMessageCallback != null) {
+                    privateMessageCallback.accept((PrivateMessagePacket) msg);
+                } else if (msg instanceof PrivateMessageHistoryResponse && privateMessageHistoryCallback != null) {
+                    privateMessageHistoryCallback.accept((PrivateMessageHistoryResponse) msg);
+                } else if (msg instanceof Chunk && chunkCallback != null) {
                     chunkCallback.accept((Chunk) msg);
-                }else {
+                } else {
                     logger.warn("Unhandled packet type: {}", msg.getClass().getSimpleName());
                 }
             } catch (Exception e) {

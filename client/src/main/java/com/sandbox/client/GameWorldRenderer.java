@@ -11,15 +11,11 @@ import com.badlogic.gdx.graphics.g2d.SpriteBatch;
 import com.badlogic.gdx.graphics.g2d.TextureRegion;
 import com.badlogic.gdx.graphics.g2d.freetype.FreeTypeFontGenerator;
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
-import com.badlogic.gdx.scenes.scene2d.Stage;
-import com.badlogic.gdx.scenes.scene2d.ui.*;
 import com.common.sandbox.model.MapJSON;
 import com.common.sandbox.model.Player;
 import com.common.sandbox.model.Chunk;
 import com.common.sandbox.model.WorldTile;
-import com.common.sandbox.network.packets.ChatMessage;
-import com.common.sandbox.network.packets.MovementBroadcast;
-import com.common.sandbox.network.packets.PlayerLeftPacket;
+import com.common.sandbox.network.packets.*;
 import com.sandbox.client.editor.MapEditorScreen;
 import com.sandbox.client.ui.PlayerUI;
 import org.slf4j.Logger;
@@ -55,16 +51,13 @@ public class GameWorldRenderer implements Screen {
     private final Map<String, Texture> spritesheets;
     private final Map<String, TextureRegion[][]> spritesheetRegions;
 
-    private Stage uiStage;
-    private Skin skin;
-    private final StringBuilder chatDisplay;
-
     private PlayerUI playerUI;
     private boolean initialized = false;
     private boolean spritesheetsLoaded = false;
     private Set<String> pendingSpritesheets = new HashSet<>();
     private MapJSON pendingMap = null;
     private final Map<String, Player> initialNearbyPlayers;
+    private final StringBuilder chatDisplay;
 
     public GameWorldRenderer(SandboxClient game, boolean adminMode, Map<String, Player> nearbyPlayers) {
         this.game = game;
@@ -163,7 +156,6 @@ public class GameWorldRenderer implements Screen {
             playerUI.update(currentPlayer, 1.0f);
             playerUI.updateChatHistory(chatDisplay.toString());
 
-            // Send all status to UI
             if (player.getMaxHp() > 0) {
                 float healthPercent = (float) player.getCurrentHp() / player.getMaxHp() * 100;
                 playerUI.setHealth(healthPercent);
@@ -204,6 +196,13 @@ public class GameWorldRenderer implements Screen {
             }
         });
         game.getNetworkClient().setPlayerLeftCallback(this::onPlayerLeft);
+
+        // Friend system callbacks
+        game.getNetworkClient().setFriendListCallback(this::onFriendListResponse);
+        game.getNetworkClient().setFriendRequestCallback(this::onFriendRequestResponse);
+        game.getNetworkClient().setPrivateMessageCallback(this::onPrivateMessage);
+        game.getNetworkClient().setPrivateMessageHistoryCallback(this::onPrivateMessageHistory);
+
         logger.info("Callbacks configured");
     }
 
@@ -211,15 +210,12 @@ public class GameWorldRenderer implements Screen {
         Gdx.app.postRunnable(() -> {
             if (broadcast.player != null) {
                 if (currentPlayer != null && broadcast.player.getId().equals(currentPlayer.getId())) {
-                    // Update own player directly to avoid lag
                     currentPlayer.setX(broadcast.player.getX());
                     currentPlayer.setY(broadcast.player.getY());
                     currentPlayer.setDirection(broadcast.player.getDirection());
                 } else {
-                    // Update other players with interpolation
                     Player existing = otherPlayers.get(broadcast.player.getId());
                     if (existing != null) {
-                        // Save previous position for interpolation
                         Player interpolated = new Player();
                         interpolated.setId(existing.getId());
                         interpolated.setUsername(existing.getUsername());
@@ -229,7 +225,6 @@ public class GameWorldRenderer implements Screen {
                         interpolatedPlayers.put(broadcast.player.getId(), interpolated);
                     }
 
-                    // Update current position
                     otherPlayers.put(broadcast.player.getId(), broadcast.player);
                     lastUpdateTime.put(broadcast.player.getId(), System.currentTimeMillis());
                 }
@@ -284,6 +279,66 @@ public class GameWorldRenderer implements Screen {
         });
     }
 
+    private void onPrivateMessageHistory(PrivateMessageHistoryResponse response) {
+        Gdx.app.postRunnable(() -> {
+            if (playerUI != null) {
+                playerUI.loadPrivateChatHistory(response.friendId, response.messages);
+            }
+        });
+    }
+
+    // ==================== SISTEMA DE AMIGOS CALLBACKS ====================
+
+    private void onFriendListResponse(FriendListResponse response) {
+        Gdx.app.postRunnable(() -> {
+            if (playerUI != null) {
+                playerUI.updateFriendsList(response);
+            }
+        });
+    }
+
+    private void onFriendRequestResponse(FriendRequestPacket packet) {
+        Gdx.app.postRunnable(() -> {
+            if (playerUI != null) {
+                String message = getFriendActionMessage(packet);
+                if (message != null) {
+                    playerUI.addChatMessage(message);
+                }
+                if (packet.success && ("ACCEPTED".equals(packet.action) || "REMOVED".equals(packet.action) || "SENT".equals(packet.action))) {
+                    refreshFriendList();
+                }
+            }
+        });
+    }
+
+    private void onPrivateMessage(PrivateMessagePacket packet) {
+        Gdx.app.postRunnable(() -> {
+            if (playerUI != null) {
+                playerUI.addPrivateMessage(packet.fromUsername, packet.message, packet.timestamp);
+                playerUI.addChatMessage("[Privado] " + packet.fromUsername + ": " + packet.message);
+            }
+        });
+    }
+
+    private String getFriendActionMessage(FriendRequestPacket packet) {
+        switch (packet.action) {
+            case "SENT": return "*** Friend request sent to " + packet.targetUsername + " ***";
+            case "ACCEPTED": return "*** " + packet.fromUsername + " accepted your friend request! ***";
+            case "REJECTED": return "*** Friend request rejected ***";
+            case "REMOVED": return "*** Friend removed ***";
+            case "NEW_REQUEST": return "*** " + packet.fromUsername + " sent you a friend request! ***";
+            case "ERROR": return "*** Error: " + packet.message + " ***";
+            default: return null;
+        }
+    }
+
+    private void refreshFriendList() {
+        if (currentPlayer != null) {
+            FriendRequestPacket packet = new FriendRequestPacket("LIST", "");
+            game.getNetworkClient().sendPacket(packet);
+        }
+    }
+
     public void loadMapIntoWorld(MapJSON map) {
         loadedChunks.clear();
         logger.info("Loading map with {} chunks", map.getChunks().size());
@@ -333,14 +388,12 @@ public class GameWorldRenderer implements Screen {
     public void show() {
         logger.info("GameWorldRenderer show()");
 
-        // FIRST: create camera and batch
         camera = new OrthographicCamera();
         camera.setToOrtho(false, Gdx.graphics.getWidth(), Gdx.graphics.getHeight());
 
         batch = new SpriteBatch();
         shapeRenderer = new ShapeRenderer();
 
-        // SECOND: create font
         try {
             FreeTypeFontGenerator generator = new FreeTypeFontGenerator(Gdx.files.internal("fonts/arial.ttf"));
             FreeTypeFontGenerator.FreeTypeFontParameter parameter = new FreeTypeFontGenerator.FreeTypeFontParameter();
@@ -355,13 +408,9 @@ public class GameWorldRenderer implements Screen {
             font.getData().setScale(1.0f);
         }
 
-        // FOURTH: create PlayerUI (skin is ready)
         createPlayerUI();
-
-        // FIFTH: setup callbacks
         setupCallbacks();
 
-        // SIXTH: add initial players
         if (initialNearbyPlayers != null && !initialNearbyPlayers.isEmpty()) {
             logger.info("Adding {} initial nearby players to world", initialNearbyPlayers.size());
             for (Player player : initialNearbyPlayers.values()) {
@@ -374,13 +423,12 @@ public class GameWorldRenderer implements Screen {
         }
 
         initialized = true;
-
-        // SEVENTH: load map
         game.getNetworkClient().requestMapLoad("11111111-1111-1111-1111-111111111111");
     }
 
     private void createPlayerUI() {
         playerUI = new PlayerUI();
+
         playerUI.setChatInputProcessor(chatInput -> {
             String message = chatInput.trim();
             if (!message.isEmpty() && currentPlayer != null) {
@@ -388,44 +436,141 @@ public class GameWorldRenderer implements Screen {
             }
         });
 
-        // Adicionar mensagens iniciais ao chat
+        // Friend system callbacks
+        playerUI.setSendFriendRequestCallback(username -> {
+            if (currentPlayer != null) {
+                FriendRequestPacket packet = new FriendRequestPacket("SEND", username);
+                game.getNetworkClient().sendPacket(packet);
+            }
+        });
+
+        playerUI.setAcceptFriendRequestCallback(requestId -> {
+            if (currentPlayer != null) {
+                FriendRequestPacket packet = new FriendRequestPacket("ACCEPT", "");
+                packet.requestId = requestId;
+                game.getNetworkClient().sendPacket(packet);
+            }
+        });
+
+        playerUI.setRejectFriendRequestCallback(requestId -> {
+            if (currentPlayer != null) {
+                FriendRequestPacket packet = new FriendRequestPacket("REJECT", "");
+                packet.requestId = requestId;
+                game.getNetworkClient().sendPacket(packet);
+            }
+        });
+
+        playerUI.setRemoveFriendCallback(username -> {
+            if (currentPlayer != null) {
+                FriendRequestPacket packet = new FriendRequestPacket("REMOVE", username);
+                game.getNetworkClient().sendPacket(packet);
+            }
+        });
+
+        playerUI.setSendPrivateMessageCallback((friendId, message) -> {
+            if (currentPlayer != null) {
+                PrivateMessagePacket packet = new PrivateMessagePacket(
+                        currentPlayer.getId(), currentPlayer.getUsername(),
+                        friendId, "", message
+                );
+                game.getNetworkClient().sendPacket(packet);
+            }
+        });
+
+        playerUI.setRefreshFriendsCallback(() -> {
+            if (currentPlayer != null) {
+                FriendRequestPacket packet = new FriendRequestPacket("LIST", "");
+                game.getNetworkClient().sendPacket(packet);
+            }
+        });
+
         playerUI.updateChatHistory(chatDisplay.toString());
 
-        // Adicionar mensagens de boas-vindas
+        playerUI.setOnLoadPrivateChatHistory(friendId -> {
+            if (currentPlayer != null) {
+                logger.info("Requesting private message history for friend: {}", friendId);
+                game.getNetworkClient().requestPrivateMessageHistory(friendId, 100);
+            }
+        });
+
         playerUI.addChatMessage("*** Welcome to Sandbox Experiment! ***");
         playerUI.addChatMessage("*** Use WASD to move ***");
         playerUI.addChatMessage("*** Press ENTER to chat | H to hide chat | C for attributes ***");
+        playerUI.addChatMessage("*** Click FRIENDS button to manage friends ***");
 
         if (adminMode) {
             playerUI.addChatMessage("*** ADMIN MODE: Press F12 for Map Editor ***");
         }
 
-        // IMPORTANTE: Usar o InputProcessor personalizado que lida com C e ENTER
         Gdx.input.setInputProcessor(createInputProcessor());
-
-        // Atualizar o uiStage para referenciar o stage do PlayerUI
-        uiStage = playerUI.getStage();
-
         playerUI.resize(Gdx.graphics.getWidth(), Gdx.graphics.getHeight());
     }
 
     private InputProcessor createInputProcessor() {
-        return new com.badlogic.gdx.InputProcessor() {
+        return new InputProcessor() {
             @Override
             public boolean keyDown(int keycode) {
-                // Verificar se o chat está focado
+                // IMPORTANTE: Se o chat privado está visível, passar TODAS as teclas para ele
+                if (playerUI != null && playerUI.isPrivateChatVisible()) {
+                    // Garantir que o stage da UI processe as teclas
+                    if (playerUI.getStage() != null) {
+                        playerUI.getStage().keyDown(keycode);
+                    }
+
+                    // Tratar ENTER para enviar mensagem no chat privado
+                    if (keycode == Input.Keys.ENTER) {
+                        playerUI.sendPrivateChatMessage();
+                        return true;
+                    }
+
+                    // Tratar ESC para fechar
+                    if (keycode == Input.Keys.ESCAPE) {
+                        playerUI.closePrivateChat();
+                        return true;
+                    }
+
+                    return true; // Bloquear todas as teclas quando o chat privado está aberto
+                }
+
+                // Se a janela de amigos está visível
+                if (playerUI != null && playerUI.isFriendsWindowVisible()) {
+                    if (playerUI.getStage() != null) {
+                        playerUI.getStage().keyDown(keycode);
+                    }
+                    if (keycode == Input.Keys.ESCAPE) {
+                        playerUI.toggleFriendsWindow();
+                    }
+                    return true;
+                }
+
+                // Se a janela de atributos está aberta
+                if (playerUI != null && playerUI.isAttributesVisible()) {
+                    if (keycode == Input.Keys.ESCAPE) {
+                        playerUI.hideAttributes();
+                        return true;
+                    }
+                    return true;
+                }
+
                 boolean chatFocused = playerUI != null && playerUI.isChatFocused();
 
-                // Tecla C - abrir janela de atributos (somente se chat NÃO estiver focado)
+                // Tecla F - abrir janela de amigos
+                if (keycode == Input.Keys.F && !chatFocused) {
+                    if (playerUI != null) {
+                        playerUI.toggleFriendsWindow();
+                    }
+                    return true;
+                }
+
+                // Tecla C - abrir janela de atributos
                 if (keycode == Input.Keys.C && !chatFocused) {
                     if (playerUI != null) {
-                        logger.info("C key pressed - toggling attributes");
                         playerUI.toggleAttributes();
                     }
                     return true;
                 }
 
-                // Tecla H - esconder/mostrar chat (somente se chat NÃO estiver focado)
+                // Tecla H - esconder/mostrar chat
                 if (keycode == Input.Keys.H && !chatFocused) {
                     if (playerUI != null) {
                         playerUI.toggleChat();
@@ -433,7 +578,7 @@ public class GameWorldRenderer implements Screen {
                     return true;
                 }
 
-                // Tecla ENTER
+                // Tecla ENTER - chat global
                 if (keycode == Input.Keys.ENTER) {
                     if (playerUI != null) {
                         if (playerUI.isChatFocused()) {
@@ -451,13 +596,9 @@ public class GameWorldRenderer implements Screen {
                         playerUI.unfocusChat();
                         return true;
                     }
-                    if (playerUI != null && playerUI.isAttributesVisible()) {
-                        playerUI.hideAttributes();
-                        return true;
-                    }
                 }
 
-                // Se o chat está focado, passar TODAS as teclas para o stage do PlayerUI
+                // Se o chat global está focado, passar teclas para o stage
                 if (chatFocused && playerUI != null && playerUI.getStage() != null) {
                     return playerUI.getStage().keyDown(keycode);
                 }
@@ -467,6 +608,14 @@ public class GameWorldRenderer implements Screen {
 
             @Override
             public boolean keyUp(int keycode) {
+                // Se o chat privado está visível, passar para o stage
+                if (playerUI != null && playerUI.isPrivateChatVisible()) {
+                    if (playerUI.getStage() != null) {
+                        return playerUI.getStage().keyUp(keycode);
+                    }
+                    return true;
+                }
+
                 boolean chatFocused = playerUI != null && playerUI.isChatFocused();
                 if (chatFocused && playerUI != null && playerUI.getStage() != null) {
                     return playerUI.getStage().keyUp(keycode);
@@ -476,6 +625,14 @@ public class GameWorldRenderer implements Screen {
 
             @Override
             public boolean keyTyped(char character) {
+                // Se o chat privado está visível, passar para o stage
+                if (playerUI != null && playerUI.isPrivateChatVisible()) {
+                    if (playerUI.getStage() != null) {
+                        return playerUI.getStage().keyTyped(character);
+                    }
+                    return true;
+                }
+
                 boolean chatFocused = playerUI != null && playerUI.isChatFocused();
                 if (chatFocused && playerUI != null && playerUI.getStage() != null) {
                     return playerUI.getStage().keyTyped(character);
@@ -485,22 +642,41 @@ public class GameWorldRenderer implements Screen {
 
             @Override
             public boolean touchDown(int screenX, int screenY, int pointer, int button) {
-                if (playerUI != null && playerUI.isChatFocused()) {
-                    if (playerUI.isPointOverChat(screenX, screenY)) {
-                        if (playerUI.getStage() != null) {
-                            return playerUI.getStage().touchDown(screenX, screenY, pointer, button);
-                        }
-                    } else {
-                        playerUI.unfocusChat();
-                        return false;
+                // Se o chat privado está visível, passar cliques para o stage
+                if (playerUI != null && playerUI.isPrivateChatVisible()) {
+                    if (playerUI.getStage() != null) {
+                        return playerUI.getStage().touchDown(screenX, screenY, pointer, button);
+                    }
+                    return true;
+                }
+
+                if (playerUI != null && playerUI.getStage() != null) {
+                    boolean handled = playerUI.getStage().touchDown(screenX, screenY, pointer, button);
+                    if (handled) {
+                        return true;
                     }
                 }
+
+                if (playerUI != null && playerUI.isChatFocused()) {
+                    if (!playerUI.isPointOverChat(screenX, screenY)) {
+                        playerUI.unfocusChat();
+                    }
+                    return true;
+                }
+
                 return false;
             }
 
             @Override
             public boolean touchUp(int screenX, int screenY, int pointer, int button) {
-                if (playerUI != null && playerUI.isChatFocused() && playerUI.getStage() != null) {
+                if (playerUI != null && playerUI.isPrivateChatVisible()) {
+                    if (playerUI.getStage() != null) {
+                        return playerUI.getStage().touchUp(screenX, screenY, pointer, button);
+                    }
+                    return true;
+                }
+
+                if (playerUI != null && playerUI.getStage() != null) {
                     return playerUI.getStage().touchUp(screenX, screenY, pointer, button);
                 }
                 return false;
@@ -508,7 +684,14 @@ public class GameWorldRenderer implements Screen {
 
             @Override
             public boolean touchDragged(int screenX, int screenY, int pointer) {
-                if (playerUI != null && playerUI.isChatFocused() && playerUI.getStage() != null) {
+                if (playerUI != null && playerUI.isPrivateChatVisible()) {
+                    if (playerUI.getStage() != null) {
+                        return playerUI.getStage().touchDragged(screenX, screenY, pointer);
+                    }
+                    return true;
+                }
+
+                if (playerUI != null && playerUI.getStage() != null) {
                     return playerUI.getStage().touchDragged(screenX, screenY, pointer);
                 }
                 return false;
@@ -516,16 +699,42 @@ public class GameWorldRenderer implements Screen {
 
             @Override
             public boolean mouseMoved(int screenX, int screenY) {
+                if (playerUI != null && playerUI.isPrivateChatVisible()) {
+                    if (playerUI.getStage() != null) {
+                        return playerUI.getStage().mouseMoved(screenX, screenY);
+                    }
+                    return true;
+                }
+
+                if (playerUI != null && playerUI.getStage() != null) {
+                    return playerUI.getStage().mouseMoved(screenX, screenY);
+                }
                 return false;
             }
 
             @Override
             public boolean scrolled(float amountX, float amountY) {
+                if (playerUI != null && playerUI.isPrivateChatVisible()) {
+                    if (playerUI.getStage() != null) {
+                        return playerUI.getStage().scrolled(amountX, amountY);
+                    }
+                    return true;
+                }
+
+                if (playerUI != null && playerUI.getStage() != null) {
+                    return playerUI.getStage().scrolled(amountX, amountY);
+                }
                 return false;
             }
 
             @Override
             public boolean touchCancelled(int screenX, int screenY, int pointer, int button) {
+                if (playerUI != null && playerUI.isPrivateChatVisible()) {
+                    if (playerUI.getStage() != null) {
+                        return playerUI.getStage().touchCancelled(screenX, screenY, pointer, button);
+                    }
+                    return true;
+                }
                 return false;
             }
         };
@@ -664,7 +873,6 @@ public class GameWorldRenderer implements Screen {
             float renderX = player.getX();
             float renderY = player.getY();
 
-            // Smooth interpolation
             Player interpolated = interpolatedPlayers.get(player.getId());
             Long lastUpdate = lastUpdateTime.get(player.getId());
 
@@ -684,10 +892,8 @@ public class GameWorldRenderer implements Screen {
             float x = renderX - PLAYER_SIZE/2;
             float y = renderY - PLAYER_SIZE/2;
 
-            // Shadow
             shapeRenderer.setColor(0, 0, 0, 0.5f);
             shapeRenderer.rect(x - 2, y - 2, PLAYER_SIZE + 4, PLAYER_SIZE + 4);
-            // Player
             shapeRenderer.setColor(0.5f, 0.7f, 0.3f, 1);
             shapeRenderer.rect(x, y, PLAYER_SIZE, PLAYER_SIZE);
         }
@@ -736,7 +942,20 @@ public class GameWorldRenderer implements Screen {
     }
 
     private void handleInput(float delta) {
-        if (playerUI != null && playerUI.isChatFocused()) return;
+        // IMPORTANTE: Verificar TODAS as condições que devem bloquear o movimento
+        if (playerUI != null) {
+            // Bloquear movimento se:
+            // - Chat global está focado
+            // - Janela de amigos está visível
+            // - Janela de atributos está visível
+            // - Chat privado está visível (NOVO!)
+            if (playerUI.isChatFocused() ||
+                    playerUI.isFriendsWindowVisible() ||
+                    playerUI.isAttributesVisible() ||
+                    playerUI.isPrivateChatVisible()) {  // <-- ADICIONAR ESTA LINHA
+                return;
+            }
+        }
         if (currentPlayer == null) return;
 
         float baseSpeed = 400f;
@@ -785,7 +1004,6 @@ public class GameWorldRenderer implements Screen {
         if (playerUI != null && currentPlayer != null) {
             playerUI.update(currentPlayer, terrainSpeed);
 
-            // Update real-time status
             float healthPercent = (float) currentPlayer.getCurrentHp() / currentPlayer.getMaxHp() * 100;
             float manaPercent = (float) currentPlayer.getCurrentMana() / currentPlayer.getMaxMana() * 100;
             float staminaPercent = (float) currentPlayer.getCurrentStamina() / currentPlayer.getMaxStamina() * 100;
@@ -816,13 +1034,9 @@ public class GameWorldRenderer implements Screen {
             camera.update();
         }
 
-        // 1. RENDER CHUNKS (uses batch)
         renderChunks();
-
-        // 2. RENDER PLAYERS (uses shapeRenderer)
         renderPlayers();
 
-        // 3. RENDER NAMES (uses batch)
         batch.setProjectionMatrix(camera.combined);
         batch.begin();
         renderFloatingNames();

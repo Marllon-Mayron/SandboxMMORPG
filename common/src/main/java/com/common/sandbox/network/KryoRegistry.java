@@ -20,7 +20,7 @@ public class KryoRegistry {
     private static final int ID_MOVEMENT_REQUEST = 20;
     private static final int ID_MOVEMENT_BROADCAST = 21;
     private static final int ID_PLAYER_LEFT = 22;
-    private static final int ID_MOVEMENT_CONFIRM = 23;  // NOVO
+    private static final int ID_MOVEMENT_CONFIRM = 23;
 
     private static final int ID_CHAT_MESSAGE = 30;
 
@@ -46,6 +46,15 @@ public class KryoRegistry {
     private static final int ID_LINKED_HASH_MAP = 81;
     private static final int ID_ARRAY_LIST = 82;
 
+    private static final int ID_FRIEND_REQUEST = 90;
+    private static final int ID_FRIEND_LIST_RESPONSE = 91;
+    private static final int ID_PRIVATE_MESSAGE = 92;
+    private static final int ID_FRIEND_STATUS_UPDATE = 93;
+
+    // NOVOS IDs para histórico de mensagens privadas
+    private static final int ID_PRIVATE_MESSAGE_HISTORY_REQUEST = 96;
+    private static final int ID_PRIVATE_MESSAGE_HISTORY_RESPONSE = 97;
+
     private static boolean registered = false;
 
     public static synchronized void registerClasses(Kryo kryo) {
@@ -59,7 +68,7 @@ public class KryoRegistry {
         kryo.register(MovementRequest.class, ID_MOVEMENT_REQUEST);
         kryo.register(MovementBroadcast.class, ID_MOVEMENT_BROADCAST);
         kryo.register(PlayerLeftPacket.class, ID_PLAYER_LEFT);
-        kryo.register(MovementConfirm.class, ID_MOVEMENT_CONFIRM);  // REGISTRAR AQUI
+        kryo.register(MovementConfirm.class, ID_MOVEMENT_CONFIRM);
 
         // Chat
         kryo.register(ChatMessage.class, ID_CHAT_MESSAGE);
@@ -87,6 +96,17 @@ public class KryoRegistry {
         kryo.register(HashMap.class, ID_HASH_MAP);
         kryo.register(LinkedHashMap.class, ID_LINKED_HASH_MAP);
         kryo.register(ArrayList.class, ID_ARRAY_LIST);
+
+        // Friend system
+        kryo.register(FriendRequestPacket.class, ID_FRIEND_REQUEST);
+        kryo.register(FriendListResponse.class, ID_FRIEND_LIST_RESPONSE);
+        kryo.register(PrivateMessagePacket.class, ID_PRIVATE_MESSAGE);
+        kryo.register(FriendListResponse.FriendInfo.class, 94);
+        kryo.register(FriendListResponse.FriendRequestInfo.class, 95);
+
+        // Private message history
+        kryo.register(PrivateMessageHistoryRequest.class, ID_PRIVATE_MESSAGE_HISTORY_REQUEST);
+        kryo.register(PrivateMessageHistoryResponse.class, ID_PRIVATE_MESSAGE_HISTORY_RESPONSE);
 
         // Arrays multidimensionais
         kryo.register(int[][].class, 90);

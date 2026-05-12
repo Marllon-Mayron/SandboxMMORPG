@@ -1,5 +1,6 @@
 package com.sandbox.client.ui;
 
+import java.util.List;
 import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.graphics.Color;
 import com.badlogic.gdx.graphics.OrthographicCamera;
@@ -17,10 +18,13 @@ import com.badlogic.gdx.scenes.scene2d.utils.TextureRegionDrawable;
 import com.badlogic.gdx.utils.Align;
 import com.badlogic.gdx.utils.viewport.ScreenViewport;
 import com.common.sandbox.model.Player;
+import com.common.sandbox.network.packets.FriendListResponse;
+import com.common.sandbox.network.packets.PrivateMessagePacket;
 import com.sandbox.client.FontManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 
 public class PlayerUI {
@@ -29,7 +33,7 @@ public class PlayerUI {
     private Stage stage;
     private Skin skin;
     private ShapeRenderer shapeRenderer;
-    private OrthographicCamera uiCamera;  // Câmera separada para UI
+    private OrthographicCamera uiCamera;
     private FontManager fontManager;
 
     private Player currentPlayer;
@@ -65,34 +69,47 @@ public class PlayerUI {
     // Janela de Atributos
     private AttributesWindow attributesWindow;
 
-    // Dimensões fixas do HUD e Chat
-    private static final int HUD_WIDTH = 220;
-    private static final int CHAT_WIDTH = 380;
-    private static final int CHAT_HEIGHT = 280;
+    // Componentes do Sistema de Amigos
+    private TaskBar taskBar;
+    private FriendsWindow friendsWindow;
+    private PrivateChatWindow privateChatWindow;
+    private Runnable refreshFriendsCallback;
+
+    // Callbacks do Sistema de Amigos
+    private Consumer<String> sendFriendRequestCallback;
+    private Consumer<String> acceptFriendRequestCallback;
+    private Consumer<String> rejectFriendRequestCallback;
+    private Consumer<String> removeFriendCallback;
+    private BiConsumer<String, String> sendPrivateMessageCallback;
+    private Consumer<String> onLoadPrivateChatHistory;
+
+    // Dimensões fixas
+    private static final int HUD_WIDTH = 120;
+    private static final int CHAT_WIDTH = 420;
+    private static final int CHAT_HEIGHT = 300;
 
     // BARRA DE VIDA - VALORES ABSOLUTAMENTE FIXOS
     private static final int HEALTH_BAR_WIDTH = 220;
     private static final int HEALTH_BAR_HEIGHT = 20;
-    private static final int HEALTH_BAR_X = 0;      // SEMPRE no canto esquerdo
-    private static final int HEALTH_BAR_Y = 0;      // SEMPRE no topo
+    private static final int HEALTH_BAR_X = 0;
 
-    // Posições em porcentagem para HUD e Chat
+    // Posições em porcentagem
     private static final float HUD_X_PERCENT = 0.01f;
     private static final float HUD_Y_PERCENT = 0.72f;
     private static final float CHAT_X_PERCENT = 0.01f;
-    private static final float CHAT_Y_PERCENT = 0.01f;
+    private static final float CHAT_Y_PERCENT = 0.0f;
 
     public PlayerUI() {
         this.fontManager = FontManager.getInstance();
         this.shapeRenderer = new ShapeRenderer();
         this.stage = new Stage(new ScreenViewport());
 
-        // Criar câmera separada para UI (coordenadas de tela)
         this.uiCamera = new OrthographicCamera();
         this.uiCamera.setToOrtho(false, Gdx.graphics.getWidth(), Gdx.graphics.getHeight());
 
         createSkin();
         createUI();
+        createTaskBarAndWindows();
 
         logger.info("PlayerUI initialized");
     }
@@ -176,7 +193,7 @@ public class PlayerUI {
         scrollStyle.hScrollKnob = blueBg;
         skin.add("default", scrollStyle);
 
-        // Window style (para AttributesWindow)
+        // Window style
         Window.WindowStyle windowStyle = new Window.WindowStyle(font, Color.GOLD, darkBg);
         skin.add("default", windowStyle);
     }
@@ -196,7 +213,6 @@ public class PlayerUI {
         rootTable.top().left();
         rootTable.pad(10);
 
-        // HUD PANEL
         Table infoPanel = new Table(skin);
         if (skin.has("window-bg", Drawable.class)) {
             infoPanel.setBackground(skin.getDrawable("window-bg"));
@@ -224,13 +240,6 @@ public class PlayerUI {
         infoPanel.add(separator).left().padBottom(5).colspan(2);
         infoPanel.row();
 
-        healthLabel = new Label("Health:", skin, "default");
-        infoPanel.add(healthLabel).left().padRight(10);
-        healthPercentLabel = new Label("100%", skin, "default");
-        healthPercentLabel.setColor(Color.GREEN);
-        infoPanel.add(healthPercentLabel).right();
-        infoPanel.row();
-
         manaLabel = new Label("Mana:", skin, "default");
         infoPanel.add(manaLabel).left().padRight(10);
         manaPercentLabel = new Label("100%", skin, "default");
@@ -255,8 +264,58 @@ public class PlayerUI {
         infoPanel.add(speedValueLabel).right();
 
         rootTable.add(infoPanel).width(HUD_WIDTH);
-
         stage.addActor(rootTable);
+    }
+
+    private void createTaskBarAndWindows() {
+        // Criar TaskBar
+        taskBar = new TaskBar(skin, stage);
+        taskBar.setOnFriendsClick(() -> toggleFriendsWindow());
+        taskBar.setOnAttributesClick(() -> toggleAttributes());
+
+        // Criar FriendsWindow
+        friendsWindow = new FriendsWindow(skin, stage);
+        friendsWindow.setOnSendFriendRequest(username -> {
+            if (sendFriendRequestCallback != null) {
+                sendFriendRequestCallback.accept(username);
+            }
+        });
+        friendsWindow.setOnAcceptFriendRequest(requestId -> {
+            if (acceptFriendRequestCallback != null) {
+                acceptFriendRequestCallback.accept(requestId);
+            }
+        });
+        friendsWindow.setOnRejectFriendRequest(requestId -> {
+            if (rejectFriendRequestCallback != null) {
+                rejectFriendRequestCallback.accept(requestId);
+            }
+        });
+        friendsWindow.setOnRemoveFriend(username -> {
+            if (removeFriendCallback != null) {
+                removeFriendCallback.accept(username);
+            }
+        });
+        friendsWindow.setOnOpenPrivateChat(friend -> {
+            openPrivateChatWith(friend);
+        });
+
+        // Criar PrivateChatWindow
+        privateChatWindow = new PrivateChatWindow(skin, stage);
+        privateChatWindow.setOnSendMessage((friendId, message) -> {
+            if (sendPrivateMessageCallback != null) {
+                sendPrivateMessageCallback.accept(friendId, message);
+            }
+        });
+
+        // IMPORTANTE: Configurar o callback para carregar histórico
+        privateChatWindow.setOnLoadHistory(friendId -> {
+            logger.info("onLoadHistory called for friendId: {}", friendId);
+            if (onLoadPrivateChatHistory != null) {
+                onLoadPrivateChatHistory.accept(friendId);
+            } else {
+                logger.warn("onLoadPrivateChatHistory callback is null!");
+            }
+        });
     }
 
     private void createChatContainer() {
@@ -299,14 +358,8 @@ public class PlayerUI {
         chatContainer.add(inputTable).width(CHAT_WIDTH);
         chatContainer.row();
 
-        Label chatHint = new Label("ENTER to chat | H to hide/show chat | C for attributes", skin, "status");
-        chatHint.setFontScale(0.7f);
-        chatHint.setColor(Color.LIGHT_GRAY);
-        chatContainer.add(chatHint).left().padTop(5);
-
         stage.addActor(chatContainer);
 
-        // Criar a janela de atributos
         attributesWindow = new AttributesWindow(skin, stage);
     }
 
@@ -342,6 +395,18 @@ public class PlayerUI {
         return chatInputField != null && stage.getKeyboardFocus() == chatInputField;
     }
 
+    public void sendPrivateChatMessage() {
+        if (privateChatWindow != null && privateChatWindow.isVisible()) {
+            privateChatWindow.sendCurrentMessage();
+        }
+    }
+
+    public void closePrivateChat() {
+        if (privateChatWindow != null) {
+            privateChatWindow.hide();
+        }
+    }
+
     public void setChatInputProcessor(Consumer<String> callback) {
         this.sendMessageCallback = callback;
         createChatContainer();
@@ -357,7 +422,6 @@ public class PlayerUI {
             levelLabel.setText("Level: " + player.getLevel());
             currentGold = player.getGold();
 
-            // Atualizar janela de atributos se visível
             if (attributesWindow != null && attributesWindow.isVisible()) {
                 attributesWindow.update(player);
             }
@@ -419,6 +483,22 @@ public class PlayerUI {
         }
     }
 
+    public boolean isFriendsWindowVisible() {
+        return friendsWindow != null && friendsWindow.isVisible();
+    }
+
+    public boolean isChatVisible() {
+        return chatVisible;
+    }
+
+    public boolean isAttributesVisible() {
+        return attributesWindow != null && attributesWindow.isVisible();
+    }
+
+    public boolean isPrivateChatVisible() {
+        return privateChatWindow != null && privateChatWindow.isVisible();
+    }
+
     public void setHealth(float percent) {
         this.currentHealth = Math.max(0, Math.min(100, percent));
     }
@@ -477,10 +557,6 @@ public class PlayerUI {
         }
     }
 
-    public boolean isChatVisible() {
-        return chatVisible;
-    }
-
     public void toggleAttributes() {
         if (attributesWindow != null) {
             attributesWindow.toggle();
@@ -491,60 +567,111 @@ public class PlayerUI {
         }
     }
 
-    public boolean isAttributesVisible() {
-        return attributesWindow != null && attributesWindow.isVisible();
-    }
-
     public void hideAttributes() {
         if (attributesWindow != null) {
             attributesWindow.hide();
         }
     }
 
-    // ==================== BARRA DE VIDA FIXA ====================
+    // ==================== SISTEMA DE AMIGOS ====================
+
+    public void toggleFriendsWindow() {
+        if (friendsWindow != null) {
+            friendsWindow.toggle();
+            if (friendsWindow.isVisible()) {
+                friendsWindow.centerPosition(screenWidth, screenHeight);
+                if (refreshFriendsCallback != null) {
+                    refreshFriendsCallback.run();
+                }
+            }
+        }
+    }
+
+    public void openPrivateChatWith(FriendListResponse.FriendInfo friend) {
+        if (privateChatWindow != null) {
+            privateChatWindow.openWithFriend(friend);
+            privateChatWindow.centerPosition(screenWidth, screenHeight);
+            // O histórico será carregado automaticamente pelo callback
+        }
+    }
+
+    public void updateFriendsList(FriendListResponse response) {
+        if (friendsWindow != null) {
+            friendsWindow.updateFriends(response.friends);
+            friendsWindow.updateRequests(response.pendingRequests);
+        }
+    }
+
+    public void addPrivateMessage(String senderName, String message, long timestamp) {
+        if (privateChatWindow != null && privateChatWindow.isVisible()) {
+            privateChatWindow.addMessage(senderName, message, timestamp);
+        }
+    }
+
+    public void loadPrivateChatHistory(String friendId, List<PrivateMessagePacket> messages) {
+        logger.info("loadPrivateChatHistory called - friendId: {}, messages count: {}",
+                friendId, messages != null ? messages.size() : 0);
+
+        if (privateChatWindow != null && privateChatWindow.isVisible()) {
+            FriendListResponse.FriendInfo current = privateChatWindow.getCurrentFriend();
+            if (current != null && current.playerId.equals(friendId)) {
+                logger.info("Loading history for current friend: {}", current.username);
+                privateChatWindow.loadHistory(messages);
+            } else {
+                logger.warn("Current friend mismatch or null. Current: {}, Requested: {}",
+                        current != null ? current.username : "null", friendId);
+            }
+        } else {
+            logger.warn("Private chat window not visible or null");
+        }
+    }
+
+    // Callbacks setters para o sistema de amigos
+    public void setSendFriendRequestCallback(Consumer<String> callback) { this.sendFriendRequestCallback = callback; }
+    public void setAcceptFriendRequestCallback(Consumer<String> callback) { this.acceptFriendRequestCallback = callback; }
+    public void setRejectFriendRequestCallback(Consumer<String> callback) { this.rejectFriendRequestCallback = callback; }
+    public void setRemoveFriendCallback(Consumer<String> callback) { this.removeFriendCallback = callback; }
+    public void setSendPrivateMessageCallback(BiConsumer<String, String> callback) { this.sendPrivateMessageCallback = callback; }
+    public void setRefreshFriendsCallback(Runnable callback) { this.refreshFriendsCallback = callback; }
+    public void setOnLoadPrivateChatHistory(Consumer<String> callback) {
+        this.onLoadPrivateChatHistory = callback;
+    }
+    // ==================== BARRA DE VIDA ====================
 
     private void renderHealthBar() {
-        // Atualizar câmera da UI com as dimensões atuais da tela
         float currentWidth = Gdx.graphics.getWidth();
         float currentHeight = Gdx.graphics.getHeight();
 
         uiCamera.setToOrtho(false, currentWidth, currentHeight);
         uiCamera.update();
-
-        // Usar a câmera da UI para o shapeRenderer
         shapeRenderer.setProjectionMatrix(uiCamera.combined);
 
-        // Posição Y: topo da tela = altura atual - altura da barra
         float actualY = currentHeight - HEALTH_BAR_HEIGHT;
 
         shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
 
-        // Fundo da barra (vermelho escuro)
         shapeRenderer.setColor(0.3f, 0.1f, 0.1f, 0.9f);
         shapeRenderer.rect(HEALTH_BAR_X, actualY, HEALTH_BAR_WIDTH, HEALTH_BAR_HEIGHT);
 
-        // Preenchimento da barra
         float healthPercent = currentHealth / 100f;
         float fillWidth = HEALTH_BAR_WIDTH * healthPercent;
 
         if (healthPercent > 0.6f) {
-            shapeRenderer.setColor(0.2f, 0.8f, 0.2f, 0.9f);  // Verde
+            shapeRenderer.setColor(0.2f, 0.8f, 0.2f, 0.9f);
         } else if (healthPercent > 0.3f) {
-            shapeRenderer.setColor(0.9f, 0.7f, 0.2f, 0.9f);  // Laranja
+            shapeRenderer.setColor(0.9f, 0.7f, 0.2f, 0.9f);
         } else {
-            shapeRenderer.setColor(0.9f, 0.2f, 0.2f, 0.9f);  // Vermelho
+            shapeRenderer.setColor(0.9f, 0.2f, 0.2f, 0.9f);
         }
         shapeRenderer.rect(HEALTH_BAR_X + 2, actualY + 2, Math.max(0, fillWidth - 4), HEALTH_BAR_HEIGHT - 4);
 
         shapeRenderer.end();
 
-        // Borda da barra
         shapeRenderer.begin(ShapeRenderer.ShapeType.Line);
         shapeRenderer.setColor(0.9f, 0.9f, 0.9f, 1f);
         shapeRenderer.rect(HEALTH_BAR_X, actualY, HEALTH_BAR_WIDTH, HEALTH_BAR_HEIGHT);
         shapeRenderer.end();
 
-        // Desenhar texto da porcentagem ao lado da barra (usando câmera UI também)
         fontManager.begin();
         fontManager.getBatch().setProjectionMatrix(uiCamera.combined);
         String healthText = Math.round(currentHealth) + "%";
@@ -566,9 +693,6 @@ public class PlayerUI {
         this.screenWidth = width;
         this.screenHeight = height;
 
-        logger.info("UI resize called: {}x{}", width, height);
-
-        // Atualizar câmera da UI
         uiCamera.setToOrtho(false, width, height);
         uiCamera.update();
 
@@ -576,9 +700,10 @@ public class PlayerUI {
             stage.getViewport().update(width, height, true);
         }
 
-        // Calcular posições baseadas em porcentagem para HUD e Chat
-        float hudX = width * HUD_X_PERCENT;
-        float hudY = height * HUD_Y_PERCENT;
+        if (taskBar != null) {
+            taskBar.setPosition(width - 310, 10);
+        }
+
         float chatXPos = width * CHAT_X_PERCENT;
         float chatYPos = height * CHAT_Y_PERCENT;
 
@@ -588,6 +713,14 @@ public class PlayerUI {
 
         if (attributesWindow != null && attributesWindow.isVisible()) {
             attributesWindow.centerPosition(screenWidth, screenHeight);
+        }
+
+        if (friendsWindow != null && friendsWindow.isVisible()) {
+            friendsWindow.centerPosition(screenWidth, screenHeight);
+        }
+
+        if (privateChatWindow != null && privateChatWindow.isVisible()) {
+            privateChatWindow.centerPosition(screenWidth, screenHeight);
         }
     }
 
@@ -610,6 +743,9 @@ public class PlayerUI {
         if (stage != null) stage.dispose();
         if (skin != null) skin.dispose();
         if (attributesWindow != null) attributesWindow.dispose();
+        if (taskBar != null) taskBar.dispose();
+        if (friendsWindow != null) friendsWindow.dispose();
+        if (privateChatWindow != null) privateChatWindow.dispose();
         logger.info("PlayerUI disposed");
     }
 }

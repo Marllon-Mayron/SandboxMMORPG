@@ -1,11 +1,14 @@
 package com.sandbox.server;
 
 import com.common.sandbox.model.Player;
+import com.common.sandbox.network.packets.FriendListResponse;
+import com.common.sandbox.network.packets.PrivateMessagePacket;
 import org.mindrot.jbcrypt.BCrypt;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.sql.*;
+import java.util.List;
 import java.util.UUID;
 
 public class DatabaseManager {
@@ -195,10 +198,10 @@ public class DatabaseManager {
     }
 
     private void updateLastLogin(String playerId) {
-        String sql = "UPDATE players SET last_login = CURRENT_TIMESTAMP WHERE id = ?";
+        String sql = "UPDATE players SET last_login = CURRENT_TIMESTAMP WHERE id = ?::uuid";
         try (Connection conn = getConnection();
              PreparedStatement pstmt = conn.prepareStatement(sql)) {
-            pstmt.setObject(1, playerId);
+            pstmt.setObject(1, UUID.fromString(playerId));  // Converter para UUID
             pstmt.executeUpdate();
         } catch (SQLException e) {
             logger.error("Error updating last login", e);
@@ -298,6 +301,315 @@ public class DatabaseManager {
             pstmt.executeUpdate();
         } catch (SQLException e) {
             logger.error("Error saving chat message", e);
+        }
+    }
+
+    // ==================== SISTEMA DE AMIGOS ====================
+
+    public static class FriendRequestDetails {
+        public String requestId;
+        public String fromPlayerId;
+        public String toPlayerId;
+        public String fromUsername;
+    }
+
+    public Player getPlayerByUsername(String username) throws SQLException {
+        String sql = "SELECT id, username, level FROM players WHERE username = ?";
+
+        try (Connection conn = getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setString(1, username);
+            ResultSet rs = pstmt.executeQuery();
+
+            if (rs.next()) {
+                Player player = new Player();
+                player.setId(rs.getString("id"));
+                player.setUsername(rs.getString("username"));
+                player.setLevel(rs.getInt("level"));
+                return player;
+            }
+            return null;
+        }
+    }
+
+    public Player getPlayerById(String playerId) throws SQLException {
+        String sql = "SELECT id, username, level FROM players WHERE id = ?::uuid";
+
+        try (Connection conn = getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setObject(1, UUID.fromString(playerId));
+            ResultSet rs = pstmt.executeQuery();
+
+            if (rs.next()) {
+                Player player = new Player();
+                player.setId(rs.getString("id"));
+                player.setUsername(rs.getString("username"));
+                player.setLevel(rs.getInt("level"));
+                return player;
+            }
+            return null;
+        }
+    }
+
+    public boolean areFriends(String playerId, String friendId) throws SQLException {
+        String sql = "SELECT 1 FROM friends WHERE (player_id = ?::uuid AND friend_id = ?::uuid) " +
+                "OR (player_id = ?::uuid AND friend_id = ?::uuid)";
+
+        try (Connection conn = getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setObject(1, UUID.fromString(playerId));
+            pstmt.setObject(2, UUID.fromString(friendId));
+            pstmt.setObject(3, UUID.fromString(friendId));
+            pstmt.setObject(4, UUID.fromString(playerId));
+            ResultSet rs = pstmt.executeQuery();
+            return rs.next();
+        }
+    }
+
+    public boolean hasPendingRequest(String fromPlayerId, String toPlayerId) throws SQLException {
+        String sql = "SELECT 1 FROM friend_requests WHERE from_player_id = ?::uuid " +
+                "AND to_player_id = ?::uuid AND status = 'pending'";
+
+        try (Connection conn = getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setObject(1, UUID.fromString(fromPlayerId));
+            pstmt.setObject(2, UUID.fromString(toPlayerId));
+            ResultSet rs = pstmt.executeQuery();
+            return rs.next();
+        }
+    }
+
+    public String createFriendRequest(String fromPlayerId, String toPlayerId) throws SQLException {
+        String sql = "INSERT INTO friend_requests (from_player_id, to_player_id, status) " +
+                "VALUES (?::uuid, ?::uuid, 'pending') RETURNING id";
+
+        try (Connection conn = getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setObject(1, UUID.fromString(fromPlayerId));
+            pstmt.setObject(2, UUID.fromString(toPlayerId));
+            ResultSet rs = pstmt.executeQuery();
+            if (rs.next()) {
+                return String.valueOf(rs.getInt("id"));
+            }
+            return null;
+        }
+    }
+
+    public boolean acceptFriendRequest(String requestId) throws SQLException {
+        String updateSql = "UPDATE friend_requests SET status = 'accepted', updated_at = CURRENT_TIMESTAMP WHERE id = ?";
+        String insertFriendSql = "INSERT INTO friends (player_id, friend_id) VALUES (?::uuid, ?::uuid), (?::uuid, ?::uuid)";
+
+        try (Connection conn = getConnection()) {
+            conn.setAutoCommit(false);
+
+            // Buscar detalhes da solicitacao - especificar colunas com alias
+            String selectSql = "SELECT fr.from_player_id, fr.to_player_id FROM friend_requests fr WHERE fr.id = ? AND fr.status = 'pending'";
+            String fromId = null, toId = null;
+
+            try (PreparedStatement selectStmt = conn.prepareStatement(selectSql)) {
+                selectStmt.setInt(1, Integer.parseInt(requestId));
+                ResultSet rs = selectStmt.executeQuery();
+                if (rs.next()) {
+                    fromId = rs.getString("from_player_id");
+                    toId = rs.getString("to_player_id");
+                }
+            }
+
+            if (fromId == null || toId == null) return false;
+
+            // Atualizar status da solicitacao
+            try (PreparedStatement updateStmt = conn.prepareStatement(updateSql)) {
+                updateStmt.setInt(1, Integer.parseInt(requestId));
+                updateStmt.executeUpdate();
+            }
+
+            // Adicionar relacao de amizade (bidirecional)
+            try (PreparedStatement insertStmt = conn.prepareStatement(insertFriendSql)) {
+                insertStmt.setObject(1, UUID.fromString(fromId));
+                insertStmt.setObject(2, UUID.fromString(toId));
+                insertStmt.setObject(3, UUID.fromString(toId));
+                insertStmt.setObject(4, UUID.fromString(fromId));
+                insertStmt.executeUpdate();
+            }
+
+            conn.commit();
+            return true;
+
+        } catch (SQLException e) {
+            logger.error("Error accepting friend request", e);
+            throw e;
+        }
+    }
+
+    public boolean rejectFriendRequest(String requestId) throws SQLException {
+        String sql = "UPDATE friend_requests SET status = 'rejected', updated_at = CURRENT_TIMESTAMP WHERE id = ?";
+
+        try (Connection conn = getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setInt(1, Integer.parseInt(requestId));
+            return pstmt.executeUpdate() > 0;
+        }
+    }
+
+    public boolean removeFriend(String playerId, String friendId) throws SQLException {
+        String sql = "DELETE FROM friends WHERE (player_id = ?::uuid AND friend_id = ?::uuid) " +
+                "OR (player_id = ?::uuid AND friend_id = ?::uuid)";
+
+        try (Connection conn = getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setObject(1, UUID.fromString(playerId));
+            pstmt.setObject(2, UUID.fromString(friendId));
+            pstmt.setObject(3, UUID.fromString(friendId));
+            pstmt.setObject(4, UUID.fromString(playerId));
+            return pstmt.executeUpdate() > 0;
+        }
+    }
+
+    public FriendRequestDetails getFriendRequestDetails(String requestId) throws SQLException {
+        String sql = "SELECT fr.id, fr.from_player_id, fr.to_player_id, p.username as from_username " +
+                "FROM friend_requests fr " +
+                "JOIN players p ON fr.from_player_id = p.id " +
+                "WHERE fr.id = ? AND fr.status = 'pending'";
+
+        try (Connection conn = getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setInt(1, Integer.parseInt(requestId));
+            ResultSet rs = pstmt.executeQuery();
+
+            if (rs.next()) {
+                FriendRequestDetails details = new FriendRequestDetails();
+                details.requestId = String.valueOf(rs.getInt("id"));
+                details.fromPlayerId = rs.getString("from_player_id");
+                details.toPlayerId = rs.getString("to_player_id");
+                details.fromUsername = rs.getString("from_username");
+                return details;
+            }
+            return null;
+        }
+    }
+
+    public FriendListResponse getFriendList(String playerId) throws SQLException {
+        FriendListResponse response = new FriendListResponse();
+        response.friends = new java.util.ArrayList<>();
+        response.pendingRequests = new java.util.ArrayList<>();
+
+        // Buscar amigos
+        String friendsSql = "SELECT p.id, p.username, p.level, p.is_online " +
+                "FROM friends f JOIN players p ON f.friend_id = p.id " +
+                "WHERE f.player_id = ?::uuid";
+
+        try (Connection conn = getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(friendsSql)) {
+            pstmt.setObject(1, UUID.fromString(playerId));
+            ResultSet rs = pstmt.executeQuery();
+
+            while (rs.next()) {
+                FriendListResponse.FriendInfo friend = new FriendListResponse.FriendInfo();
+                friend.playerId = rs.getString("id");
+                friend.username = rs.getString("username");
+                friend.level = rs.getInt("level");
+                friend.isOnline = rs.getBoolean("is_online");
+                response.friends.add(friend);
+            }
+        }
+
+        // Buscar solicitacoes pendentes (recebidas)
+        String requestsSql = "SELECT fr.id, fr.from_player_id, p.username, p.level, fr.created_at " +
+                "FROM friend_requests fr JOIN players p ON fr.from_player_id = p.id " +
+                "WHERE fr.to_player_id = ?::uuid AND fr.status = 'pending'";
+
+        try (Connection conn = getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(requestsSql)) {
+            pstmt.setObject(1, UUID.fromString(playerId));
+            ResultSet rs = pstmt.executeQuery();
+
+            while (rs.next()) {
+                FriendListResponse.FriendRequestInfo request = new FriendListResponse.FriendRequestInfo();
+                request.requestId = String.valueOf(rs.getInt("id"));
+                request.fromPlayerId = rs.getString("from_player_id");
+                request.fromUsername = rs.getString("username");
+                request.fromLevel = rs.getInt("level");
+                request.createdAt = rs.getTimestamp("created_at").getTime();
+                response.pendingRequests.add(request);
+            }
+        }
+
+        return response;
+    }
+
+    public void savePrivateMessage(PrivateMessagePacket packet) throws SQLException {
+        String sql = "INSERT INTO private_messages (from_player_id, to_player_id, message, created_at) " +
+                "VALUES (?::uuid, ?::uuid, ?, ?)";
+
+        try (Connection conn = getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setObject(1, UUID.fromString(packet.fromPlayerId));
+            pstmt.setObject(2, UUID.fromString(packet.toPlayerId));
+            pstmt.setString(3, packet.message);
+            pstmt.setTimestamp(4, new java.sql.Timestamp(packet.timestamp));
+            pstmt.executeUpdate();
+        }
+    }
+
+    public List<PrivateMessagePacket> getPrivateMessageHistory(String playerId, String friendId, int limit) throws SQLException {
+        String sql = "SELECT from_player_id, to_player_id, message, created_at, " +
+                "(SELECT username FROM players WHERE id = from_player_id) as from_username " +
+                "FROM private_messages " +
+                "WHERE (from_player_id = ?::uuid AND to_player_id = ?::uuid) " +
+                "OR (from_player_id = ?::uuid AND to_player_id = ?::uuid) " +
+                "ORDER BY created_at ASC " +
+                "LIMIT ?";
+
+        List<PrivateMessagePacket> messages = new java.util.ArrayList<>();
+
+        try (Connection conn = getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+
+            pstmt.setObject(1, UUID.fromString(playerId));
+            pstmt.setObject(2, UUID.fromString(friendId));
+            pstmt.setObject(3, UUID.fromString(friendId));
+            pstmt.setObject(4, UUID.fromString(playerId));
+            pstmt.setInt(5, limit);
+
+            ResultSet rs = pstmt.executeQuery();
+
+            while (rs.next()) {
+                PrivateMessagePacket packet = new PrivateMessagePacket();
+                packet.fromPlayerId = rs.getString("from_player_id");
+                packet.toPlayerId = rs.getString("to_player_id");
+                packet.fromUsername = rs.getString("from_username");
+                packet.message = rs.getString("message");
+                packet.timestamp = rs.getTimestamp("created_at").getTime();
+                messages.add(packet);
+            }
+        }
+
+        return messages;
+    }
+
+    public void markMessagesAsRead(String playerId, String friendId) throws SQLException {
+        String sql = "UPDATE private_messages SET is_read = true " +
+                "WHERE from_player_id = ?::uuid AND to_player_id = ?::uuid AND is_read = false";
+
+        try (Connection conn = getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setObject(1, UUID.fromString(friendId));
+            pstmt.setObject(2, UUID.fromString(playerId));
+            pstmt.executeUpdate();
+        }
+    }
+
+    public int getUnreadMessageCount(String playerId) throws SQLException {
+        String sql = "SELECT COUNT(*) FROM private_messages WHERE to_player_id = ?::uuid AND is_read = false";
+
+        try (Connection conn = getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setObject(1, UUID.fromString(playerId));
+            ResultSet rs = pstmt.executeQuery();
+            if (rs.next()) {
+                return rs.getInt(1);
+            }
+            return 0;
         }
     }
 
