@@ -427,21 +427,8 @@ public class PlayerUI {
             }
         }
 
-        healthPercentLabel.setText(Math.round(currentHealth) + "%");
         manaPercentLabel.setText(Math.round(currentMana) + "%");
         staminaPercentLabel.setText(Math.round(currentStamina) + "%");
-
-        // Health color
-        if (currentHealth < 30f) {
-            healthPercentLabel.setColor(Color.RED);
-            healthLabel.setColor(Color.RED);
-        } else if (currentHealth < 70f) {
-            healthPercentLabel.setColor(Color.ORANGE);
-            healthLabel.setColor(Color.ORANGE);
-        } else {
-            healthPercentLabel.setColor(Color.GREEN);
-            healthLabel.setColor(Color.WHITE);
-        }
 
         // Mana color
         if (currentMana < 30f) {

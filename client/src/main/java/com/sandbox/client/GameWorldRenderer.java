@@ -818,13 +818,20 @@ public class GameWorldRenderer implements Screen {
             if (localY < 0) localY += CHUNK_SIZE;
 
             if (localX >= 0 && localX < CHUNK_SIZE && localY >= 0 && localY < CHUNK_SIZE) {
-                Chunk chunk = loadedChunks.get(chunkX + ":" + chunkY);
+                String key = chunkX + ":" + chunkY;
+                Chunk chunk = loadedChunks.get(key);
+
                 if (chunk != null) {
                     WorldTile tile = chunk.getTile(localX, localY);
-                    if (tile != null && tile.isSolid()) {
+                    // Não pode andar se: tile é vazio OU tile é sólido
+                    if (tile == null || tile.isEmpty() || tile.isSolid()) {
                         return true;
                     }
+                } else {
+                    return true;
                 }
+            } else {
+                return true;
             }
         }
         return false;
