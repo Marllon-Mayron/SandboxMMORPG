@@ -18,6 +18,7 @@ import com.common.sandbox.model.WorldTile;
 import com.common.sandbox.network.packets.*;
 import com.sandbox.client.editor.MapEditorScreen;
 import com.sandbox.client.ui.PlayerUI;
+import com.sandbox.client.camera.GameCamera;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -36,7 +37,7 @@ public class GameWorldRenderer implements Screen {
 
     private final SandboxClient game;
     private final boolean adminMode;
-    private OrthographicCamera camera;
+    private GameCamera gameCamera;
     private SpriteBatch batch;
     private ShapeRenderer shapeRenderer;
     private BitmapFont font;
@@ -172,9 +173,9 @@ public class GameWorldRenderer implements Screen {
             playerUI.setGold(player.getGold());
         }
 
-        if (camera != null) {
-            camera.position.set(currentPlayer.getX(), currentPlayer.getY(), 0);
-            camera.update();
+        if (gameCamera != null) {
+            gameCamera.setTarget(currentPlayer.getX(), currentPlayer.getY());
+            gameCamera.resetPosition();
         }
     }
 
@@ -388,8 +389,10 @@ public class GameWorldRenderer implements Screen {
     public void show() {
         logger.info("GameWorldRenderer show()");
 
-        camera = new OrthographicCamera();
-        camera.setToOrtho(false, Gdx.graphics.getWidth(), Gdx.graphics.getHeight());
+        // Inicializa a camera suave
+        gameCamera = new GameCamera(Gdx.graphics.getWidth(), Gdx.graphics.getHeight());
+        gameCamera.setFollowSpeed(6.0f);
+        gameCamera.setDeadZone(80, 80);
 
         batch = new SpriteBatch();
         shapeRenderer = new ShapeRenderer();
@@ -424,6 +427,12 @@ public class GameWorldRenderer implements Screen {
 
         initialized = true;
         game.getNetworkClient().requestMapLoad("11111111-1111-1111-1111-111111111111");
+
+        // Se o player já estiver definido, posiciona a camera nele imediatamente
+        if (currentPlayer != null) {
+            gameCamera.setTarget(currentPlayer.getX(), currentPlayer.getY());
+            gameCamera.resetPosition();
+        }
     }
 
     private void createPlayerUI() {
@@ -744,7 +753,7 @@ public class GameWorldRenderer implements Screen {
         if (currentPlayer == null) return;
         if (spritesheets.isEmpty()) return;
 
-        batch.setProjectionMatrix(camera.combined);
+        batch.setProjectionMatrix(gameCamera.getCamera().combined);
         batch.begin();
 
         int centerChunkX = (int) Math.floor(currentPlayer.getX() / (CHUNK_SIZE * WORLD_TILE_SIZE));
@@ -873,7 +882,7 @@ public class GameWorldRenderer implements Screen {
     private void renderPlayers() {
         long now = System.currentTimeMillis();
 
-        shapeRenderer.setProjectionMatrix(camera.combined);
+        shapeRenderer.setProjectionMatrix(gameCamera.getCamera().combined);
         shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
 
         for (Player player : otherPlayers.values()) {
@@ -955,11 +964,11 @@ public class GameWorldRenderer implements Screen {
             // - Chat global está focado
             // - Janela de amigos está visível
             // - Janela de atributos está visível
-            // - Chat privado está visível (NOVO!)
+            // - Chat privado está visível
             if (playerUI.isChatFocused() ||
                     playerUI.isFriendsWindowVisible() ||
                     playerUI.isAttributesVisible() ||
-                    playerUI.isPrivateChatVisible()) {  // <-- ADICIONAR ESTA LINHA
+                    playerUI.isPrivateChatVisible()) {
                 return;
             }
         }
@@ -1036,15 +1045,16 @@ public class GameWorldRenderer implements Screen {
 
         handleInput(delta);
 
+        // Atualiza a camera para seguir o jogador com suavidade
         if (currentPlayer != null) {
-            camera.position.set(currentPlayer.getX(), currentPlayer.getY(), 0);
-            camera.update();
+            gameCamera.setTarget(currentPlayer.getX(), currentPlayer.getY());
+            gameCamera.update(delta);
         }
 
         renderChunks();
         renderPlayers();
 
-        batch.setProjectionMatrix(camera.combined);
+        batch.setProjectionMatrix(gameCamera.getCamera().combined);
         batch.begin();
         renderFloatingNames();
         batch.end();
@@ -1056,9 +1066,9 @@ public class GameWorldRenderer implements Screen {
 
     @Override
     public void resize(int width, int height) {
-        camera.viewportWidth = width;
-        camera.viewportHeight = height;
-        camera.update();
+        if (gameCamera != null) {
+            gameCamera.resize(width, height);
+        }
         if (playerUI != null) {
             playerUI.resize(width, height);
         }
