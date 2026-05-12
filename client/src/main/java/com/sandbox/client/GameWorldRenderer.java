@@ -55,6 +55,9 @@ public class GameWorldRenderer implements Screen {
     private final Map<String, Player> otherPlayers;
     private final Map<String, Chunk> loadedChunks;
 
+    private final Map<String, Player> interpolatedPlayers = new ConcurrentHashMap<>();
+    private final Map<String, Long> lastUpdateTime = new ConcurrentHashMap<>();
+
     private final Map<String, Texture> spritesheets;
     private final Map<String, TextureRegion[][]> spritesheetRegions;
 
@@ -198,11 +201,27 @@ public class GameWorldRenderer implements Screen {
         Gdx.app.postRunnable(() -> {
             if (broadcast.player != null) {
                 if (currentPlayer != null && broadcast.player.getId().equals(currentPlayer.getId())) {
+                    // Atualizar o próprio jogador DIRETAMENTE para evitar lag
                     currentPlayer.setX(broadcast.player.getX());
                     currentPlayer.setY(broadcast.player.getY());
                     currentPlayer.setDirection(broadcast.player.getDirection());
                 } else {
+                    // ATUALIZAR OUTROS JOGADORES COM INTERPOLAÇÃO
+                    Player existing = otherPlayers.get(broadcast.player.getId());
+                    if (existing != null) {
+                        // Salvar posição anterior para interpolação
+                        Player interpolated = new Player();
+                        interpolated.setId(existing.getId());
+                        interpolated.setUsername(existing.getUsername());
+                        interpolated.setX(existing.getX());
+                        interpolated.setY(existing.getY());
+                        interpolated.setDirection(existing.getDirection());
+                        interpolatedPlayers.put(broadcast.player.getId(), interpolated);
+                    }
+
+                    // Atualizar posição atual
                     otherPlayers.put(broadcast.player.getId(), broadcast.player);
+                    lastUpdateTime.put(broadcast.player.getId(), System.currentTimeMillis());
                 }
             }
         });
@@ -704,14 +723,40 @@ public class GameWorldRenderer implements Screen {
     }
 
     private void renderPlayers() {
+        long now = System.currentTimeMillis();
+
+        // Desenhar apenas os retângulos dos players com ShapeRenderer
         shapeRenderer.setProjectionMatrix(camera.combined);
         shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
 
         for (Player player : otherPlayers.values()) {
-            float x = player.getX() - PLAYER_SIZE/2;
-            float y = player.getY() - PLAYER_SIZE/2;
+            float renderX = player.getX();
+            float renderY = player.getY();
+
+            // Interpolação suave
+            Player interpolated = interpolatedPlayers.get(player.getId());
+            Long lastUpdate = lastUpdateTime.get(player.getId());
+
+            if (interpolated != null && lastUpdate != null) {
+                long elapsed = Math.min(now - lastUpdate, 100);
+                float alpha = Math.min(1.0f, elapsed / 50.0f);
+
+                renderX = interpolated.getX() + (player.getX() - interpolated.getX()) * alpha;
+                renderY = interpolated.getY() + (player.getY() - interpolated.getY()) * alpha;
+
+                if (alpha >= 0.99f) {
+                    interpolatedPlayers.remove(player.getId());
+                    lastUpdateTime.remove(player.getId());
+                }
+            }
+
+            float x = renderX - PLAYER_SIZE/2;
+            float y = renderY - PLAYER_SIZE/2;
+
+            // Sombra
             shapeRenderer.setColor(0, 0, 0, 0.5f);
             shapeRenderer.rect(x - 2, y - 2, PLAYER_SIZE + 4, PLAYER_SIZE + 4);
+            // Player
             shapeRenderer.setColor(0.5f, 0.7f, 0.3f, 1);
             shapeRenderer.rect(x, y, PLAYER_SIZE, PLAYER_SIZE);
         }
@@ -724,18 +769,34 @@ public class GameWorldRenderer implements Screen {
             shapeRenderer.setColor(0.2f, 0.6f, 0.9f, 1);
             shapeRenderer.rect(x, y, PLAYER_SIZE, PLAYER_SIZE);
         }
+
         shapeRenderer.end();
     }
 
     private void renderFloatingNames() {
-        batch.setProjectionMatrix(camera.combined);
-        batch.begin();
+        // Desenhar nomes dos players com SpriteBatch
+        // IMPORTANTE: Este método deve ser chamado APÓS batch.begin() e ANTES de batch.end()
+        long now = System.currentTimeMillis();
 
         for (Player player : otherPlayers.values()) {
+            float renderX = player.getX();
+            float renderY = player.getY();
+
+            // Usar mesma interpolação para os nomes
+            Player interpolated = interpolatedPlayers.get(player.getId());
+            Long lastUpdate = lastUpdateTime.get(player.getId());
+
+            if (interpolated != null && lastUpdate != null) {
+                long elapsed = Math.min(now - lastUpdate, 100);
+                float alpha = Math.min(1.0f, elapsed / 50.0f);
+                renderX = interpolated.getX() + (player.getX() - interpolated.getX()) * alpha;
+                renderY = interpolated.getY() + (player.getY() - interpolated.getY()) * alpha;
+            }
+
             font.setColor(1f, 1f, 1f, 1f);
             font.draw(batch, player.getUsername(),
-                    player.getX() - (player.getUsername().length() * 5),
-                    player.getY() + PLAYER_SIZE/2 + 25);
+                    renderX - (player.getUsername().length() * 5),
+                    renderY + PLAYER_SIZE/2 + 25);
         }
 
         if (currentPlayer != null) {
@@ -744,7 +805,6 @@ public class GameWorldRenderer implements Screen {
                     currentPlayer.getX() - (currentPlayer.getUsername().length() * 5),
                     currentPlayer.getY() + PLAYER_SIZE/2 + 25);
         }
-        batch.end();
     }
 
     private void handleInput(float delta) {
@@ -818,9 +878,18 @@ public class GameWorldRenderer implements Screen {
             camera.update();
         }
 
-        renderChunks();
-        renderPlayers();
-        renderFloatingNames();
+        // 1. RENDERIZAR CHUNKS (usa batch)
+        renderChunks();  // <- CHAMA batch.begin() e batch.end()
+
+        // 2. RENDERIZAR PLAYERS (usa shapeRenderer)
+        renderPlayers(); // <- USA shapeRenderer, NÃO usa batch
+
+        // 3. RENDERIZAR NOMES (usa batch)
+        // IMPORTANTE: Precisa chamar batch.begin() antes
+        batch.setProjectionMatrix(camera.combined);
+        batch.begin();
+        renderFloatingNames(); // <- Chama font.draw(batch, ...)
+        batch.end();
 
         if (playerUI != null) {
             playerUI.render(batch);

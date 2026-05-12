@@ -114,6 +114,14 @@ public class GameWorld {
             player.setY(y);
             player.setDirection(direction);
 
+            // FORÇAR SALVAMENTO PERIÓDICO MAIS FREQUENTE
+            long now = System.currentTimeMillis();
+            Long lastSave = lastPositionSave.get(playerId);
+            if (lastSave == null || (now - lastSave) >= 5000) { // Salvar a cada 5 segundos
+                DatabaseManager.getInstance().savePlayerPositionAsync(player);
+                lastPositionSave.put(playerId, now);
+            }
+
             // Verificar mudança de chunk
             checkChunkTransition(player);
         }

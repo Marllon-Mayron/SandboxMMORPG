@@ -13,11 +13,16 @@ import io.netty.util.concurrent.GlobalEventExecutor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+
 public class GameServerHandler extends SimpleChannelInboundHandler<Object> {
     private static final Logger logger = LoggerFactory.getLogger(GameServerHandler.class);
     private String channelId;
     private Player currentPlayer;
     private static final ChannelGroup channels = new DefaultChannelGroup(GlobalEventExecutor.INSTANCE);
+    private final Map<String, Player> interpolatedPlayers = new ConcurrentHashMap<>();
+    private final Map<String, Long> lastUpdateTime = new ConcurrentHashMap<>();
 
     public GameServerHandler() {}
 
@@ -163,23 +168,45 @@ public class GameServerHandler extends SimpleChannelInboundHandler<Object> {
 
     private void handleMovement(ChannelHandlerContext ctx, MovementRequest request) {
         try {
-            if (!canMoveTo(request.x, request.y)) {
-                Player currentPlayerState = GameWorld.getInstance().getPlayer(request.playerId);
-                if (currentPlayerState != null) {
-                    MovementBroadcast correction = new MovementBroadcast(currentPlayerState);
-                    sendPacket(ctx, correction);
-                }
+            // Verificar se o jogador existe
+            Player player = GameWorld.getInstance().getPlayer(request.playerId);
+            if (player == null) {
+                logger.warn("Movimento de jogador inexistente: {}", request.playerId);
                 return;
             }
 
+            // Verificar se a posição é válida (não sólida)
+            if (!canMoveTo(request.x, request.y)) {
+                // ENVIAR CORREÇÃO para o jogador que tentou mover
+                MovementBroadcast correction = new MovementBroadcast(player);
+                sendPacket(ctx, correction);
+                return;
+            }
+
+            // Atualizar posição no mundo
             GameWorld.getInstance().updatePlayerPosition(request.playerId, request.x, request.y, request.direction);
 
+            // Obter o jogador atualizado
             Player updatedPlayer = GameWorld.getInstance().getPlayer(request.playerId);
             if (updatedPlayer != null) {
-                broadcastToAll(new MovementBroadcast(updatedPlayer));
+                // Broadcast para TODOS os jogadores (inclusive o próprio)
+                // IMPORTANTE: Incluir o próprio jogador para sincronização
+                broadcastToAllExcept(new MovementBroadcast(updatedPlayer), ctx.channel().id().asLongText());
+
+                // Enviar confirmação apenas para o jogador que moveu (opcional)
+                // sendPacket(ctx, new MovementConfirm(updatedPlayer));
             }
         } catch (Exception e) {
             logger.error("ERRO handleMovement: {}", e.getMessage(), e);
+        }
+    }
+
+    // Adicionar método para broadcast exceto um channel
+    public static void broadcastToAllExcept(Object packet, String excludeChannelId) {
+        for (Channel channel : channels) {
+            if (channel.isActive() && !channel.id().asLongText().equals(excludeChannelId)) {
+                channel.writeAndFlush(packet);
+            }
         }
     }
 

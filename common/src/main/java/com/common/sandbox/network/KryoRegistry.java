@@ -20,6 +20,7 @@ public class KryoRegistry {
     private static final int ID_MOVEMENT_REQUEST = 20;
     private static final int ID_MOVEMENT_BROADCAST = 21;
     private static final int ID_PLAYER_LEFT = 22;
+    private static final int ID_MOVEMENT_CONFIRM = 23;  // NOVO
 
     private static final int ID_CHAT_MESSAGE = 30;
 
@@ -34,7 +35,7 @@ public class KryoRegistry {
 
     private static final int ID_PLAYER = 60;
     private static final int ID_CHUNK = 61;
-    private static final int ID_MAP_JSON = 62;  // Mudado de ID_MAP_DATA para ID_MAP_JSON
+    private static final int ID_MAP_JSON = 62;
     private static final int ID_WORLD_TILE = 63;
     private static final int ID_TILE_TAG = 64;
 
@@ -58,7 +59,8 @@ public class KryoRegistry {
         kryo.register(MovementRequest.class, ID_MOVEMENT_REQUEST);
         kryo.register(MovementBroadcast.class, ID_MOVEMENT_BROADCAST);
         kryo.register(PlayerLeftPacket.class, ID_PLAYER_LEFT);
-        
+        kryo.register(MovementConfirm.class, ID_MOVEMENT_CONFIRM);  // REGISTRAR AQUI
+
         // Chat
         kryo.register(ChatMessage.class, ID_CHAT_MESSAGE);
 
@@ -73,11 +75,11 @@ public class KryoRegistry {
         kryo.register(MapLoadRequest.class, ID_MAP_LOAD_REQUEST);
         kryo.register(MapLoadResponse.class, ID_MAP_LOAD_RESPONSE);
 
-        // Models - Usando MAP_JSON (nova classe)
+        // Models
         kryo.register(Player.class, ID_PLAYER);
         kryo.register(Chunk.class, ID_CHUNK);
-        kryo.register(MapJSON.class, ID_MAP_JSON);  // NOVO: MapJSON
-        kryo.register(MapJSON.ChunkData.class, ID_MAP_JSON_CHUNK_DATA);  // NOVO: Classe interna
+        kryo.register(MapJSON.class, ID_MAP_JSON);
+        kryo.register(MapJSON.ChunkData.class, ID_MAP_JSON_CHUNK_DATA);
         kryo.register(WorldTile.class, ID_WORLD_TILE);
         kryo.register(TileTag.class, ID_TILE_TAG);
 
@@ -86,11 +88,11 @@ public class KryoRegistry {
         kryo.register(LinkedHashMap.class, ID_LINKED_HASH_MAP);
         kryo.register(ArrayList.class, ID_ARRAY_LIST);
 
-        // Arrays multidimensionais importantes para o MapJSON
+        // Arrays multidimensionais
         kryo.register(int[][].class, 90);
-        kryo.register(int[][][].class, 91);  // 3D array para layers
+        kryo.register(int[][][].class, 91);
         kryo.register(boolean[][].class, 92);
-        kryo.register(boolean[][][].class, 93);  // 3D array para solid
+        kryo.register(boolean[][][].class, 93);
 
         // Arrays básicos
         kryo.register(WorldTile[].class, 100);
