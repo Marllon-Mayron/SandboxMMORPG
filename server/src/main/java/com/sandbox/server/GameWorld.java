@@ -91,11 +91,13 @@ public class GameWorld {
         if (playerId != null) {
             Player player = onlinePlayers.remove(playerId);
             if (player != null) {
-                // Salvar posição final
+                player.setOnline(false);
                 DatabaseManager.getInstance().savePlayerPosition(player);
+                DatabaseManager.getInstance().setPlayerOffline(playerId);
                 lastPositionSave.remove(playerId);
-                logger.info("❌ Jogador {} removido do mundo. Posição final ({}, {})",
-                        player.getUsername(), player.getX(), player.getY());
+                logger.info("❌ Jogador {} saiu. Final: Level {} | HP {}/{}",
+                        player.getUsername(), player.getLevel(),
+                        player.getCurrentHp(), player.getMaxHp());
             }
         }
     }

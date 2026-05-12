@@ -11,14 +11,8 @@ import com.badlogic.gdx.graphics.g2d.SpriteBatch;
 import com.badlogic.gdx.graphics.g2d.TextureRegion;
 import com.badlogic.gdx.graphics.g2d.freetype.FreeTypeFontGenerator;
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
-import com.badlogic.gdx.scenes.scene2d.Actor;
 import com.badlogic.gdx.scenes.scene2d.Stage;
 import com.badlogic.gdx.scenes.scene2d.ui.*;
-import com.badlogic.gdx.scenes.scene2d.utils.ChangeListener;
-import com.badlogic.gdx.scenes.scene2d.utils.Drawable;
-import com.badlogic.gdx.scenes.scene2d.utils.TextureRegionDrawable;
-import com.badlogic.gdx.utils.Align;
-import com.badlogic.gdx.utils.viewport.ScreenViewport;
 import com.common.sandbox.model.MapJSON;
 import com.common.sandbox.model.Player;
 import com.common.sandbox.model.Chunk;
@@ -160,7 +154,7 @@ public class GameWorldRenderer implements Screen {
 
         chatDisplay.append("*** Welcome to Sandbox Experiment! ***\n");
         chatDisplay.append("*** Use WASD to move ***\n");
-        chatDisplay.append("*** Press ENTER to chat | H to hide chat ***\n\n");
+        chatDisplay.append("*** Press ENTER to chat | H to hide chat | C for attributes ***\n\n");
         if (adminMode) {
             chatDisplay.append("*** ADMIN MODE: Press F12 for Map Editor ***\n");
         }
@@ -168,6 +162,22 @@ public class GameWorldRenderer implements Screen {
         if (playerUI != null) {
             playerUI.update(currentPlayer, 1.0f);
             playerUI.updateChatHistory(chatDisplay.toString());
+
+            // Send all status to UI
+            if (player.getMaxHp() > 0) {
+                float healthPercent = (float) player.getCurrentHp() / player.getMaxHp() * 100;
+                playerUI.setHealth(healthPercent);
+            }
+            if (player.getMaxMana() > 0) {
+                float manaPercent = (float) player.getCurrentMana() / player.getMaxMana() * 100;
+                playerUI.setMana(manaPercent);
+            }
+            if (player.getMaxStamina() > 0) {
+                float staminaPercent = (float) player.getCurrentStamina() / player.getMaxStamina() * 100;
+                playerUI.setStamina(staminaPercent);
+            }
+
+            playerUI.setGold(player.getGold());
         }
 
         if (camera != null) {
@@ -201,15 +211,15 @@ public class GameWorldRenderer implements Screen {
         Gdx.app.postRunnable(() -> {
             if (broadcast.player != null) {
                 if (currentPlayer != null && broadcast.player.getId().equals(currentPlayer.getId())) {
-                    // Atualizar o próprio jogador DIRETAMENTE para evitar lag
+                    // Update own player directly to avoid lag
                     currentPlayer.setX(broadcast.player.getX());
                     currentPlayer.setY(broadcast.player.getY());
                     currentPlayer.setDirection(broadcast.player.getDirection());
                 } else {
-                    // ATUALIZAR OUTROS JOGADORES COM INTERPOLAÇÃO
+                    // Update other players with interpolation
                     Player existing = otherPlayers.get(broadcast.player.getId());
                     if (existing != null) {
-                        // Salvar posição anterior para interpolação
+                        // Save previous position for interpolation
                         Player interpolated = new Player();
                         interpolated.setId(existing.getId());
                         interpolated.setUsername(existing.getUsername());
@@ -219,7 +229,7 @@ public class GameWorldRenderer implements Screen {
                         interpolatedPlayers.put(broadcast.player.getId(), interpolated);
                     }
 
-                    // Atualizar posição atual
+                    // Update current position
                     otherPlayers.put(broadcast.player.getId(), broadcast.player);
                     lastUpdateTime.put(broadcast.player.getId(), System.currentTimeMillis());
                 }
@@ -322,25 +332,15 @@ public class GameWorldRenderer implements Screen {
     @Override
     public void show() {
         logger.info("GameWorldRenderer show()");
-        setupCallbacks();
 
-        if (initialNearbyPlayers != null && !initialNearbyPlayers.isEmpty()) {
-            logger.info("Adding {} initial nearby players to world", initialNearbyPlayers.size());
-            for (Player player : initialNearbyPlayers.values()) {
-                if (currentPlayer == null || !player.getId().equals(currentPlayer.getId())) {
-                    otherPlayers.put(player.getId(), player);
-                    logger.debug("Initial player loaded: {} at ({}, {})",
-                            player.getUsername(), player.getX(), player.getY());
-                }
-            }
-        }
-
+        // FIRST: create camera and batch
         camera = new OrthographicCamera();
         camera.setToOrtho(false, Gdx.graphics.getWidth(), Gdx.graphics.getHeight());
 
         batch = new SpriteBatch();
         shapeRenderer = new ShapeRenderer();
 
+        // SECOND: create font
         try {
             FreeTypeFontGenerator generator = new FreeTypeFontGenerator(Gdx.files.internal("fonts/arial.ttf"));
             FreeTypeFontGenerator.FreeTypeFontParameter parameter = new FreeTypeFontGenerator.FreeTypeFontParameter();
@@ -355,137 +355,32 @@ public class GameWorldRenderer implements Screen {
             font.getData().setScale(1.0f);
         }
 
-        createSkin();
+        // FOURTH: create PlayerUI (skin is ready)
         createPlayerUI();
 
+        // FIFTH: setup callbacks
+        setupCallbacks();
+
+        // SIXTH: add initial players
+        if (initialNearbyPlayers != null && !initialNearbyPlayers.isEmpty()) {
+            logger.info("Adding {} initial nearby players to world", initialNearbyPlayers.size());
+            for (Player player : initialNearbyPlayers.values()) {
+                if (currentPlayer == null || !player.getId().equals(currentPlayer.getId())) {
+                    otherPlayers.put(player.getId(), player);
+                    logger.debug("Initial player loaded: {} at ({}, {})",
+                            player.getUsername(), player.getX(), player.getY());
+                }
+            }
+        }
+
         initialized = true;
+
+        // SEVENTH: load map
         game.getNetworkClient().requestMapLoad("11111111-1111-1111-1111-111111111111");
     }
 
-    private void createSkin() {
-        skin = new Skin();
-        skin.add("default-font", font);
-
-        // Criar drawables básicos
-        Pixmap darkPixmap = new Pixmap(1, 1, Pixmap.Format.RGBA8888);
-        darkPixmap.setColor(0.12f, 0.12f, 0.16f, 0.95f);
-        darkPixmap.fill();
-        Texture darkTexture = new Texture(darkPixmap);
-        darkPixmap.dispose();
-        Drawable darkDrawable = new TextureRegionDrawable(darkTexture);
-
-        Pixmap lightPixmap = new Pixmap(1, 1, Pixmap.Format.RGBA8888);
-        lightPixmap.setColor(0.22f, 0.22f, 0.28f, 0.95f);
-        lightPixmap.fill();
-        Texture lightTexture = new Texture(lightPixmap);
-        lightPixmap.dispose();
-        Drawable lightDrawable = new TextureRegionDrawable(lightTexture);
-
-        Pixmap buttonPixmap = new Pixmap(1, 1, Pixmap.Format.RGBA8888);
-        buttonPixmap.setColor(0.2f, 0.2f, 0.25f, 1);
-        buttonPixmap.fill();
-        Texture buttonTexture = new Texture(buttonPixmap);
-        buttonPixmap.dispose();
-        Drawable buttonDrawable = new TextureRegionDrawable(buttonTexture);
-
-        Pixmap greenPixmap = new Pixmap(1, 1, Pixmap.Format.RGBA8888);
-        greenPixmap.setColor(0.2f, 0.6f, 0.2f, 1);
-        greenPixmap.fill();
-        Texture greenTexture = new Texture(greenPixmap);
-        greenPixmap.dispose();
-        Drawable greenDrawable = new TextureRegionDrawable(greenTexture);
-
-        Pixmap redPixmap = new Pixmap(1, 1, Pixmap.Format.RGBA8888);
-        redPixmap.setColor(0.7f, 0.2f, 0.2f, 1);
-        redPixmap.fill();
-        Texture redTexture = new Texture(redPixmap);
-        redPixmap.dispose();
-        Drawable redDrawable = new TextureRegionDrawable(redTexture);
-
-        Pixmap bluePixmap = new Pixmap(1, 1, Pixmap.Format.RGBA8888);
-        bluePixmap.setColor(0.2f, 0.4f, 0.7f, 1);
-        bluePixmap.fill();
-        Texture blueTexture = new Texture(bluePixmap);
-        bluePixmap.dispose();
-        Drawable blueDrawable = new TextureRegionDrawable(blueTexture);
-
-        Pixmap goldPixmap = new Pixmap(1, 1, Pixmap.Format.RGBA8888);
-        goldPixmap.setColor(0.8f, 0.6f, 0.1f, 1);
-        goldPixmap.fill();
-        Texture goldTexture = new Texture(goldPixmap);
-        goldPixmap.dispose();
-        Drawable goldDrawable = new TextureRegionDrawable(goldTexture);
-
-        // Registrar drawables
-        skin.add("window-bg", darkDrawable);
-        skin.add("button-bg", buttonDrawable);
-        skin.add("green", greenDrawable);
-        skin.add("red", redDrawable);
-        skin.add("blue", blueDrawable);
-        skin.add("gold", goldDrawable);
-
-        // Label styles
-        Label.LabelStyle labelStyle = new Label.LabelStyle();
-        labelStyle.font = font;
-        labelStyle.fontColor = Color.WHITE;
-        skin.add("default", labelStyle);
-
-        Label.LabelStyle titleStyle = new Label.LabelStyle();
-        titleStyle.font = font;
-        titleStyle.fontColor = Color.GOLD;
-        skin.add("title", titleStyle);
-
-        Label.LabelStyle statusStyle = new Label.LabelStyle();
-        statusStyle.font = font;
-        statusStyle.fontColor = Color.LIGHT_GRAY;
-        skin.add("status", statusStyle);
-
-        // TextButton style
-        TextButton.TextButtonStyle textButtonStyle = new TextButton.TextButtonStyle();
-        textButtonStyle.font = font;
-        textButtonStyle.fontColor = Color.WHITE;
-        textButtonStyle.up = buttonDrawable;
-        textButtonStyle.down = darkDrawable;
-        textButtonStyle.over = blueDrawable;
-        skin.add("default", textButtonStyle);
-
-        TextButton.TextButtonStyle successStyle = new TextButton.TextButtonStyle();
-        successStyle.font = font;
-        successStyle.fontColor = Color.WHITE;
-        successStyle.up = greenDrawable;
-        successStyle.down = darkDrawable;
-        successStyle.over = blueDrawable;
-        skin.add("success", successStyle);
-
-        TextButton.TextButtonStyle primaryStyle = new TextButton.TextButtonStyle();
-        primaryStyle.font = font;
-        primaryStyle.fontColor = Color.WHITE;
-        primaryStyle.up = blueDrawable;
-        primaryStyle.down = darkDrawable;
-        primaryStyle.over = buttonDrawable;
-        skin.add("primary", primaryStyle);
-
-        // TextField style
-        TextField.TextFieldStyle textFieldStyle = new TextField.TextFieldStyle();
-        textFieldStyle.font = font;
-        textFieldStyle.fontColor = Color.WHITE;
-        textFieldStyle.background = buttonDrawable;
-        textFieldStyle.cursor = blueDrawable;
-        textFieldStyle.selection = blueDrawable;
-        skin.add("default", textFieldStyle);
-
-        // ScrollPane style
-        ScrollPane.ScrollPaneStyle scrollStyle = new ScrollPane.ScrollPaneStyle();
-        scrollStyle.background = darkDrawable;
-        scrollStyle.vScroll = buttonDrawable;
-        scrollStyle.vScrollKnob = blueDrawable;
-        scrollStyle.hScroll = buttonDrawable;
-        scrollStyle.hScrollKnob = blueDrawable;
-        skin.add("default", scrollStyle);
-    }
-
     private void createPlayerUI() {
-        playerUI = new PlayerUI(skin);
+        playerUI = new PlayerUI();
         playerUI.setChatInputProcessor(chatInput -> {
             String message = chatInput.trim();
             if (!message.isEmpty() && currentPlayer != null) {
@@ -493,8 +388,25 @@ public class GameWorldRenderer implements Screen {
             }
         });
 
-        uiStage = playerUI.getStage();
+        // Adicionar mensagens iniciais ao chat
+        playerUI.updateChatHistory(chatDisplay.toString());
+
+        // Adicionar mensagens de boas-vindas
+        playerUI.addChatMessage("*** Welcome to Sandbox Experiment! ***");
+        playerUI.addChatMessage("*** Use WASD to move ***");
+        playerUI.addChatMessage("*** Press ENTER to chat | H to hide chat | C for attributes ***");
+
+        if (adminMode) {
+            playerUI.addChatMessage("*** ADMIN MODE: Press F12 for Map Editor ***");
+        }
+
+        // IMPORTANTE: Usar o InputProcessor personalizado que lida com C e ENTER
         Gdx.input.setInputProcessor(createInputProcessor());
+
+        // Atualizar o uiStage para referenciar o stage do PlayerUI
+        uiStage = playerUI.getStage();
+
+        playerUI.resize(Gdx.graphics.getWidth(), Gdx.graphics.getHeight());
     }
 
     private InputProcessor createInputProcessor() {
@@ -504,12 +416,21 @@ public class GameWorldRenderer implements Screen {
                 // Verificar se o chat está focado
                 boolean chatFocused = playerUI != null && playerUI.isChatFocused();
 
-                // Tecla H - só esconde/mostra chat se o chat NÃO estiver focado
+                // Tecla C - abrir janela de atributos (somente se chat NÃO estiver focado)
+                if (keycode == Input.Keys.C && !chatFocused) {
+                    if (playerUI != null) {
+                        logger.info("C key pressed - toggling attributes");
+                        playerUI.toggleAttributes();
+                    }
+                    return true;
+                }
+
+                // Tecla H - esconder/mostrar chat (somente se chat NÃO estiver focado)
                 if (keycode == Input.Keys.H && !chatFocused) {
                     if (playerUI != null) {
                         playerUI.toggleChat();
                     }
-                    return true; // CONSUMIR - não passar para ninguém
+                    return true;
                 }
 
                 // Tecla ENTER
@@ -521,7 +442,7 @@ public class GameWorldRenderer implements Screen {
                             playerUI.focusChat();
                         }
                     }
-                    return true; // CONSUMIR
+                    return true;
                 }
 
                 // Tecla ESC
@@ -530,71 +451,82 @@ public class GameWorldRenderer implements Screen {
                         playerUI.unfocusChat();
                         return true;
                     }
+                    if (playerUI != null && playerUI.isAttributesVisible()) {
+                        playerUI.hideAttributes();
+                        return true;
+                    }
                 }
 
-                // Se o chat está focado, passar TODAS as teclas para o stage (incluindo H)
-                if (chatFocused) {
-                    return uiStage != null && uiStage.keyDown(keycode);
+                // Se o chat está focado, passar TODAS as teclas para o stage do PlayerUI
+                if (chatFocused && playerUI != null && playerUI.getStage() != null) {
+                    return playerUI.getStage().keyDown(keycode);
                 }
 
-                // Se o chat NÃO está focado, não passar teclas para o stage
-                // As teclas de movimento são tratadas no handleInput
                 return false;
             }
 
             @Override
             public boolean keyUp(int keycode) {
-                if (playerUI != null && playerUI.isChatFocused()) {
-                    return uiStage != null && uiStage.keyUp(keycode);
+                boolean chatFocused = playerUI != null && playerUI.isChatFocused();
+                if (chatFocused && playerUI != null && playerUI.getStage() != null) {
+                    return playerUI.getStage().keyUp(keycode);
                 }
                 return false;
             }
 
             @Override
             public boolean keyTyped(char character) {
-                if (playerUI != null && playerUI.isChatFocused()) {
-                    return uiStage != null && uiStage.keyTyped(character);
+                boolean chatFocused = playerUI != null && playerUI.isChatFocused();
+                if (chatFocused && playerUI != null && playerUI.getStage() != null) {
+                    return playerUI.getStage().keyTyped(character);
                 }
                 return false;
             }
 
             @Override
             public boolean touchDown(int screenX, int screenY, int pointer, int button) {
-                // Se clicar fora do chat quando estiver focado, perder foco
                 if (playerUI != null && playerUI.isChatFocused()) {
                     if (playerUI.isPointOverChat(screenX, screenY)) {
-                        return uiStage != null && uiStage.touchDown(screenX, screenY, pointer, button);
+                        if (playerUI.getStage() != null) {
+                            return playerUI.getStage().touchDown(screenX, screenY, pointer, button);
+                        }
                     } else {
                         playerUI.unfocusChat();
                         return false;
                     }
                 }
-                return uiStage != null && uiStage.touchDown(screenX, screenY, pointer, button);
+                return false;
             }
 
             @Override
             public boolean touchUp(int screenX, int screenY, int pointer, int button) {
-                return uiStage != null && uiStage.touchUp(screenX, screenY, pointer, button);
+                if (playerUI != null && playerUI.isChatFocused() && playerUI.getStage() != null) {
+                    return playerUI.getStage().touchUp(screenX, screenY, pointer, button);
+                }
+                return false;
             }
 
             @Override
             public boolean touchDragged(int screenX, int screenY, int pointer) {
-                return uiStage != null && uiStage.touchDragged(screenX, screenY, pointer);
+                if (playerUI != null && playerUI.isChatFocused() && playerUI.getStage() != null) {
+                    return playerUI.getStage().touchDragged(screenX, screenY, pointer);
+                }
+                return false;
             }
 
             @Override
             public boolean mouseMoved(int screenX, int screenY) {
-                return uiStage != null && uiStage.mouseMoved(screenX, screenY);
+                return false;
             }
 
             @Override
             public boolean scrolled(float amountX, float amountY) {
-                return uiStage != null && uiStage.scrolled(amountX, amountY);
+                return false;
             }
 
             @Override
             public boolean touchCancelled(int screenX, int screenY, int pointer, int button) {
-                return uiStage != null && uiStage.touchCancelled(screenX, screenY, pointer, button);
+                return false;
             }
         };
     }
@@ -725,7 +657,6 @@ public class GameWorldRenderer implements Screen {
     private void renderPlayers() {
         long now = System.currentTimeMillis();
 
-        // Desenhar apenas os retângulos dos players com ShapeRenderer
         shapeRenderer.setProjectionMatrix(camera.combined);
         shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
 
@@ -733,7 +664,7 @@ public class GameWorldRenderer implements Screen {
             float renderX = player.getX();
             float renderY = player.getY();
 
-            // Interpolação suave
+            // Smooth interpolation
             Player interpolated = interpolatedPlayers.get(player.getId());
             Long lastUpdate = lastUpdateTime.get(player.getId());
 
@@ -753,7 +684,7 @@ public class GameWorldRenderer implements Screen {
             float x = renderX - PLAYER_SIZE/2;
             float y = renderY - PLAYER_SIZE/2;
 
-            // Sombra
+            // Shadow
             shapeRenderer.setColor(0, 0, 0, 0.5f);
             shapeRenderer.rect(x - 2, y - 2, PLAYER_SIZE + 4, PLAYER_SIZE + 4);
             // Player
@@ -774,15 +705,12 @@ public class GameWorldRenderer implements Screen {
     }
 
     private void renderFloatingNames() {
-        // Desenhar nomes dos players com SpriteBatch
-        // IMPORTANTE: Este método deve ser chamado APÓS batch.begin() e ANTES de batch.end()
         long now = System.currentTimeMillis();
 
         for (Player player : otherPlayers.values()) {
             float renderX = player.getX();
             float renderY = player.getY();
 
-            // Usar mesma interpolação para os nomes
             Player interpolated = interpolatedPlayers.get(player.getId());
             Long lastUpdate = lastUpdateTime.get(player.getId());
 
@@ -856,6 +784,16 @@ public class GameWorldRenderer implements Screen {
 
         if (playerUI != null && currentPlayer != null) {
             playerUI.update(currentPlayer, terrainSpeed);
+
+            // Update real-time status
+            float healthPercent = (float) currentPlayer.getCurrentHp() / currentPlayer.getMaxHp() * 100;
+            float manaPercent = (float) currentPlayer.getCurrentMana() / currentPlayer.getMaxMana() * 100;
+            float staminaPercent = (float) currentPlayer.getCurrentStamina() / currentPlayer.getMaxStamina() * 100;
+
+            playerUI.setHealth(healthPercent);
+            playerUI.setMana(manaPercent);
+            playerUI.setStamina(staminaPercent);
+            playerUI.setGold(currentPlayer.getGold());
         }
     }
 
@@ -878,17 +816,16 @@ public class GameWorldRenderer implements Screen {
             camera.update();
         }
 
-        // 1. RENDERIZAR CHUNKS (usa batch)
-        renderChunks();  // <- CHAMA batch.begin() e batch.end()
+        // 1. RENDER CHUNKS (uses batch)
+        renderChunks();
 
-        // 2. RENDERIZAR PLAYERS (usa shapeRenderer)
-        renderPlayers(); // <- USA shapeRenderer, NÃO usa batch
+        // 2. RENDER PLAYERS (uses shapeRenderer)
+        renderPlayers();
 
-        // 3. RENDERIZAR NOMES (usa batch)
-        // IMPORTANTE: Precisa chamar batch.begin() antes
+        // 3. RENDER NAMES (uses batch)
         batch.setProjectionMatrix(camera.combined);
         batch.begin();
-        renderFloatingNames(); // <- Chama font.draw(batch, ...)
+        renderFloatingNames();
         batch.end();
 
         if (playerUI != null) {

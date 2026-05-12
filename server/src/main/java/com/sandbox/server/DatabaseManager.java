@@ -138,7 +138,11 @@ public class DatabaseManager {
     }
 
     public Player authenticatePlayer(String username, String password) {
-        String sql = "SELECT id, username, email, password_hash, x, y, direction FROM players WHERE username = ?";
+        String sql = "SELECT id, username, email, password_hash, x, y, direction, " +
+                "level, experience, gold, current_hp, current_mana, current_stamina, " +
+                "max_hp, max_mana, max_stamina, strength, agility, wisdom, " +
+                "attribute_points, skill_points " +
+                "FROM players WHERE username = ?";
 
         try (Connection conn = getConnection();
              PreparedStatement pstmt = conn.prepareStatement(sql)) {
@@ -149,19 +153,36 @@ public class DatabaseManager {
                 String hashedPassword = rs.getString("password_hash");
 
                 if (BCrypt.checkpw(password, hashedPassword)) {
-                    UUID id = (UUID) rs.getObject("id");
-                    String email = rs.getString("email");
-                    float x = rs.getFloat("x");
-                    float y = rs.getFloat("y");
-                    String direction = rs.getString("direction");
+                    Player player = new Player();
+                    player.setId(rs.getObject("id").toString());
+                    player.setUsername(rs.getString("username"));
+                    player.setEmail(rs.getString("email"));
+                    player.setX(rs.getFloat("x"));
+                    player.setY(rs.getFloat("y"));
+                    player.setDirection(rs.getString("direction") != null ? rs.getString("direction") : "DOWN");
 
-                    Player player = new Player(id.toString(), username, email);
-                    player.setX(x);
-                    player.setY(y);
-                    player.setDirection(direction != null ? direction : "DOWN");
+                    // Novos campos
+                    player.setLevel(rs.getInt("level"));
+                    player.setExperience(rs.getInt("experience"));
+                    player.setGold(rs.getInt("gold"));
+                    player.setCurrentHp(rs.getInt("current_hp"));
+                    player.setCurrentMana(rs.getInt("current_mana"));
+                    player.setCurrentStamina(rs.getInt("current_stamina"));
+                    player.setMaxHp(rs.getInt("max_hp"));
+                    player.setMaxMana(rs.getInt("max_mana"));
+                    player.setMaxStamina(rs.getInt("max_stamina"));
+                    player.setStrength(rs.getInt("strength"));
+                    player.setAgility(rs.getInt("agility"));
+                    player.setWisdom(rs.getInt("wisdom"));
+                    player.setAttributePoints(rs.getInt("attribute_points"));
+                    player.setSkillPoints(rs.getInt("skill_points"));
+                    player.setOnline(true);
 
-                    updateLastLogin(id);
-                    logger.info("✅ Jogador {} carregado na posição ({}, {})", username, x, y);
+                    updateLastLogin(player.getId());
+                    savePlayerPosition(player); // Salvar para garantir que está online
+
+                    logger.info("✅ Jogador {} carregado - Level {} | HP {}/{} | Gold {}",
+                            username, player.getLevel(), player.getCurrentHp(), player.getMaxHp(), player.getGold());
                     return player;
                 }
             }
@@ -173,7 +194,7 @@ public class DatabaseManager {
         }
     }
 
-    private void updateLastLogin(UUID playerId) {
+    private void updateLastLogin(String playerId) {
         String sql = "UPDATE players SET last_login = CURRENT_TIMESTAMP WHERE id = ?";
         try (Connection conn = getConnection();
              PreparedStatement pstmt = conn.prepareStatement(sql)) {
@@ -212,7 +233,16 @@ public class DatabaseManager {
      * Salva a posição do jogador (síncrono - usado no logout)
      */
     public void savePlayerPosition(Player player) {
-        String sql = "UPDATE players SET x = ?, y = ?, direction = ?, last_login = CURRENT_TIMESTAMP WHERE id = ?::uuid";
+        String sql = "UPDATE players SET " +
+                "x = ?, y = ?, direction = ?, " +
+                "last_login = CURRENT_TIMESTAMP, " +
+                "is_online = true, " +
+                "level = ?, experience = ?, gold = ?, " +
+                "current_hp = ?, current_mana = ?, current_stamina = ?, " +
+                "max_hp = ?, max_mana = ?, max_stamina = ?, " +
+                "strength = ?, agility = ?, wisdom = ?, " +
+                "attribute_points = ?, skill_points = ? " +
+                "WHERE id = ?::uuid";
 
         try (Connection conn = getConnection();
              PreparedStatement pstmt = conn.prepareStatement(sql)) {
@@ -220,16 +250,42 @@ public class DatabaseManager {
             pstmt.setFloat(1, player.getX());
             pstmt.setFloat(2, player.getY());
             pstmt.setString(3, player.getDirection());
-            pstmt.setObject(4, UUID.fromString(player.getId()));
+            pstmt.setInt(4, player.getLevel());
+            pstmt.setInt(5, player.getExperience());
+            pstmt.setInt(6, player.getGold());
+            pstmt.setInt(7, player.getCurrentHp());
+            pstmt.setInt(8, player.getCurrentMana());
+            pstmt.setInt(9, player.getCurrentStamina());
+            pstmt.setInt(10, player.getMaxHp());
+            pstmt.setInt(11, player.getMaxMana());
+            pstmt.setInt(12, player.getMaxStamina());
+            pstmt.setInt(13, player.getStrength());
+            pstmt.setInt(14, player.getAgility());
+            pstmt.setInt(15, player.getWisdom());
+            pstmt.setInt(16, player.getAttributePoints());
+            pstmt.setInt(17, player.getSkillPoints());
+            pstmt.setObject(18, UUID.fromString(player.getId()));
 
             int updated = pstmt.executeUpdate();
             if (updated > 0) {
-                logger.debug("✅ Posição salva para {}: ({}, {}) dir={}",
-                        player.getUsername(), player.getX(), player.getY(), player.getDirection());
+                logger.debug("✅ Player {} saved: Level {} | HP {}/{} | Gold {}",
+                        player.getUsername(), player.getLevel(),
+                        player.getCurrentHp(), player.getMaxHp(), player.getGold());
             }
 
         } catch (SQLException e) {
-            logger.error("❌ Erro ao salvar posição do jogador {}", player.getUsername(), e);
+            logger.error("❌ Erro ao salvar jogador {}", player.getUsername(), e);
+        }
+    }
+
+    public void setPlayerOffline(String playerId) {
+        String sql = "UPDATE players SET is_online = false, last_logout = CURRENT_TIMESTAMP WHERE id = ?::uuid";
+        try (Connection conn = getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setObject(1, UUID.fromString(playerId));
+            pstmt.executeUpdate();
+        } catch (SQLException e) {
+            logger.error("Error setting player offline", e);
         }
     }
 
