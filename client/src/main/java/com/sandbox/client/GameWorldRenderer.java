@@ -19,6 +19,7 @@ import com.common.sandbox.model.WorldTile;
 import com.common.sandbox.network.packets.*;
 import com.sandbox.client.editor.MapEditorScreen;
 import com.sandbox.client.input.PlayerInputManager;
+import com.sandbox.client.renderer.ItemRenderer;
 import com.sandbox.client.ui.PlayerUI;
 import com.sandbox.client.camera.GameCamera;
 import org.slf4j.Logger;
@@ -75,6 +76,8 @@ public class GameWorldRenderer implements Screen {
     private long lastStatusSyncTime = 0;
     private static final long STATUS_SYNC_INTERVAL_MS = 10000; // 10 segundos
 
+    private ItemRenderer itemRenderer;
+
     public GameWorldRenderer(SandboxClient game, boolean adminMode, Map<String, Player> nearbyPlayers) {
         this.game = game;
         this.adminMode = adminMode;
@@ -88,6 +91,58 @@ public class GameWorldRenderer implements Screen {
         this.dashDirection = new Vector2();
 
         logger.info("GameWorldRenderer created with {} initial nearby players", this.initialNearbyPlayers.size());
+
+        // ⭐ CONFIGURAR CALLBACKS IMEDIATAMENTE NO CONSTRUTOR
+        setupCallbacks();
+    }
+
+    public void init() {
+        // Inicializa a camera suave
+        gameCamera = new GameCamera(Gdx.graphics.getWidth(), Gdx.graphics.getHeight());
+        gameCamera.setFollowSpeed(6.0f);
+        gameCamera.setDeadZone(80, 80);
+
+        batch = new SpriteBatch();
+        shapeRenderer = new ShapeRenderer();
+
+        try {
+            FreeTypeFontGenerator generator = new FreeTypeFontGenerator(Gdx.files.internal("fonts/arial.ttf"));
+            FreeTypeFontGenerator.FreeTypeFontParameter parameter = new FreeTypeFontGenerator.FreeTypeFontParameter();
+            parameter.size = 18;
+            parameter.borderWidth = 1;
+            parameter.borderColor = Color.BLACK;
+            parameter.color = Color.WHITE;
+            font = generator.generateFont(parameter);
+            generator.dispose();
+        } catch (Exception e) {
+            font = new BitmapFont();
+            font.getData().setScale(1.0f);
+        }
+
+        createPlayerUI();
+        setupPlayerInput();
+
+        // ===== Inicializar ItemRenderer =====
+        itemRenderer = new ItemRenderer();
+
+        if (initialNearbyPlayers != null && !initialNearbyPlayers.isEmpty()) {
+            logger.info("Adding {} initial nearby players to world", initialNearbyPlayers.size());
+            for (Player player : initialNearbyPlayers.values()) {
+                if (currentPlayer == null || !player.getId().equals(currentPlayer.getId())) {
+                    otherPlayers.put(player.getId(), player);
+                    logger.debug("Initial player loaded: {} at ({}, {})",
+                            player.getUsername(), player.getX(), player.getY());
+                }
+            }
+        }
+
+        initialized = true;
+        game.getNetworkClient().requestMapLoad("11111111-1111-1111-1111-111111111111");
+
+        if (currentPlayer != null) {
+            gameCamera.setTarget(currentPlayer.getX(), currentPlayer.getY());
+            gameCamera.resetPosition();
+        }
     }
 
     private void loadRequiredSpritesheets(Set<String> requiredPaths, MapJSON mapJson) {
@@ -198,6 +253,8 @@ public class GameWorldRenderer implements Screen {
     }
 
     private void setupCallbacks() {
+        logger.info("Setting up callbacks for GameWorldRenderer");
+
         game.getNetworkClient().setMovementCallback(this::onMovementBroadcast);
         game.getNetworkClient().setChatCallback(this::onChatMessage);
         game.getNetworkClient().setChunkCallback(this::onChunkReceived);
@@ -216,11 +273,13 @@ public class GameWorldRenderer implements Screen {
         });
         game.getNetworkClient().setPlayerLeftCallback(this::onPlayerLeft);
 
-        // Friend system callbacks
         game.getNetworkClient().setFriendListCallback(this::onFriendListResponse);
         game.getNetworkClient().setFriendRequestCallback(this::onFriendRequestResponse);
         game.getNetworkClient().setPrivateMessageCallback(this::onPrivateMessage);
         game.getNetworkClient().setPrivateMessageHistoryCallback(this::onPrivateMessageHistory);
+
+        game.getNetworkClient().setItemSpawnCallback(this::onItemSpawn);
+        game.getNetworkClient().setItemDespawnCallback(this::onItemDespawn);
 
         logger.info("Callbacks configured");
     }
@@ -451,51 +510,30 @@ public class GameWorldRenderer implements Screen {
     @Override
     public void show() {
         logger.info("GameWorldRenderer show()");
-
-        // Inicializa a camera suave
-        gameCamera = new GameCamera(Gdx.graphics.getWidth(), Gdx.graphics.getHeight());
-        gameCamera.setFollowSpeed(6.0f);
-        gameCamera.setDeadZone(80, 80);
-
-        batch = new SpriteBatch();
-        shapeRenderer = new ShapeRenderer();
-
-        try {
-            FreeTypeFontGenerator generator = new FreeTypeFontGenerator(Gdx.files.internal("fonts/arial.ttf"));
-            FreeTypeFontGenerator.FreeTypeFontParameter parameter = new FreeTypeFontGenerator.FreeTypeFontParameter();
-            parameter.size = 18;
-            parameter.borderWidth = 1;
-            parameter.borderColor = Color.BLACK;
-            parameter.color = Color.WHITE;
-            font = generator.generateFont(parameter);
-            generator.dispose();
-        } catch (Exception e) {
-            font = new BitmapFont();
-            font.getData().setScale(1.0f);
+        if (!initialized) {
+            init();
         }
+    }
 
-        createPlayerUI();
-        setupCallbacks();
-        setupPlayerInput(); // <-- IMPORTANTE: Inicializar o input manager aqui
-
-        if (initialNearbyPlayers != null && !initialNearbyPlayers.isEmpty()) {
-            logger.info("Adding {} initial nearby players to world", initialNearbyPlayers.size());
-            for (Player player : initialNearbyPlayers.values()) {
-                if (currentPlayer == null || !player.getId().equals(currentPlayer.getId())) {
-                    otherPlayers.put(player.getId(), player);
-                    logger.debug("Initial player loaded: {} at ({}, {})",
-                            player.getUsername(), player.getX(), player.getY());
-                }
+    public void onItemSpawn(ItemSpawnPacket packet) {
+        Gdx.app.postRunnable(() -> {
+            if (itemRenderer != null && packet.item != null) {
+                itemRenderer.addItem(packet.item);
+                logger.info("Item spawned in world: {} at ({}, {})",
+                        packet.item.getDefinition().getName(),
+                        packet.item.getX(),
+                        packet.item.getY());
             }
-        }
+        });
+    }
 
-        initialized = true;
-        game.getNetworkClient().requestMapLoad("11111111-1111-1111-1111-111111111111");
-
-        if (currentPlayer != null) {
-            gameCamera.setTarget(currentPlayer.getX(), currentPlayer.getY());
-            gameCamera.resetPosition();
-        }
+    public void onItemDespawn(ItemDespawnPacket packet) {
+        Gdx.app.postRunnable(() -> {
+            if (itemRenderer != null) {
+                itemRenderer.removeItem(packet.instanceId);
+                logger.debug("Item despawned: {}", packet.instanceId);
+            }
+        });
     }
 
     private void createPlayerUI() {
@@ -990,9 +1028,6 @@ public class GameWorldRenderer implements Screen {
         if (currentPlayer == null) return;
         if (spritesheets.isEmpty()) return;
 
-        batch.setProjectionMatrix(gameCamera.getCamera().combined);
-        batch.begin();
-
         int centerChunkX = (int) Math.floor(currentPlayer.getX() / (CHUNK_SIZE * WORLD_TILE_SIZE));
         int centerChunkY = (int) Math.floor(currentPlayer.getY() / (CHUNK_SIZE * WORLD_TILE_SIZE));
 
@@ -1006,8 +1041,6 @@ public class GameWorldRenderer implements Screen {
                 }
             }
         }
-
-        batch.end();
     }
 
     private void renderChunk(Chunk chunk, int chunkX, int chunkY) {
@@ -1212,13 +1245,26 @@ public class GameWorldRenderer implements Screen {
             gameCamera.update(delta);
         }
 
-        renderChunks();
-        renderPlayers();
-
+        // INICIAR O BATCH APENAS UMA VEZ
         batch.setProjectionMatrix(gameCamera.getCamera().combined);
         batch.begin();
+
+        // 1. Renderizar chunks (tiles)
+        renderChunks();
+
+        // 2. Renderizar itens (acima dos tiles)
+        if (itemRenderer != null) {
+            itemRenderer.render(batch, gameCamera);
+        }
+
+        // 3. Renderizar nomes flutuantes (acima dos itens)
         renderFloatingNames();
+
+        // FECHAR O BATCH
         batch.end();
+
+        // 4. Renderizar players (ShapeRenderer, não precisa de batch)
+        renderPlayers();
 
         // Configurar o input processor da UI
         if (playerUI != null && Gdx.input.getInputProcessor() != playerUI.getStage()) {
@@ -1227,6 +1273,11 @@ public class GameWorldRenderer implements Screen {
 
         if (playerUI != null) {
             playerUI.render(batch);
+        }
+
+        // Atualizar a animação dos itens (fora do batch)
+        if (itemRenderer != null) {
+            itemRenderer.update(delta);
         }
     }
 

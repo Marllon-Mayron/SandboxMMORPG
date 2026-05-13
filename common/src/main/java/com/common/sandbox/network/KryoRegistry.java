@@ -55,6 +55,11 @@ public class KryoRegistry {
     private static final int ID_PRIVATE_MESSAGE_HISTORY_REQUEST = 96;
     private static final int ID_PRIVATE_MESSAGE_HISTORY_RESPONSE = 97;
 
+    private static final int ID_ITEM_DEFINITION = 160;
+    private static final int ID_GROUND_ITEM = 161;
+    private static final int ID_ITEM_SPAWN_PACKET = 162;
+    private static final int ID_ITEM_DESPAWN_PACKET = 163;
+
     private static boolean registered = false;
 
     public static synchronized void registerClasses(Kryo kryo) {
@@ -103,6 +108,11 @@ public class KryoRegistry {
         kryo.register(PrivateMessagePacket.class, ID_PRIVATE_MESSAGE);
         kryo.register(FriendListResponse.FriendInfo.class, 94);
         kryo.register(FriendListResponse.FriendRequestInfo.class, 95);
+
+        kryo.register(ItemDefinition.class, ID_ITEM_DEFINITION);
+        kryo.register(GroundItem.class, ID_GROUND_ITEM);
+        kryo.register(ItemSpawnPacket.class, ID_ITEM_SPAWN_PACKET);
+        kryo.register(ItemDespawnPacket.class, ID_ITEM_DESPAWN_PACKET);
 
         // Private message history
         kryo.register(PrivateMessageHistoryRequest.class, ID_PRIVATE_MESSAGE_HISTORY_REQUEST);

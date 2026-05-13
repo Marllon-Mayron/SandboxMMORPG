@@ -406,13 +406,13 @@ public class DatabaseManager {
     }
 
     public boolean acceptFriendRequest(String requestId) throws SQLException {
-        String updateSql = "UPDATE friend_requests SET status = 'accepted', updated_at = CURRENT_TIMESTAMP WHERE id = ?";
+        String deleteRequestSql = "DELETE FROM friend_requests WHERE id = ?";
         String insertFriendSql = "INSERT INTO friends (player_id, friend_id) VALUES (?::uuid, ?::uuid), (?::uuid, ?::uuid)";
 
         try (Connection conn = getConnection()) {
             conn.setAutoCommit(false);
 
-            // Buscar detalhes da solicitacao - especificar colunas com alias
+            // Buscar detalhes da solicitacao ANTES de deletar
             String selectSql = "SELECT fr.from_player_id, fr.to_player_id FROM friend_requests fr WHERE fr.id = ? AND fr.status = 'pending'";
             String fromId = null, toId = null;
 
@@ -427,10 +427,10 @@ public class DatabaseManager {
 
             if (fromId == null || toId == null) return false;
 
-            // Atualizar status da solicitacao
-            try (PreparedStatement updateStmt = conn.prepareStatement(updateSql)) {
-                updateStmt.setInt(1, Integer.parseInt(requestId));
-                updateStmt.executeUpdate();
+            // DELETAR a solicitacao (em vez de atualizar status)
+            try (PreparedStatement deleteStmt = conn.prepareStatement(deleteRequestSql)) {
+                deleteStmt.setInt(1, Integer.parseInt(requestId));
+                deleteStmt.executeUpdate();
             }
 
             // Adicionar relacao de amizade (bidirecional)

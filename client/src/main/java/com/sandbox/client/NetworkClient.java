@@ -47,11 +47,15 @@ public class NetworkClient {
     private Consumer<PrivateMessagePacket> privateMessageCallback;
     private Consumer<PrivateMessageHistoryResponse> privateMessageHistoryCallback;
 
+    // ⭐ ADICIONAR ESTES CALLBACKS
+    private Consumer<ItemSpawnPacket> itemSpawnCallback;
+    private Consumer<ItemDespawnPacket> itemDespawnCallback;
+
     public NetworkClient(String host, int port) {
         this.host = host;
         this.port = port;
         this.kryo = new Kryo();
-        KryoRegistry.registerClasses(kryo);  // USA O REGISTRO UNIFICADO
+        KryoRegistry.registerClasses(kryo);
         logger.info("NetworkClient Kryo initialized with unified registry");
     }
 
@@ -194,7 +198,7 @@ public class NetworkClient {
         sendPacket(request);
     }
 
-    public  void sendPacket(Object packet) {
+    public void sendPacket(Object packet) {
         if (channel == null || !channel.isActive()) {
             logger.warn("Channel not active, cannot send packet: {}", packet.getClass().getSimpleName());
             return;
@@ -216,21 +220,25 @@ public class NetworkClient {
     public void setLoginCallback(Consumer<LoginResponse> callback) { this.loginCallback = callback; }
     public void setRegisterCallback(Consumer<RegisterResponse> callback) { this.registerCallback = callback; }
     public void setMovementCallback(Consumer<MovementBroadcast> callback) { this.movementCallback = callback; }
-    public void setPlayerLeftCallback(Consumer<PlayerLeftPacket> callback) {
-        this.playerLeftCallback = callback;
-    }
+    public void setPlayerLeftCallback(Consumer<PlayerLeftPacket> callback) { this.playerLeftCallback = callback; }
     public void setChatCallback(Consumer<ChatMessage> callback) { this.chatCallback = callback; }
     public void setChunkUpdateCallback(Consumer<ChunkUpdatePacket> callback) { this.chunkUpdateCallback = callback; }
     public void setMapSaveCallback(Consumer<MapSaveResponse> callback) { this.mapSaveCallback = callback; }
     public void setMapLoadCallback(Consumer<MapLoadResponse> callback) { this.mapLoadCallback = callback; }
-    public void setChunkCallback(Consumer<Chunk> callback) {
-        this.chunkCallback = callback;
-    }
+    public void setChunkCallback(Consumer<Chunk> callback) { this.chunkCallback = callback; }
     public void setFriendListCallback(Consumer<FriendListResponse> callback) { this.friendListCallback = callback; }
     public void setFriendRequestCallback(Consumer<FriendRequestPacket> callback) { this.friendRequestCallback = callback; }
     public void setPrivateMessageCallback(Consumer<PrivateMessagePacket> callback) { this.privateMessageCallback = callback; }
-    public void setPrivateMessageHistoryCallback(Consumer<PrivateMessageHistoryResponse> callback) {
-        this.privateMessageHistoryCallback = callback;
+    public void setPrivateMessageHistoryCallback(Consumer<PrivateMessageHistoryResponse> callback) { this.privateMessageHistoryCallback = callback; }
+
+    // ⭐ SETTERS PARA ITENS
+    public void setItemSpawnCallback(Consumer<ItemSpawnPacket> callback) {
+        this.itemSpawnCallback = callback;
+        logger.info("ItemSpawnCallback set");
+    }
+    public void setItemDespawnCallback(Consumer<ItemDespawnPacket> callback) {
+        this.itemDespawnCallback = callback;
+        logger.info("ItemDespawnCallback set");
     }
 
     private class ClientHandler extends SimpleChannelInboundHandler<Object> {
@@ -257,9 +265,7 @@ public class NetworkClient {
                 } else if (msg instanceof MapLoadResponse && mapLoadCallback != null) {
                     MapLoadResponse response = (MapLoadResponse) msg;
                     logger.info("Map load response: {} chunks", response.mapJson != null ? response.mapJson.getChunks().size() : 0);
-                    if (mapLoadCallback != null) {
-                        mapLoadCallback.accept(response);
-                    }
+                    mapLoadCallback.accept(response);
                 } else if (msg instanceof FriendListResponse && friendListCallback != null) {
                     friendListCallback.accept((FriendListResponse) msg);
                 } else if (msg instanceof FriendRequestPacket && friendRequestCallback != null) {
@@ -270,6 +276,21 @@ public class NetworkClient {
                     privateMessageHistoryCallback.accept((PrivateMessageHistoryResponse) msg);
                 } else if (msg instanceof Chunk && chunkCallback != null) {
                     chunkCallback.accept((Chunk) msg);
+                    // ⭐ ADICIONAR ESTES CASOS PARA ITENS
+                } else if (msg instanceof ItemSpawnPacket) {
+                    logger.info("ItemSpawnPacket received, callback exists: {}", itemSpawnCallback != null);
+                    if (itemSpawnCallback != null) {
+                        itemSpawnCallback.accept((ItemSpawnPacket) msg);
+                    } else {
+                        logger.warn("ItemSpawnCallback is NULL!");
+                    }
+                } else if (msg instanceof ItemDespawnPacket) {
+                    logger.info("ItemDespawnPacket received, callback exists: {}", itemDespawnCallback != null);
+                    if (itemDespawnCallback != null) {
+                        itemDespawnCallback.accept((ItemDespawnPacket) msg);
+                    } else {
+                        logger.warn("ItemDespawnCallback is NULL!");
+                    }
                 } else {
                     logger.warn("Unhandled packet type: {}", msg.getClass().getSimpleName());
                 }
@@ -284,5 +305,4 @@ public class NetworkClient {
             ctx.close();
         }
     }
-
 }

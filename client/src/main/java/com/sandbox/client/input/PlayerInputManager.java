@@ -61,6 +61,7 @@ public class PlayerInputManager implements InputProcessor {
         if (Gdx.input.isKeyPressed(leftKey)) moveX -= 1;
         if (Gdx.input.isKeyPressed(rightKey)) moveX += 1;
 
+        // NORMALIZAÇÃO DO MOVIMENTO DIAGONAL
         if (moveX != 0 || moveY != 0) {
             float length = (float) Math.sqrt(moveX * moveX + moveY * moveY);
             moveX /= length;
@@ -100,10 +101,13 @@ public class PlayerInputManager implements InputProcessor {
     }
 
     public Vector2 getMovementDirection() { return movementDirection; }
+
     public Vector2 getDashDirection() {
         if (movementDirection.x != 0 || movementDirection.y != 0) {
+            // Já está normalizado, mas vamos garantir
             return new Vector2(movementDirection);
         }
+        // Se não estiver se movendo, dash para cima
         return new Vector2(0, 1);
     }
 

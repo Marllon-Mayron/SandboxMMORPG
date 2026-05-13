@@ -1,5 +1,6 @@
 package com.sandbox.server;
 
+import com.common.sandbox.model.GroundItem;
 import com.common.sandbox.model.MapJSON;
 import com.common.sandbox.model.Player;
 import com.common.sandbox.network.packets.*;
@@ -14,6 +15,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.sql.SQLException;
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -100,6 +102,9 @@ public class GameServerHandler extends SimpleChannelInboundHandler<Object> {
         try {
             logger.info("Login - Usuario: {}", request.username);
 
+            // ⭐ DEBUG: Verificar quantos itens existem ANTES do login
+            ItemManager.getInstance().printAllItems();
+
             Player player = DatabaseManager.getInstance().authenticatePlayer(
                     request.username,
                     request.password
@@ -116,20 +121,15 @@ public class GameServerHandler extends SimpleChannelInboundHandler<Object> {
                 for (Player p : GameWorld.getInstance().getAllPlayers()) {
                     if (!p.getId().equals(player.getId())) {
                         response.nearbyPlayers.put(p.getId(), p);
-                        logger.debug("Adicionando jogador existente: {} na posicao ({}, {})",
-                                p.getUsername(), p.getX(), p.getY());
                     }
                 }
 
                 sendPacket(ctx, response);
-                logger.info("Resposta login enviada com {} jogadores ja conectados",
-                        response.nearbyPlayers.size());
 
                 ChatMessage joinMsg = new ChatMessage(player.getId(), "SISTEMA",
                         player.getUsername() + " entrou no mundo!");
                 broadcastToAll(joinMsg);
 
-                // Broadcast de movimento APENAS com dados de movimento (sem status)
                 Player movementOnly = new Player();
                 movementOnly.setId(player.getId());
                 movementOnly.setUsername(player.getUsername());
@@ -139,7 +139,13 @@ public class GameServerHandler extends SimpleChannelInboundHandler<Object> {
                 broadcastToAll(new MovementBroadcast(movementOnly));
 
                 sendMapToPlayer(ctx, player);
+
+                // ⭐ ENVIAR TODOS OS ITENS EXISTENTES
+                sendAllExistingItemsToPlayer(ctx, player);
+
                 sendFriendListToPlayer(ctx, player);
+
+                // ⭐ NÃO spawnar nenhum item aqui!
 
             } else {
                 logger.warn("Login Falhou - Usuario: {}", request.username);
@@ -149,6 +155,35 @@ public class GameServerHandler extends SimpleChannelInboundHandler<Object> {
         } catch (Exception e) {
             logger.error("Erro handleLogin: {}", e.getMessage(), e);
         }
+    }
+
+    private void sendAllExistingItemsToPlayer(ChannelHandlerContext ctx, Player player) {
+        Collection<GroundItem> allItems = ItemManager.getInstance().getAllItems();
+
+        logger.info("=== SENDING ITEMS TO PLAYER: {} ===", player.getUsername());
+        logger.info("Total items in ItemManager: {}", allItems.size());
+
+        // Debug: imprimir todos os itens atuais
+        ItemManager.getInstance().printAllItems();
+
+        if (allItems.isEmpty()) {
+            logger.warn("⚠️ No items found in ItemManager for player {}", player.getUsername());
+            logger.info("Available item definitions: {}", ItemManager.getInstance().getAllItemIds());
+            return;
+        }
+
+        int sentCount = 0;
+        for (GroundItem item : allItems) {
+            logger.info("  - Sending item: {} [{}] at ({}, {})",
+                    item.getDefinition().getName(),
+                    item.getInstanceId().substring(0, 8),
+                    item.getX(),
+                    item.getY());
+            sendPacket(ctx, new ItemSpawnPacket(item));
+            sentCount++;
+        }
+
+        logger.info("✅ Sent {} items to player {}", sentCount, player.getUsername());
     }
 
     private void sendMapToPlayer(ChannelHandlerContext ctx, Player player) {
@@ -162,6 +197,24 @@ public class GameServerHandler extends SimpleChannelInboundHandler<Object> {
         } catch (Exception e) {
             logger.error("Erro ao enviar mapa para o jogador", e);
         }
+    }
+
+    private void sendItemsToPlayer(ChannelHandlerContext ctx, Player player) {
+        // Enviar TODOS os itens existentes no mundo
+        Collection<GroundItem> allItems = ItemManager.getInstance().getAllItems();
+
+        if (allItems.isEmpty()) {
+            logger.info("No items to send to player {}", player.getUsername());
+            return;
+        }
+
+        int sentCount = 0;
+        for (GroundItem item : allItems) {
+            sendPacket(ctx, new ItemSpawnPacket(item));
+            sentCount++;
+        }
+
+        logger.info("Sent {} existing items to player {}", sentCount, player.getUsername());
     }
 
     private void handleRegister(ChannelHandlerContext ctx, RegisterRequest request) {
@@ -265,6 +318,37 @@ public class GameServerHandler extends SimpleChannelInboundHandler<Object> {
 
             if (chatMsg.message.length() > 500) {
                 chatMsg.message = chatMsg.message.substring(0, 500);
+            }
+
+            // ⭐ COMANDO ADMIN PARA SPAWNAR ITEM
+            if (chatMsg.message.startsWith("/spawnitem ") && currentPlayer != null) {
+                String[] parts = chatMsg.message.split(" ");
+                if (parts.length >= 2) {
+                    String itemId = parts[1];
+
+                    // Verificar se é admin (você pode adicionar uma flag de admin)
+                    // Por enquanto, qualquer um pode usar para teste
+                    ItemManager.getInstance().spawnItem(itemId,
+                            currentPlayer.getX(),
+                            currentPlayer.getY(),
+                            60);
+
+                    ChatMessage response = new ChatMessage("SISTEMA", "SISTEMA",
+                            "Item " + itemId + " spawnado na sua posição!");
+                    sendPacket(ctx, response);
+                    return;
+                }
+            }
+
+            // Comando para listar itens disponíveis
+            if (chatMsg.message.equals("/items")) {
+                StringBuilder sb = new StringBuilder("Itens disponíveis: ");
+                for (String itemId : ItemManager.getInstance().getAllItemIds()) {
+                    sb.append(itemId).append(", ");
+                }
+                ChatMessage response = new ChatMessage("SISTEMA", "SISTEMA", sb.toString());
+                sendPacket(ctx, response);
+                return;
             }
 
             GameWorld.getInstance().addChatMessage(currentPlayer.getId(), currentPlayer.getUsername(), chatMsg.message);
@@ -604,12 +688,15 @@ public class GameServerHandler extends SimpleChannelInboundHandler<Object> {
         ctx.writeAndFlush(packet);
     }
 
-    public static void broadcastToAll(Object packet) {
+    public static int broadcastToAll(Object packet) {
+        int count = 0;
         for (Channel channel : channels) {
             if (channel.isActive()) {
                 channel.writeAndFlush(packet);
+                count++;
             }
         }
+        return count;
     }
 
     public static void broadcastToAllExcept(Object packet, String excludeChannelId) {

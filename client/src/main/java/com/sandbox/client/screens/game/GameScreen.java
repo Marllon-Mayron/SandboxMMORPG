@@ -29,6 +29,10 @@ public class GameScreen implements Screen {
         logger.info("GameScreen show() - Creating GameWorldRenderer");
         worldRenderer = new GameWorldRenderer(game, adminMode, nearbyPlayers);
         worldRenderer.setCurrentPlayer(player);
+
+        // REGISTRAR O RENDERER NO SANDBOXCLIENT para receber itens pendentes
+        game.registerGameWorldRenderer(worldRenderer);
+
         worldRenderer.show();
     }
 

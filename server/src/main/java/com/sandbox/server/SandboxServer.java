@@ -27,6 +27,37 @@ public class SandboxServer {
 
     public void start() throws Exception {
         try {
+            // INICIALIZAR GERENCIADORES GLOBAIS ANTES DO SERVIDOR
+            logger.info("========================================");
+            logger.info("Inicializando gerenciadores do servidor...");
+            logger.info("========================================");
+
+            // Inicializar banco de dados
+            DatabaseManager.getInstance();
+            logger.info("✅ DatabaseManager inicializado");
+
+            // Inicializar gerenciador de chunks
+            ChunkManager.getInstance();
+            logger.info("✅ ChunkManager inicializado");
+
+            // Inicializar gerenciador de itens
+            ItemManager itemManager = ItemManager.getInstance();
+            logger.info("✅ ItemManager inicializado");
+
+            // SPAWNAR ITENS MUNDIAIS (itens fixos que todos devem ver)
+            logger.info("----------------------------------------");
+            logger.info("Spawando itens mundiais...");
+            itemManager.spawnWorldItems();
+            logger.info("✅ Itens mundiais spawnados: {} itens", itemManager.getItemCount());
+            logger.info("----------------------------------------");
+
+            // Verificar se os itens foram criados corretamente
+            itemManager.printAllItems();
+
+            logger.info("========================================");
+            logger.info("Gerenciadores inicializados com sucesso!");
+            logger.info("========================================");
+
             // Usando Virtual Threads do Java 21 para workers
             bossGroup = new NioEventLoopGroup(1); // Aceita conexões
             workerGroup = new NioEventLoopGroup(Runtime.getRuntime().availableProcessors()); // Processa dados
@@ -58,12 +89,19 @@ public class SandboxServer {
                     .childOption(ChannelOption.TCP_NODELAY, true);
 
             ChannelFuture future = bootstrap.bind(port).sync();
-            logger.info("Servidor iniciado na porta {}", port);
+            logger.info("========================================");
+            logger.info("  Servidor iniciado na porta {}", port);
+            logger.info("  Aguardando conexões dos clientes...");
+            logger.info("========================================");
 
             // Iniciar threads de limpeza
             startCleanupTasks();
 
             future.channel().closeFuture().sync();
+
+        } catch (Exception e) {
+            logger.error("   Erro fatal ao iniciar o servidor: {}", e.getMessage(), e);
+            throw e;
         } finally {
             shutdown();
         }
@@ -104,12 +142,16 @@ public class SandboxServer {
         // Salvar todas as posições antes de desligar
         GameWorld.getInstance().saveAllPlayersOnShutdown();
 
-        if (bossGroup != null) bossGroup.shutdownGracefully();
-        if (workerGroup != null) workerGroup.shutdownGracefully();
+        // Desligar gerenciadores
+        ItemManager.getInstance().shutdown();  // ← DESLIGA O ITEM MANAGER
+        ChunkManager.getInstance().close();     // Fecha chunk manager
         DatabaseManager.getInstance().close();
         RedisManager.getInstance().close();
 
-        logger.info("✅ Servidor desligado completamente");
+        if (bossGroup != null) bossGroup.shutdownGracefully();
+        if (workerGroup != null) workerGroup.shutdownGracefully();
+
+        logger.info("  Servidor desligado completamente");
     }
 
     public static void main(String[] args) throws Exception {

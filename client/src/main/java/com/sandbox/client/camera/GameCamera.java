@@ -298,4 +298,24 @@ public class GameCamera {
     public Vector2 getPosition() {
         return new Vector2(camera.position.x, camera.position.y);
     }
+
+    /**
+     * Verifica se um objeto está dentro da view da camera.
+     * Útil para culling (não renderizar o que está fora da tela).
+     *
+     * @param x Posição X do objeto
+     * @param y Posição Y do objeto
+     * @param width Largura do objeto
+     * @param height Altura do objeto
+     * @return true se o objeto está visível na camera
+     */
+    public boolean isInView(float x, float y, float width, float height) {
+        float viewLeft = camera.position.x - camera.viewportWidth / 2;
+        float viewRight = camera.position.x + camera.viewportWidth / 2;
+        float viewBottom = camera.position.y - camera.viewportHeight / 2;
+        float viewTop = camera.position.y + camera.viewportHeight / 2;
+
+        return (x + width > viewLeft && x - width < viewRight &&
+                y + height > viewBottom && y - height < viewTop);
+    }
 }
