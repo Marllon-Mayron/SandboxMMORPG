@@ -72,6 +72,8 @@ public class GameWorldRenderer implements Screen {
     // Rate limiting para movimentos
     private long lastMovementSendTime = 0;
     private static final long MOVEMENT_SEND_INTERVAL_MS = 50; // 20 packets por segundo
+    private long lastStatusSyncTime = 0;
+    private static final long STATUS_SYNC_INTERVAL_MS = 10000; // 10 segundos
 
     public GameWorldRenderer(SandboxClient game, boolean adminMode, Map<String, Player> nearbyPlayers) {
         this.game = game;
@@ -227,12 +229,20 @@ public class GameWorldRenderer implements Screen {
         Gdx.app.postRunnable(() -> {
             if (broadcast.player != null) {
                 if (currentPlayer != null && broadcast.player.getId().equals(currentPlayer.getId())) {
+                    // Apenas atualizar posição e direção
                     currentPlayer.setX(broadcast.player.getX());
                     currentPlayer.setY(broadcast.player.getY());
                     currentPlayer.setDirection(broadcast.player.getDirection());
+                    // NÃO atualizar HP, Mana, Stamina!
                 } else {
                     Player existing = otherPlayers.get(broadcast.player.getId());
                     if (existing != null) {
+                        // Apenas atualizar posição e direção do player existente
+                        existing.setX(broadcast.player.getX());
+                        existing.setY(broadcast.player.getY());
+                        existing.setDirection(broadcast.player.getDirection());
+
+                        // Interpolação
                         Player interpolated = new Player();
                         interpolated.setId(existing.getId());
                         interpolated.setUsername(existing.getUsername());
@@ -240,9 +250,9 @@ public class GameWorldRenderer implements Screen {
                         interpolated.setY(existing.getY());
                         interpolated.setDirection(existing.getDirection());
                         interpolatedPlayers.put(broadcast.player.getId(), interpolated);
+                    } else {
+                        otherPlayers.put(broadcast.player.getId(), broadcast.player);
                     }
-
-                    otherPlayers.put(broadcast.player.getId(), broadcast.player);
                     lastUpdateTime.put(broadcast.player.getId(), System.currentTimeMillis());
                 }
             }
@@ -848,8 +858,10 @@ public class GameWorldRenderer implements Screen {
 
         // ==================== CALCULAR SPEED MULTIPLIER ====================
         float playerSpeedMultiplier = 1.0f;
+        boolean moved = false;
 
         if (dir.x != 0 || dir.y != 0) {
+            moved = true;
             float baseSpeed = Player.getBaseSpeed();
             float terrainSpeed = getCurrentTerrainSpeed();
 
@@ -878,26 +890,64 @@ public class GameWorldRenderer implements Screen {
             }
 
             currentPlayer.setDirection(newDirection);
+        }
 
-            // Rate limiting para movimento
-            long now = System.currentTimeMillis();
-            if (now - lastMovementSendTime >= MOVEMENT_SEND_INTERVAL_MS) {
-                game.getNetworkClient().sendMovement(
-                        currentPlayer.getId(),
-                        currentPlayer.getX(),
-                        currentPlayer.getY(),
-                        currentPlayer.getDirection()
-                );
-                lastMovementSendTime = now;
+        // ==================== ENVIAR MOVIMENTO E STATUS PARA O SERVIDOR ====================
+        long now = System.currentTimeMillis();
+
+        // Enviar sempre que houver movimento OU a cada 10 segundos (sync de status)
+        boolean shouldSend = moved;
+        boolean timeForSync = (now - lastStatusSyncTime) >= STATUS_SYNC_INTERVAL_MS;
+
+        if (shouldSend || timeForSync) {
+            // Usar rate limiting para movimento (max 20 packets/segundo = 50ms)
+            if (moved && (now - lastMovementSendTime) < MOVEMENT_SEND_INTERVAL_MS) {
+                // Muito cedo para enviar movimento, mas se for sync, pode enviar mesmo assim
+                if (!timeForSync) {
+                    // Não enviar nada ainda
+                } else {
+                    // Enviar sync mesmo que esteja no rate limit
+                    sendMovementWithStatus();
+                    lastStatusSyncTime = now;
+                }
+            } else {
+                // Enviar pacote completo
+                sendMovementWithStatus();
+                if (moved) {
+                    lastMovementSendTime = now;
+                }
+                if (timeForSync) {
+                    lastStatusSyncTime = now;
+                }
             }
         }
 
-        // ==================== ATUALIZAR UI COM O MULTIPLICADOR ====================
+        // ==================== ATUALIZAR UI ====================
         if (playerUI != null) {
-            // Atualizar o speed multiplier na UI ANTES do update
             playerUI.setSpeedMultiplier(playerSpeedMultiplier);
             playerUI.update(currentPlayer, getCurrentTerrainSpeed());
         }
+    }
+
+    // Método auxiliar para enviar movimento com status
+    private void sendMovementWithStatus() {
+        if (currentPlayer == null || game.getNetworkClient() == null) return;
+
+        MovementRequest request = new MovementRequest(
+                currentPlayer.getId(),
+                currentPlayer.getX(),
+                currentPlayer.getY(),
+                currentPlayer.getDirection()
+        );
+        // Preencher os status
+        request.currentHp = currentPlayer.getCurrentHp();
+        request.currentMana = currentPlayer.getCurrentMana();
+        request.currentStamina = currentPlayer.getCurrentStamina();
+        request.currentGold = currentPlayer.getGold();
+        request.currentExperience = currentPlayer.getExperience();
+        request.currentLevel = currentPlayer.getLevel();
+
+        game.getNetworkClient().sendPacket(request);
     }
 
     private void handleDash(float delta) {

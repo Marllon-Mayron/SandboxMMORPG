@@ -116,13 +116,12 @@ public class GameWorld {
             player.setY(y);
             player.setDirection(direction);
 
-            // NÃO modificar stamina aqui! O cliente gerencia stamina
-
-            // Salvar posição periodicamente
+            // Salvar periodicamente (a cada 5 segundos)
             long now = System.currentTimeMillis();
             Long lastSave = lastPositionSave.get(playerId);
             if (lastSave == null || (now - lastSave) >= 5000) {
-                DatabaseManager.getInstance().savePlayerPositionAsync(player);
+                // Salvar TODOS os dados do jogador
+                DatabaseManager.getInstance().savePlayerPosition(player);
                 lastPositionSave.put(playerId, now);
             }
 

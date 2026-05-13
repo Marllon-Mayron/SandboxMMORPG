@@ -129,10 +129,16 @@ public class GameServerHandler extends SimpleChannelInboundHandler<Object> {
                         player.getUsername() + " entrou no mundo!");
                 broadcastToAll(joinMsg);
 
-                broadcastToAll(new MovementBroadcast(player));
-                sendMapToPlayer(ctx, player);
+                // Broadcast de movimento APENAS com dados de movimento (sem status)
+                Player movementOnly = new Player();
+                movementOnly.setId(player.getId());
+                movementOnly.setUsername(player.getUsername());
+                movementOnly.setX(player.getX());
+                movementOnly.setY(player.getY());
+                movementOnly.setDirection(player.getDirection());
+                broadcastToAll(new MovementBroadcast(movementOnly));
 
-                // Enviar lista de amigos para o jogador logado
+                sendMapToPlayer(ctx, player);
                 sendFriendListToPlayer(ctx, player);
 
             } else {
@@ -189,18 +195,59 @@ public class GameServerHandler extends SimpleChannelInboundHandler<Object> {
                 return;
             }
 
+            // Validar colisão
             if (!canMoveTo(request.x, request.y)) {
                 MovementBroadcast correction = new MovementBroadcast(player);
                 sendPacket(ctx, correction);
                 return;
             }
 
+            // ATUALIZAR TUDO - Posição e Status
+            player.setX(request.x);
+            player.setY(request.y);
+            player.setDirection(request.direction);
+
+            // Atualizar status (apenas valores válidos)
+            if (request.currentHp > 0 && request.currentHp <= player.getMaxHp()) {
+                player.setCurrentHp(request.currentHp);
+            }
+            if (request.currentMana >= 0 && request.currentMana <= player.getMaxMana()) {
+                player.setCurrentMana(request.currentMana);
+            }
+            if (request.currentStamina >= 0 && request.currentStamina <= player.getMaxStamina()) {
+                player.setCurrentStamina(request.currentStamina);
+            }
+            if (request.currentGold >= 0) {
+                player.setGold(request.currentGold);
+            }
+            if (request.currentExperience >= 0) {
+                player.setExperience(request.currentExperience);
+            }
+            if (request.currentLevel >= 1) {
+                int oldLevel = player.getLevel();
+                player.setLevel(request.currentLevel);
+                if (oldLevel != request.currentLevel) {
+                    player.recalculateMaxStats();
+                }
+            }
+
+            // Salvar periodicamente (a cada 5 segundos já está no updatePlayerPosition)
             GameWorld.getInstance().updatePlayerPosition(request.playerId, request.x, request.y, request.direction);
 
-            Player updatedPlayer = GameWorld.getInstance().getPlayer(request.playerId);
-            if (updatedPlayer != null) {
-                broadcastToAllExcept(new MovementBroadcast(updatedPlayer), ctx.channel().id().asLongText());
-            }
+            // ==================== CRIAR BROADCAST APENAS COM MOVIMENTO ====================
+            // IMPORTANTE: Criar um objeto LEVE apenas com dados de movimento
+            // para não sobrescrever os status (HP, Mana, Stamina) dos outros clientes
+            Player movementOnly = new Player();
+            movementOnly.setId(player.getId());
+            movementOnly.setUsername(player.getUsername());
+            movementOnly.setX(player.getX());
+            movementOnly.setY(player.getY());
+            movementOnly.setDirection(player.getDirection());
+            // NÃO copiar HP, Mana, Stamina, Gold, Experience, Level, etc!
+
+            // Broadcast para TODOS os outros jogadores (exceto quem enviou)
+            broadcastToAllExcept(new MovementBroadcast(movementOnly), ctx.channel().id().asLongText());
+
         } catch (Exception e) {
             logger.error("Erro handleMovement: {}", e.getMessage(), e);
         }

@@ -463,16 +463,40 @@ public class DatabaseManager {
     }
 
     public boolean removeFriend(String playerId, String friendId) throws SQLException {
-        String sql = "DELETE FROM friends WHERE (player_id = ?::uuid AND friend_id = ?::uuid) " +
+        String deleteFriendsSql = "DELETE FROM friends WHERE (player_id = ?::uuid AND friend_id = ?::uuid) " +
                 "OR (player_id = ?::uuid AND friend_id = ?::uuid)";
 
-        try (Connection conn = getConnection();
-             PreparedStatement pstmt = conn.prepareStatement(sql)) {
-            pstmt.setObject(1, UUID.fromString(playerId));
-            pstmt.setObject(2, UUID.fromString(friendId));
-            pstmt.setObject(3, UUID.fromString(friendId));
-            pstmt.setObject(4, UUID.fromString(playerId));
-            return pstmt.executeUpdate() > 0;
+        String deleteRequestsSql = "DELETE FROM friend_requests WHERE " +
+                "(from_player_id = ?::uuid AND to_player_id = ?::uuid) OR " +
+                "(from_player_id = ?::uuid AND to_player_id = ?::uuid)";
+
+        try (Connection conn = getConnection()) {
+            conn.setAutoCommit(false);
+
+            // Remover da tabela de amigos
+            try (PreparedStatement pstmt = conn.prepareStatement(deleteFriendsSql)) {
+                pstmt.setObject(1, UUID.fromString(playerId));
+                pstmt.setObject(2, UUID.fromString(friendId));
+                pstmt.setObject(3, UUID.fromString(friendId));
+                pstmt.setObject(4, UUID.fromString(playerId));
+                pstmt.executeUpdate();
+            }
+
+            // Remover solicitações pendentes entre eles
+            try (PreparedStatement pstmt = conn.prepareStatement(deleteRequestsSql)) {
+                pstmt.setObject(1, UUID.fromString(playerId));
+                pstmt.setObject(2, UUID.fromString(friendId));
+                pstmt.setObject(3, UUID.fromString(friendId));
+                pstmt.setObject(4, UUID.fromString(playerId));
+                pstmt.executeUpdate();
+            }
+
+            conn.commit();
+            return true;
+
+        } catch (SQLException e) {
+            logger.error("Error removing friend", e);
+            throw e;
         }
     }
 
