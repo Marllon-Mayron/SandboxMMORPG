@@ -283,6 +283,7 @@ public class GameWorldRenderer implements Screen {
 
             chatDisplay.append(formattedMsg).append("\n");
 
+            // Truncar se necessário
             String[] lines = chatDisplay.toString().split("\n");
             if (lines.length > 100) {
                 int firstNewline = chatDisplay.indexOf("\n");
@@ -292,8 +293,8 @@ public class GameWorldRenderer implements Screen {
             }
 
             if (playerUI != null) {
+                // APENAS atualizar o histórico, NÃO adicionar mensagem separadamente
                 playerUI.updateChatHistory(chatDisplay.toString());
-                playerUI.addChatMessage(formattedMsg);
             }
         });
     }
