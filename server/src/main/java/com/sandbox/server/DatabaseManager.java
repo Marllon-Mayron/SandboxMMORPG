@@ -452,7 +452,8 @@ public class DatabaseManager {
     }
 
     public boolean rejectFriendRequest(String requestId) throws SQLException {
-        String sql = "UPDATE friend_requests SET status = 'rejected', updated_at = CURRENT_TIMESTAMP WHERE id = ?";
+        // Deletar em vez de atualizar status
+        String sql = "DELETE FROM friend_requests WHERE id = ?";
 
         try (Connection conn = getConnection();
              PreparedStatement pstmt = conn.prepareStatement(sql)) {
