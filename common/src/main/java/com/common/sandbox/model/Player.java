@@ -18,6 +18,8 @@ public class Player implements Serializable {
     private int experience;
     private int gold;
 
+    private Inventory inventory;
+
     private int currentHp;
     private int currentMana;
     private int currentStamina;
@@ -68,6 +70,7 @@ public class Player implements Serializable {
         this.y = 300;
         this.direction = "DOWN";
         this.isOnline = true;
+        this.inventory = new Inventory();
 
         this.level = 1;
         this.experience = 0;
@@ -110,6 +113,9 @@ public class Player implements Serializable {
 
     public boolean isOnline() { return isOnline; }
     public void setOnline(boolean online) { isOnline = online; }
+
+    public Inventory getInventory() { return inventory; }
+    public void setInventory(Inventory inventory) { this.inventory = inventory; }
 
     public int getLevel() { return level; }
     public void setLevel(int level) { this.level = level; recalculateMaxStats(); }

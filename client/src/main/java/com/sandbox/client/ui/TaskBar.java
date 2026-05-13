@@ -15,6 +15,7 @@ public class TaskBar {
     private Skin skin;
     private Runnable onFriendsClick;
     private Runnable onAttributesClick;
+    private Runnable onInventoryClick;
 
     private static final int TASK_BAR_WIDTH = 220;
     private static final int TASK_BAR_HEIGHT = 50;
@@ -59,6 +60,15 @@ public class TaskBar {
         });
         taskBar.add(attributesButton).width(BUTTON_WIDTH).height(BUTTON_HEIGHT).pad(5);
 
+        TextButton inventoryButton = new TextButton("Inventario", skin, "primary");
+        inventoryButton.addListener(new ChangeListener() {
+            @Override
+            public void changed(ChangeEvent event, Actor actor) {
+                if (onInventoryClick != null) onInventoryClick.run();
+            }
+        });
+        taskBar.add(inventoryButton).width(BUTTON_WIDTH).height(BUTTON_HEIGHT).pad(5);
+
         stage.addActor(taskBar);
 
         // Garantir que a taskbar está no topo
@@ -85,6 +95,8 @@ public class TaskBar {
     public void setOnAttributesClick(Runnable runnable) {
         this.onAttributesClick = runnable;
     }
+
+    public void setOnInventoryClick(Runnable runnable) { this.onInventoryClick = runnable; }
 
     public void setVisible(boolean visible) {
         taskBar.setVisible(visible);

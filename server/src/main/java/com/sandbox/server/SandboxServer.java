@@ -1,5 +1,6 @@
 package com.sandbox.server;
 
+import com.common.sandbox.model.GroundItem;
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.channel.*;
 import io.netty.channel.nio.NioEventLoopGroup;
@@ -11,6 +12,9 @@ import io.netty.handler.timeout.ReadTimeoutHandler;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+
 /**
  * Servidor principal Netty
  * Utiliza Java 21 com Virtual Threads para alta concorrência
@@ -20,6 +24,7 @@ public class SandboxServer {
     private final int port;
     private EventLoopGroup bossGroup;
     private EventLoopGroup workerGroup;
+    private final Map<String, GroundItem> localGroundItems = new ConcurrentHashMap<>();
 
     public SandboxServer(int port) {
         this.port = port;

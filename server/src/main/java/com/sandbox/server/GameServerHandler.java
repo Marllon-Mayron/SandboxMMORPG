@@ -1,9 +1,8 @@
 package com.sandbox.server;
 
-import com.common.sandbox.model.GroundItem;
-import com.common.sandbox.model.MapJSON;
-import com.common.sandbox.model.Player;
+import com.common.sandbox.model.*;
 import com.common.sandbox.network.packets.*;
+import com.common.sandbox.network.packets.InventoryUpdatePacket;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.SimpleChannelInboundHandler;
@@ -87,6 +86,12 @@ public class GameServerHandler extends SimpleChannelInboundHandler<Object> {
 
             } else if (msg instanceof PrivateMessageHistoryRequest) {
                 handlePrivateMessageHistory(ctx, (PrivateMessageHistoryRequest) msg);
+            } else if (msg instanceof PickupItemPacket) {
+                handlePickupItem(ctx, (PickupItemPacket) msg);
+            } else if (msg instanceof DropItemPacket) {
+                handleDropItem(ctx, (DropItemPacket) msg);
+            } else if (msg instanceof InventoryUpdatePacket) {
+                handleInventoryUpdate(ctx, (InventoryUpdatePacket) msg);
             } else {
                 logger.warn("Tipo de pacote desconhecido: {}", msg.getClass().getSimpleName());
             }
@@ -329,7 +334,7 @@ public class GameServerHandler extends SimpleChannelInboundHandler<Object> {
                     // Verificar se é admin (você pode adicionar uma flag de admin)
                     // Por enquanto, qualquer um pode usar para teste
                     ItemManager.getInstance().spawnItem(itemId,
-                            currentPlayer.getX(),
+                            currentPlayer.getX() + 100,
                             currentPlayer.getY(),
                             60);
 
@@ -723,6 +728,212 @@ public class GameServerHandler extends SimpleChannelInboundHandler<Object> {
         } catch (SQLException e) {
             logger.error("Erro handlePrivateMessageHistory: {}", e.getMessage(), e);
         }
+    }
+
+    //ITEMS
+
+    private void handlePickupItem(ChannelHandlerContext ctx, PickupItemPacket packet) {
+        if (currentPlayer == null) return;
+
+        GroundItem groundItem = ItemManager.getInstance().removeItem(packet.instanceId);
+        if (groundItem == null) return;
+
+        ItemDefinition def = groundItem.getDefinition();
+
+        // Adicionar ao inventário
+        boolean added = currentPlayer.getInventory().addItem(def.getId(), 1, def);
+
+        if (added) {
+            // Atualizar banco
+            DatabaseManager.getInstance().savePlayerPosition(currentPlayer);
+
+            // Enviar inventário atualizado
+            InventoryUpdatePacket invPacket = new InventoryUpdatePacket(currentPlayer.getInventory());
+            sendPacket(ctx, invPacket);
+
+            // Enviar resultado
+            PickupResultPacket result = new PickupResultPacket(true, def.getName(), 1);
+            sendPacket(ctx, result);
+
+            // Broadcast do despawn
+            ItemDespawnPacket despawn = new ItemDespawnPacket(packet.instanceId);
+            broadcastToAll(despawn);
+
+            logger.info("Player {} picked up {} x{}",
+                    currentPlayer.getUsername(), def.getName(), 1);
+        } else {
+            // Inventário cheio - recolocar o item
+            ItemManager.getInstance().respawnItem(groundItem);
+
+            PickupResultPacket result = new PickupResultPacket(false, def.getName(), 1);
+            sendPacket(ctx, result);
+        }
+    }
+
+    private void handleDropItem(ChannelHandlerContext ctx, DropItemPacket packet) {
+        if (currentPlayer == null) return;
+
+        ItemStack stack = currentPlayer.getInventory().getSlot(packet.slot);
+        if (stack.isEmpty()) return;
+
+        int toDrop = Math.min(packet.quantity, stack.getQuantity());
+
+        // Remover do inventário
+        currentPlayer.getInventory().removeItem(stack.getItemId(), toDrop);
+
+        // ⭐ CALCULAR POSIÇÃO A 100 PIXELS DE DISTÂNCIA NA DIREÇÃO DO JOGADOR
+        float dropX = currentPlayer.getX();
+        float dropY = currentPlayer.getY();
+
+        // Direção baseada na orientação do jogador
+        String direction = currentPlayer.getDirection();
+        float distance = 100f; // Distância segura
+
+        switch (direction) {
+            case "UP":
+                dropY += distance;
+                break;
+            case "DOWN":
+                dropY -= distance;
+                break;
+            case "LEFT":
+                dropX -= distance;
+                break;
+            case "RIGHT":
+                dropX += distance;
+                break;
+            default:
+                dropY += distance;
+                break;
+        }
+
+        // Verificar se a posição não é sólida
+        if (ChunkManager.getInstance().isSolid(dropX, dropY)) {
+            // Se for sólido, tentar posições alternativas
+            float[][] alternatives = {
+                    {currentPlayer.getX() + 50, currentPlayer.getY()},
+                    {currentPlayer.getX() - 50, currentPlayer.getY()},
+                    {currentPlayer.getX(), currentPlayer.getY() + 50},
+                    {currentPlayer.getX(), currentPlayer.getY() - 50}
+            };
+
+            for (float[] alt : alternatives) {
+                if (!ChunkManager.getInstance().isSolid(alt[0], alt[1])) {
+                    dropX = alt[0];
+                    dropY = alt[1];
+                    break;
+                }
+            }
+        }
+
+        // Spawnar no chão
+        ItemDefinition def = ItemManager.getInstance().getItemDefinition(stack.getItemId());
+        if (def != null) {
+            ItemManager.getInstance().spawnItem(def.getId(), dropX, dropY, 60);
+            logger.info("Player {} dropped {} x{} at ({}, {}) direction: {}",
+                    currentPlayer.getUsername(), stack.getItemId(), toDrop, dropX, dropY, direction);
+        }
+
+        // Salvar no banco
+        DatabaseManager.getInstance().savePlayerInventory(currentPlayer);
+
+        // Enviar inventário atualizado
+        InventoryUpdatePacket invPacket = new InventoryUpdatePacket(currentPlayer.getInventory());
+        sendPacket(ctx, invPacket);
+    }
+
+    private void handleInventoryUpdate(ChannelHandlerContext ctx, InventoryUpdatePacket packet) {
+        if (currentPlayer == null) return;
+
+        switch (packet.action) {
+            case "MOVE_ITEM":
+                currentPlayer.getInventory().moveItem(packet.slot, packet.targetSlot);
+                logger.info("Player {} moved item from slot {} to {}",
+                        currentPlayer.getUsername(), packet.slot, packet.targetSlot);
+                break;
+
+            case "EQUIP":
+                ItemStack stack = currentPlayer.getInventory().getSlot(packet.slot);
+                if (stack != null && !stack.isEmpty()) {
+                    ItemDefinition def = ItemManager.getInstance().getItemDefinition(stack.getItemId());
+                    if (def != null && isEquippableCategory(def.getCategory())) {
+                        // Verificar se já tem um item equipado no slot
+                        String currentEquipped = currentPlayer.getInventory().getEquipped().get(packet.equipSlot);
+                        if (currentEquipped != null && !currentEquipped.isEmpty()) {
+                            // Se já tem item equipado, primeiro desequipa ele para o inventário
+                            unequipToInventory(packet.equipSlot);
+                        }
+                        currentPlayer.getInventory().equipItem(packet.slot, packet.equipSlot);
+                        logger.info("✅ Player {} equipped {} to slot {}",
+                                currentPlayer.getUsername(), stack.getItemId(), packet.equipSlot);
+                    } else {
+                        logger.warn("❌ Player {} attempted to equip non-equippable item: {} (Category: {})",
+                                currentPlayer.getUsername(), stack.getItemId(),
+                                def != null ? def.getCategory() : "unknown");
+                    }
+                }
+                break;
+
+            case "UNEQUIP":
+                logger.info("=== UNEQUIP DEBUG ===");
+                logger.info("Player: {}", currentPlayer.getUsername());
+                logger.info("EquipSlot: {}", packet.equipSlot);
+                logger.info("Current equipped items: {}", currentPlayer.getInventory().getEquipped());
+
+                String equippedItemId = currentPlayer.getInventory().getEquipped().get(packet.equipSlot);
+                logger.info("Equipped item ID: {}", equippedItemId);
+
+                if (equippedItemId != null && !equippedItemId.isEmpty()) {
+                    // Remover do equipamento
+                    currentPlayer.getInventory().unequipItem(packet.equipSlot);
+                    logger.info("Removed from equipment slot: {}", packet.equipSlot);
+
+                    // Adicionar de volta ao inventário
+                    ItemDefinition def = ItemManager.getInstance().getItemDefinition(equippedItemId);
+                    if (def != null) {
+                        boolean added = currentPlayer.getInventory().addItem(equippedItemId, 1, def);
+                        logger.info("Added back to inventory: {} - Success: {}", equippedItemId, added);
+                    } else {
+                        logger.warn("Item definition not found for: {}", equippedItemId);
+                    }
+                } else {
+                    logger.warn("No item equipped in slot: {}", packet.equipSlot);
+                }
+
+                logger.info("After unequip - Inventory slots: {}, Equipped: {}",
+                        currentPlayer.getInventory().getSlots().size(),
+                        currentPlayer.getInventory().getEquipped());
+                break;
+        }
+
+        // Salvar no banco
+        DatabaseManager.getInstance().savePlayerInventory(currentPlayer);
+
+        // Enviar inventário atualizado
+        InventoryUpdatePacket invPacket = new InventoryUpdatePacket(currentPlayer.getInventory());
+        sendPacket(ctx, invPacket);
+    }
+
+    /**
+     * Desequipa um item e o coloca de volta no inventário
+     */
+    private void unequipToInventory(String equipSlot) {
+        String itemId = currentPlayer.getInventory().getEquipped().get(equipSlot);
+        if (itemId == null || itemId.isEmpty()) return;
+
+        // Remover do equipamento
+        currentPlayer.getInventory().unequipItem(equipSlot);
+
+        // Adicionar de volta ao inventário
+        ItemDefinition def = ItemManager.getInstance().getItemDefinition(itemId);
+        if (def != null) {
+            currentPlayer.getInventory().addItem(itemId, 1, def);
+            logger.info("Unequipped {} back to inventory", itemId);
+        }
+    }
+
+    private boolean isEquippableCategory(String category) {
+        return "weapon".equals(category) || "armor".equals(category) || "equipment".equals(category);
     }
 
     @Override

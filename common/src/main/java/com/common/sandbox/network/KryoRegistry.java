@@ -2,6 +2,7 @@ package com.common.sandbox.network;
 
 import com.common.sandbox.model.*;
 import com.common.sandbox.network.packets.*;
+import com.common.sandbox.network.packets.InventoryUpdatePacket;
 import com.esotericsoftware.kryo.Kryo;
 
 import java.util.ArrayList;
@@ -59,6 +60,13 @@ public class KryoRegistry {
     private static final int ID_GROUND_ITEM = 161;
     private static final int ID_ITEM_SPAWN_PACKET = 162;
     private static final int ID_ITEM_DESPAWN_PACKET = 163;
+
+    private static final int ID_INVENTORY = 170;
+    private static final int ID_ITEM_STACK = 171;
+    private static final int ID_INVENTORY_UPDATE = 172;
+    private static final int ID_PICKUP_ITEM = 173;
+    private static final int ID_DROP_ITEM = 174;
+    private static final int ID_PICKUP_RESULT = 175;
 
     private static boolean registered = false;
 
@@ -118,6 +126,12 @@ public class KryoRegistry {
         kryo.register(PrivateMessageHistoryRequest.class, ID_PRIVATE_MESSAGE_HISTORY_REQUEST);
         kryo.register(PrivateMessageHistoryResponse.class, ID_PRIVATE_MESSAGE_HISTORY_RESPONSE);
 
+        kryo.register(Inventory.class, ID_INVENTORY);
+        kryo.register(ItemStack.class, ID_ITEM_STACK);
+        kryo.register(InventoryUpdatePacket.class, ID_INVENTORY_UPDATE);
+        kryo.register(PickupItemPacket.class, ID_PICKUP_ITEM);
+        kryo.register(DropItemPacket.class, ID_DROP_ITEM);
+        kryo.register(PickupResultPacket.class, ID_PICKUP_RESULT);
         // Arrays multidimensionais
         kryo.register(int[][].class, 90);
         kryo.register(int[][][].class, 91);
@@ -167,6 +181,8 @@ public class KryoRegistry {
         // Date/Time
         kryo.register(java.util.Date.class, 150);
         kryo.register(java.sql.Timestamp.class, 151);
+        //hashmap
+        kryo.register(java.util.HashMap.class, 180);
 
         // IMPORTANTE: Permitir registro automático para classes não listadas
         kryo.setRegistrationRequired(false);

@@ -2,6 +2,7 @@ package com.sandbox.client;
 
 import com.common.sandbox.model.MapJSON;
 import com.common.sandbox.network.KryoRegistry;
+import com.common.sandbox.network.packets.InventoryUpdatePacket;
 import com.common.sandbox.network.packets.PingPacket;
 import com.common.sandbox.network.packets.*;
 import com.esotericsoftware.kryo.Kryo;
@@ -46,8 +47,8 @@ public class NetworkClient {
     private Consumer<FriendRequestPacket> friendRequestCallback;
     private Consumer<PrivateMessagePacket> privateMessageCallback;
     private Consumer<PrivateMessageHistoryResponse> privateMessageHistoryCallback;
-
-    // ⭐ ADICIONAR ESTES CALLBACKS
+    private Consumer<InventoryUpdatePacket> inventoryCallback;
+    private Consumer<PickupResultPacket> pickupResultCallback;
     private Consumer<ItemSpawnPacket> itemSpawnCallback;
     private Consumer<ItemDespawnPacket> itemDespawnCallback;
 
@@ -230,8 +231,8 @@ public class NetworkClient {
     public void setFriendRequestCallback(Consumer<FriendRequestPacket> callback) { this.friendRequestCallback = callback; }
     public void setPrivateMessageCallback(Consumer<PrivateMessagePacket> callback) { this.privateMessageCallback = callback; }
     public void setPrivateMessageHistoryCallback(Consumer<PrivateMessageHistoryResponse> callback) { this.privateMessageHistoryCallback = callback; }
-
-    // ⭐ SETTERS PARA ITENS
+    public void setInventoryCallback(Consumer<InventoryUpdatePacket> callback) { this.inventoryCallback = callback; }
+    public void setPickupResultCallback(Consumer<PickupResultPacket> callback) { this.pickupResultCallback = callback; }
     public void setItemSpawnCallback(Consumer<ItemSpawnPacket> callback) {
         this.itemSpawnCallback = callback;
         logger.info("ItemSpawnCallback set");
@@ -291,7 +292,13 @@ public class NetworkClient {
                     } else {
                         logger.warn("ItemDespawnCallback is NULL!");
                     }
-                } else {
+                } else if (msg instanceof InventoryUpdatePacket && inventoryCallback != null) {
+                    inventoryCallback.accept((InventoryUpdatePacket) msg);
+                } else if (msg instanceof PickupResultPacket && pickupResultCallback != null) {
+                    pickupResultCallback.accept((PickupResultPacket) msg);
+                } else if (msg instanceof DropItemPacket) {
+                    // Enviar para servidor (já está sendo enviado)
+                }else {
                     logger.warn("Unhandled packet type: {}", msg.getClass().getSimpleName());
                 }
             } catch (Exception e) {

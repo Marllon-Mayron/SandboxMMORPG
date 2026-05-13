@@ -1,8 +1,12 @@
 package com.sandbox.server;
 
+import com.common.sandbox.model.Inventory;
+import com.common.sandbox.model.ItemStack;
 import com.common.sandbox.model.Player;
 import com.common.sandbox.network.packets.FriendListResponse;
 import com.common.sandbox.network.packets.PrivateMessagePacket;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.DeserializationFeature;
 import org.mindrot.jbcrypt.BCrypt;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -19,8 +23,11 @@ public class DatabaseManager {
     private static final String DB_USER = "postgres";
     private static final String DB_PASSWORD = "M@rllon3455";
 
+    private final ObjectMapper objectMapper;
+
     private DatabaseManager() {
-        // Garantir que as tabelas existem ao iniciar
+        this.objectMapper = new ObjectMapper();
+        this.objectMapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
         initializeTables();
     }
 
@@ -81,7 +88,27 @@ public class DatabaseManager {
                 x FLOAT DEFAULT 400,
                 y FLOAT DEFAULT 300,
                 direction VARCHAR(20) DEFAULT 'DOWN',
+                level INT DEFAULT 1,
+                experience INT DEFAULT 0,
+                gold INT DEFAULT 0,
+                current_hp INT DEFAULT 100,
+                current_mana INT DEFAULT 50,
+                current_stamina INT DEFAULT 100,
+                max_hp INT DEFAULT 100,
+                max_mana INT DEFAULT 50,
+                max_stamina INT DEFAULT 100,
+                strength INT DEFAULT 5,
+                agility INT DEFAULT 5,
+                wisdom INT DEFAULT 5,
+                attribute_points INT DEFAULT 0,
+                skill_points INT DEFAULT 0,
+                hp_regen_per_second INT DEFAULT 3,
+                mana_regen_per_second INT DEFAULT 3,
+                stamina_regen_per_second INT DEFAULT 5,
+                inventory JSONB DEFAULT '{"slots": {}, "equipped": {}}',
+                is_online BOOLEAN DEFAULT false,
                 last_login TIMESTAMP,
+                last_logout TIMESTAMP,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """;
@@ -95,10 +122,45 @@ public class DatabaseManager {
             )
         """;
 
+        String createFriendsTable = """
+            CREATE TABLE IF NOT EXISTS friends (
+                player_id UUID REFERENCES players(id) ON DELETE CASCADE,
+                friend_id UUID REFERENCES players(id) ON DELETE CASCADE,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (player_id, friend_id)
+            )
+        """;
+
+        String createFriendRequestsTable = """
+            CREATE TABLE IF NOT EXISTS friend_requests (
+                id SERIAL PRIMARY KEY,
+                from_player_id UUID REFERENCES players(id) ON DELETE CASCADE,
+                to_player_id UUID REFERENCES players(id) ON DELETE CASCADE,
+                status VARCHAR(20) DEFAULT 'pending',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(from_player_id, to_player_id)
+            )
+        """;
+
+        String createPrivateMessagesTable = """
+            CREATE TABLE IF NOT EXISTS private_messages (
+                id SERIAL PRIMARY KEY,
+                from_player_id UUID REFERENCES players(id) ON DELETE CASCADE,
+                to_player_id UUID REFERENCES players(id) ON DELETE CASCADE,
+                message TEXT NOT NULL,
+                is_read BOOLEAN DEFAULT false,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """;
+
         String createIndexes = """
             CREATE INDEX IF NOT EXISTS idx_map_chunks_coords ON map_chunks(chunk_x, chunk_y);
             CREATE INDEX IF NOT EXISTS idx_maps_active ON maps(is_active);
-            CREATE INDEX IF NOT EXISTS idx_players_username ON players(username)
+            CREATE INDEX IF NOT EXISTS idx_players_username ON players(username);
+            CREATE INDEX IF NOT EXISTS idx_players_is_online ON players(is_online);
+            CREATE INDEX IF NOT EXISTS idx_friend_requests_to_player ON friend_requests(to_player_id, status);
+            CREATE INDEX IF NOT EXISTS idx_private_messages_to_player ON private_messages(to_player_id, is_read);
+            CREATE INDEX IF NOT EXISTS idx_private_messages_conversation ON private_messages(from_player_id, to_player_id, created_at);
         """;
 
         try (Connection conn = getConnection();
@@ -107,6 +169,9 @@ public class DatabaseManager {
             stmt.execute(createMapChunksTable);
             stmt.execute(createPlayersTable);
             stmt.execute(createChatHistoryTable);
+            stmt.execute(createFriendsTable);
+            stmt.execute(createFriendRequestsTable);
+            stmt.execute(createPrivateMessagesTable);
             stmt.execute(createIndexes);
             logger.info("Database tables initialized");
         } catch (SQLException e) {
@@ -114,18 +179,24 @@ public class DatabaseManager {
         }
     }
 
+    // ==================== PLAYER MANAGEMENT ====================
+
     public boolean registerPlayer(String username, String email, String password) {
-        String sql = "INSERT INTO players (id, username, email, password_hash) VALUES (?, ?, ?, ?)";
+        String sql = "INSERT INTO players (id, username, email, password_hash, inventory) VALUES (?, ?, ?, ?, ?::jsonb)";
 
         try (Connection conn = getConnection();
              PreparedStatement pstmt = conn.prepareStatement(sql)) {
             String hashedPassword = BCrypt.hashpw(password, BCrypt.gensalt(12));
             UUID id = UUID.randomUUID();
 
+            // Criar inventário vazio como JSON
+            String emptyInventory = "{\"slots\": {}, \"equipped\": {}}";
+
             pstmt.setObject(1, id);
             pstmt.setString(2, username);
             pstmt.setString(3, email);
             pstmt.setString(4, hashedPassword);
+            pstmt.setString(5, emptyInventory);
 
             int affectedRows = pstmt.executeUpdate();
             return affectedRows > 0;
@@ -145,7 +216,8 @@ public class DatabaseManager {
                 "level, experience, gold, current_hp, current_mana, current_stamina, " +
                 "max_hp, max_mana, max_stamina, strength, agility, wisdom, " +
                 "attribute_points, skill_points, " +
-                "hp_regen_per_second, mana_regen_per_second, stamina_regen_per_second " +
+                "hp_regen_per_second, mana_regen_per_second, stamina_regen_per_second, " +
+                "inventory " +
                 "FROM players WHERE username = ?";
 
         try (Connection conn = getConnection();
@@ -185,12 +257,30 @@ public class DatabaseManager {
                     player.setManaRegenPerSecond(rs.getInt("mana_regen_per_second"));
                     player.setStaminaRegenPerSecond(rs.getInt("stamina_regen_per_second"));
 
+                    // Carregar inventário
+                    String inventoryJson = rs.getString("inventory");
+                    if (inventoryJson != null && !inventoryJson.isEmpty()) {
+                        try {
+                            Inventory inventory = objectMapper.readValue(inventoryJson, Inventory.class);
+                            player.setInventory(inventory);
+                            logger.info("Loaded inventory for {}: {} items equipped, {} slots",
+                                    username,
+                                    inventory.getEquipped().size(),
+                                    inventory.getSlots().size());
+                        } catch (Exception e) {
+                            logger.error("Failed to parse inventory JSON for player {}", username, e);
+                            player.setInventory(new Inventory());
+                        }
+                    } else {
+                        player.setInventory(new Inventory());
+                    }
+
                     player.setOnline(true);
 
                     updateLastLogin(player.getId());
                     savePlayerPosition(player);
 
-                    logger.info("✅ Jogador {} carregado - Level {} | HP {}/{} | Stamina {}/{}",
+                    logger.info("✅ Jogador {} carregado - Level {} | HP {}/{} | Stamina {}/{} | Inventory loaded",
                             username, player.getLevel(),
                             player.getCurrentHp(), player.getMaxHp(),
                             player.getCurrentStamina(), player.getMaxStamina());
@@ -206,7 +296,7 @@ public class DatabaseManager {
     }
 
     /**
-     * Salva a posição do jogador (síncrono - usado no logout)
+     * Salva a posição do jogador e inventário (síncrono - usado no logout)
      */
     public void savePlayerPosition(Player player) {
         String sql = "UPDATE players SET " +
@@ -218,11 +308,15 @@ public class DatabaseManager {
                 "max_hp = ?, max_mana = ?, max_stamina = ?, " +
                 "strength = ?, agility = ?, wisdom = ?, " +
                 "attribute_points = ?, skill_points = ?, " +
-                "hp_regen_per_second = ?, mana_regen_per_second = ?, stamina_regen_per_second = ? " +
+                "hp_regen_per_second = ?, mana_regen_per_second = ?, stamina_regen_per_second = ?, " +
+                "inventory = ?::jsonb " +
                 "WHERE id = ?::uuid";
 
         try (Connection conn = getConnection();
              PreparedStatement pstmt = conn.prepareStatement(sql)) {
+
+            // Serializar inventário
+            String inventoryJson = objectMapper.writeValueAsString(player.getInventory());
 
             pstmt.setFloat(1, player.getX());
             pstmt.setFloat(2, player.getY());
@@ -244,40 +338,43 @@ public class DatabaseManager {
             pstmt.setInt(18, player.getHpRegenPerSecond());
             pstmt.setInt(19, player.getManaRegenPerSecond());
             pstmt.setInt(20, player.getStaminaRegenPerSecond());
-            pstmt.setObject(21, UUID.fromString(player.getId()));
+            pstmt.setString(21, inventoryJson);
+            pstmt.setObject(22, UUID.fromString(player.getId()));
 
             int updated = pstmt.executeUpdate();
             if (updated > 0) {
-                logger.debug("✅ Player {} saved", player.getUsername());
+                logger.debug("✅ Player {} saved (inventory: {} items)",
+                        player.getUsername(), player.getInventory().getSlots().size());
             }
 
         } catch (SQLException e) {
             logger.error("❌ Erro ao salvar jogador {}", player.getUsername(), e);
+        } catch (Exception e) {
+            logger.error("❌ Erro ao serializar inventário para {}", player.getUsername(), e);
         }
     }
 
-    private void updateLastLogin(String playerId) {
-        String sql = "UPDATE players SET last_login = CURRENT_TIMESTAMP WHERE id = ?::uuid";
-        try (Connection conn = getConnection();
-             PreparedStatement pstmt = conn.prepareStatement(sql)) {
-            pstmt.setObject(1, UUID.fromString(playerId));  // Converter para UUID
-            pstmt.executeUpdate();
-        } catch (SQLException e) {
-            logger.error("Error updating last login", e);
-        }
-    }
+    /**
+     * Salva apenas o inventário do jogador (otimizado para mudanças de inventário)
+     */
+    public void savePlayerInventory(Player player) {
+        String sql = "UPDATE players SET inventory = ?::jsonb WHERE id = ?::uuid";
 
-    public void updatePlayerPosition(Player player) {
-        String sql = "UPDATE players SET x = ?, y = ?, direction = ? WHERE username = ?";
         try (Connection conn = getConnection();
              PreparedStatement pstmt = conn.prepareStatement(sql)) {
-            pstmt.setFloat(1, player.getX());
-            pstmt.setFloat(2, player.getY());
-            pstmt.setString(3, player.getDirection());
-            pstmt.setString(4, player.getUsername());
+
+            String inventoryJson = objectMapper.writeValueAsString(player.getInventory());
+            pstmt.setString(1, inventoryJson);
+            pstmt.setObject(2, UUID.fromString(player.getId()));
+
             pstmt.executeUpdate();
+            logger.debug("✅ Inventory saved for {} ({} slots)",
+                    player.getUsername(), player.getInventory().getSlots().size());
+
         } catch (SQLException e) {
-            logger.error("Error updating player position", e);
+            logger.error("❌ Erro ao salvar inventário de {}", player.getUsername(), e);
+        } catch (Exception e) {
+            logger.error("❌ Erro ao serializar inventário de {}", player.getUsername(), e);
         }
     }
 
@@ -285,10 +382,34 @@ public class DatabaseManager {
      * Salva a posição do jogador (assíncrono para performance)
      */
     public void savePlayerPositionAsync(Player player) {
-        // Usar virtual thread para não bloquear
         Thread.startVirtualThread(() -> {
             savePlayerPosition(player);
         });
+    }
+
+    private void updateLastLogin(String playerId) {
+        String sql = "UPDATE players SET last_login = CURRENT_TIMESTAMP WHERE id = ?::uuid";
+        try (Connection conn = getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setObject(1, UUID.fromString(playerId));
+            pstmt.executeUpdate();
+        } catch (SQLException e) {
+            logger.error("Error updating last login", e);
+        }
+    }
+
+    public void updatePlayerPosition(Player player) {
+        String sql = "UPDATE players SET x = ?, y = ?, direction = ? WHERE id = ?::uuid";
+        try (Connection conn = getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setFloat(1, player.getX());
+            pstmt.setFloat(2, player.getY());
+            pstmt.setString(3, player.getDirection());
+            pstmt.setObject(4, UUID.fromString(player.getId()));
+            pstmt.executeUpdate();
+        } catch (SQLException e) {
+            logger.error("Error updating player position", e);
+        }
     }
 
     public void setPlayerOffline(String playerId) {
@@ -303,7 +424,7 @@ public class DatabaseManager {
     }
 
     public void saveChatMessage(String playerId, String message) {
-        String sql = "INSERT INTO chat_history (player_id, message) VALUES (?, ?)";
+        String sql = "INSERT INTO chat_history (player_id, message) VALUES (?::uuid, ?)";
         try (Connection conn = getConnection();
              PreparedStatement pstmt = conn.prepareStatement(sql)) {
             pstmt.setObject(1, UUID.fromString(playerId));
@@ -324,7 +445,7 @@ public class DatabaseManager {
     }
 
     public Player getPlayerByUsername(String username) throws SQLException {
-        String sql = "SELECT id, username, level FROM players WHERE username = ?";
+        String sql = "SELECT id, username, level, is_online FROM players WHERE username = ?";
 
         try (Connection conn = getConnection();
              PreparedStatement pstmt = conn.prepareStatement(sql)) {
@@ -336,6 +457,7 @@ public class DatabaseManager {
                 player.setId(rs.getString("id"));
                 player.setUsername(rs.getString("username"));
                 player.setLevel(rs.getInt("level"));
+                player.setOnline(rs.getBoolean("is_online"));
                 return player;
             }
             return null;
@@ -343,7 +465,7 @@ public class DatabaseManager {
     }
 
     public Player getPlayerById(String playerId) throws SQLException {
-        String sql = "SELECT id, username, level FROM players WHERE id = ?::uuid";
+        String sql = "SELECT id, username, level, is_online FROM players WHERE id = ?::uuid";
 
         try (Connection conn = getConnection();
              PreparedStatement pstmt = conn.prepareStatement(sql)) {
@@ -355,6 +477,7 @@ public class DatabaseManager {
                 player.setId(rs.getString("id"));
                 player.setUsername(rs.getString("username"));
                 player.setLevel(rs.getInt("level"));
+                player.setOnline(rs.getBoolean("is_online"));
                 return player;
             }
             return null;
@@ -412,7 +535,7 @@ public class DatabaseManager {
         try (Connection conn = getConnection()) {
             conn.setAutoCommit(false);
 
-            // Buscar detalhes da solicitacao ANTES de deletar
+            // Buscar detalhes da solicitação ANTES de deletar
             String selectSql = "SELECT fr.from_player_id, fr.to_player_id FROM friend_requests fr WHERE fr.id = ? AND fr.status = 'pending'";
             String fromId = null, toId = null;
 
@@ -427,13 +550,13 @@ public class DatabaseManager {
 
             if (fromId == null || toId == null) return false;
 
-            // DELETAR a solicitacao (em vez de atualizar status)
+            // DELETAR a solicitação
             try (PreparedStatement deleteStmt = conn.prepareStatement(deleteRequestSql)) {
                 deleteStmt.setInt(1, Integer.parseInt(requestId));
                 deleteStmt.executeUpdate();
             }
 
-            // Adicionar relacao de amizade (bidirecional)
+            // Adicionar relação de amizade (bidirecional)
             try (PreparedStatement insertStmt = conn.prepareStatement(insertFriendSql)) {
                 insertStmt.setObject(1, UUID.fromString(fromId));
                 insertStmt.setObject(2, UUID.fromString(toId));
@@ -452,7 +575,6 @@ public class DatabaseManager {
     }
 
     public boolean rejectFriendRequest(String requestId) throws SQLException {
-        // Deletar em vez de atualizar status
         String sql = "DELETE FROM friend_requests WHERE id = ?";
 
         try (Connection conn = getConnection();
@@ -473,7 +595,6 @@ public class DatabaseManager {
         try (Connection conn = getConnection()) {
             conn.setAutoCommit(false);
 
-            // Remover da tabela de amigos
             try (PreparedStatement pstmt = conn.prepareStatement(deleteFriendsSql)) {
                 pstmt.setObject(1, UUID.fromString(playerId));
                 pstmt.setObject(2, UUID.fromString(friendId));
@@ -482,7 +603,6 @@ public class DatabaseManager {
                 pstmt.executeUpdate();
             }
 
-            // Remover solicitações pendentes entre eles
             try (PreparedStatement pstmt = conn.prepareStatement(deleteRequestsSql)) {
                 pstmt.setObject(1, UUID.fromString(playerId));
                 pstmt.setObject(2, UUID.fromString(friendId));
@@ -528,7 +648,6 @@ public class DatabaseManager {
         response.friends = new java.util.ArrayList<>();
         response.pendingRequests = new java.util.ArrayList<>();
 
-        // Buscar amigos
         String friendsSql = "SELECT p.id, p.username, p.level, p.is_online " +
                 "FROM friends f JOIN players p ON f.friend_id = p.id " +
                 "WHERE f.player_id = ?::uuid";
@@ -548,7 +667,6 @@ public class DatabaseManager {
             }
         }
 
-        // Buscar solicitacoes pendentes (recebidas)
         String requestsSql = "SELECT fr.id, fr.from_player_id, p.username, p.level, fr.created_at " +
                 "FROM friend_requests fr JOIN players p ON fr.from_player_id = p.id " +
                 "WHERE fr.to_player_id = ?::uuid AND fr.status = 'pending'";
@@ -571,6 +689,8 @@ public class DatabaseManager {
 
         return response;
     }
+
+    // ==================== MENSAGENS PRIVADAS ====================
 
     public void savePrivateMessage(PrivateMessagePacket packet) throws SQLException {
         String sql = "INSERT INTO private_messages (from_player_id, to_player_id, message, created_at) " +
@@ -649,7 +769,6 @@ public class DatabaseManager {
     }
 
     public void close() {
-        // Não precisamos fechar uma conexão global
         logger.info("DatabaseManager closed");
     }
 }

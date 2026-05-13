@@ -109,7 +109,6 @@ public class ItemManager {
         ItemDefinition def = itemDefinitions.get(itemId);
         if (def == null) {
             logger.warn("Tried to spawn unknown item: {}", itemId);
-            logger.info("Available items: {}", itemDefinitions.keySet());
             return;
         }
 
@@ -119,10 +118,9 @@ public class ItemManager {
         groundItems.put(instanceId, item);
         addToChunkIndex(item);
 
-        logger.info("ITEM SPAWNED - ID: {}, Name: {}, Pos: ({}, {}), Despawn in: {}s",
-                instanceId.substring(0, 8), def.getName(), x, y, despawnSeconds);
+        logger.info("ITEM SPAWNED - ID: {}, Name: {}, Category: {}, Pos: ({}, {})",
+                instanceId.substring(0, 8), def.getName(), def.getCategory(), x, y);
 
-        // Broadcast para todos os jogadores
         ItemSpawnPacket packet = new ItemSpawnPacket(item);
         GameServerHandler.broadcastToAll(packet);
     }
@@ -222,6 +220,33 @@ public class ItemManager {
         for (GroundItem item : groundItems.values()) {
             ctx.writeAndFlush(new ItemSpawnPacket(item));
         }
+    }
+
+    public GroundItem removeItem(String instanceId) {
+        GroundItem item = groundItems.remove(instanceId);
+        if (item != null) {
+            removeFromChunkIndex(item);
+            logger.info("Item removed: {} [{}]", item.getDefinition().getName(), instanceId.substring(0, 8));
+        }
+        return item;
+    }
+
+    public void respawnItem(GroundItem item) {
+        String newInstanceId = UUID.randomUUID().toString();
+        GroundItem newItem = new GroundItem(newInstanceId, item.getDefinition(),
+                item.getX(), item.getY(), item.getDespawnSeconds());
+        groundItems.put(newInstanceId, newItem);
+        addToChunkIndex(newItem);
+
+        ItemSpawnPacket packet = new ItemSpawnPacket(newItem);
+        GameServerHandler.broadcastToAll(packet);
+
+        logger.info("Item respawned: {} at ({}, {})",
+                newItem.getDefinition().getName(), newItem.getX(), newItem.getY());
+    }
+
+    public ItemDefinition getItemDefinition(String itemId) {
+        return itemDefinitions.get(itemId);
     }
 
     public void shutdown() {

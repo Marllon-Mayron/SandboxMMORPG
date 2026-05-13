@@ -8,6 +8,7 @@ import com.badlogic.gdx.graphics.Pixmap;
 import com.badlogic.gdx.graphics.Texture;
 import com.badlogic.gdx.graphics.g2d.BitmapFont;
 import com.badlogic.gdx.graphics.g2d.SpriteBatch;
+import com.badlogic.gdx.graphics.g2d.TextureRegion;
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
 import com.badlogic.gdx.scenes.scene2d.Actor;
 import com.badlogic.gdx.scenes.scene2d.Stage;
@@ -17,10 +18,13 @@ import com.badlogic.gdx.scenes.scene2d.utils.Drawable;
 import com.badlogic.gdx.scenes.scene2d.utils.TextureRegionDrawable;
 import com.badlogic.gdx.utils.Align;
 import com.badlogic.gdx.utils.viewport.ScreenViewport;
+import com.common.sandbox.model.Inventory;
+import com.common.sandbox.model.ItemDefinition;
 import com.common.sandbox.model.Player;
 import com.common.sandbox.network.packets.FriendListResponse;
 import com.common.sandbox.network.packets.PrivateMessagePacket;
 import com.sandbox.client.FontManager;
+import com.sandbox.client.SandboxClient;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -35,6 +39,7 @@ public class PlayerUI {
     private ShapeRenderer shapeRenderer;
     private OrthographicCamera uiCamera;
     private FontManager fontManager;
+    private SandboxClient game;
 
     private Player currentPlayer;
     private float currentHealth = 100f;
@@ -76,6 +81,10 @@ public class PlayerUI {
     private PrivateChatWindow privateChatWindow;
     private Runnable refreshFriendsCallback;
 
+    // Inventário
+    private InventoryWindow inventoryWindow;
+    private boolean inventoryVisible = false;
+
     // Callbacks do Sistema de Amigos
     private Consumer<String> sendFriendRequestCallback;
     private Consumer<String> acceptFriendRequestCallback;
@@ -83,6 +92,12 @@ public class PlayerUI {
     private Consumer<String> removeFriendCallback;
     private BiConsumer<String, String> sendPrivateMessageCallback;
     private Consumer<String> onLoadPrivateChatHistory;
+
+    // Callbacks do Inventário
+    private BiConsumer<Integer, Integer> onMoveItemCallback;
+    private BiConsumer<Integer, String> onEquipItemCallback;
+    private Consumer<Integer> onUnequipItemCallback;
+    private Consumer<InventoryWindow.DropAction> onDropItemCallback;
 
     // Dimensões fixas
     private static final int HUD_WIDTH = 160;
@@ -115,6 +130,10 @@ public class PlayerUI {
         logger.info("PlayerUI initialized");
     }
 
+    public void setGame(SandboxClient game) {
+        this.game = game;
+    }
+
     private void createSkin() {
         skin = new Skin();
 
@@ -126,12 +145,14 @@ public class PlayerUI {
         Drawable blueBg = createColorDrawable(0.2f, 0.45f, 0.8f, 1f);
         Drawable greenBg = createColorDrawable(0.2f, 0.65f, 0.25f, 1f);
         Drawable goldBg = createColorDrawable(0.85f, 0.65f, 0.15f, 1f);
+        Drawable redBg = createColorDrawable(0.75f, 0.2f, 0.2f, 1f);
 
         skin.add("window-bg", darkBg);
         skin.add("button-bg", buttonBg);
         skin.add("blue", blueBg);
         skin.add("green", greenBg);
         skin.add("gold", goldBg);
+        skin.add("red", redBg);
 
         // Label styles
         Label.LabelStyle labelStyle = new Label.LabelStyle();
@@ -175,6 +196,22 @@ public class PlayerUI {
         primaryStyle.down = darkBg;
         primaryStyle.over = buttonBg;
         skin.add("primary", primaryStyle);
+
+        TextButton.TextButtonStyle adminStyle = new TextButton.TextButtonStyle();
+        adminStyle.font = font;
+        adminStyle.fontColor = Color.WHITE;
+        adminStyle.up = greenBg;
+        adminStyle.down = darkBg;
+        adminStyle.over = blueBg;
+        skin.add("admin", adminStyle);
+
+        TextButton.TextButtonStyle editorStyle = new TextButton.TextButtonStyle();
+        editorStyle.font = font;
+        editorStyle.fontColor = Color.WHITE;
+        editorStyle.up = goldBg;
+        editorStyle.down = darkBg;
+        editorStyle.over = blueBg;
+        skin.add("editor", editorStyle);
 
         // TextField style
         TextField.TextFieldStyle textFieldStyle = new TextField.TextFieldStyle();
@@ -273,6 +310,7 @@ public class PlayerUI {
         taskBar = new TaskBar(skin, stage);
         taskBar.setOnFriendsClick(() -> toggleFriendsWindow());
         taskBar.setOnAttributesClick(() -> toggleAttributes());
+        taskBar.setOnInventoryClick(() -> toggleInventory());
 
         // Criar FriendsWindow
         friendsWindow = new FriendsWindow(skin, stage);
@@ -307,14 +345,35 @@ public class PlayerUI {
                 sendPrivateMessageCallback.accept(friendId, message);
             }
         });
-
-        // IMPORTANTE: Configurar o callback para carregar histórico
         privateChatWindow.setOnLoadHistory(friendId -> {
             logger.info("onLoadHistory called for friendId: {}", friendId);
             if (onLoadPrivateChatHistory != null) {
                 onLoadPrivateChatHistory.accept(friendId);
             } else {
                 logger.warn("onLoadPrivateChatHistory callback is null!");
+            }
+        });
+
+        // Criar InventoryWindow
+        inventoryWindow = new InventoryWindow(skin, stage);
+        inventoryWindow.setOnMoveItem((fromSlot, toSlot) -> {
+            if (onMoveItemCallback != null) {
+                onMoveItemCallback.accept(fromSlot, toSlot);
+            }
+        });
+        inventoryWindow.setOnEquip((slot, equipSlot) -> {
+            if (onEquipItemCallback != null) {
+                onEquipItemCallback.accept(slot, equipSlot);
+            }
+        });
+        inventoryWindow.setOnUnequip(slot -> {
+            if (onUnequipItemCallback != null) {
+                onUnequipItemCallback.accept(slot);
+            }
+        });
+        inventoryWindow.setOnDrop(action -> {
+            if (onDropItemCallback != null) {
+                onDropItemCallback.accept(action);
             }
         });
     }
@@ -426,6 +485,10 @@ public class PlayerUI {
             if (attributesWindow != null && attributesWindow.isVisible()) {
                 attributesWindow.update(player);
             }
+
+            if (inventoryWindow != null && inventoryWindow.isVisible()) {
+                inventoryWindow.updateInventory(player.getInventory(), player.getGold());
+            }
         }
 
         manaPercentLabel.setText(Math.round(currentMana) + "%");
@@ -487,6 +550,10 @@ public class PlayerUI {
 
     public boolean isPrivateChatVisible() {
         return privateChatWindow != null && privateChatWindow.isVisible();
+    }
+
+    public boolean isInventoryVisible() {
+        return inventoryWindow != null && inventoryWindow.isVisible();
     }
 
     public void setHealth(float percent) {
@@ -563,6 +630,24 @@ public class PlayerUI {
         }
     }
 
+    // ==================== SISTEMA DE INVENTÁRIO ====================
+
+    public void toggleInventory() {
+        if (inventoryWindow != null) {
+            inventoryWindow.toggle();
+            if (inventoryWindow.isVisible() && currentPlayer != null) {
+                inventoryWindow.updateInventory(currentPlayer.getInventory(), currentPlayer.getGold());
+                inventoryWindow.centerPosition(screenWidth, screenHeight);
+            }
+        }
+    }
+
+    public void updateInventory(Inventory inventory, int gold) {
+        if (inventoryWindow != null && inventoryWindow.isVisible()) {
+            inventoryWindow.updateInventory(inventory, gold);
+        }
+    }
+
     // ==================== SISTEMA DE AMIGOS ====================
 
     public void toggleFriendsWindow() {
@@ -581,7 +666,6 @@ public class PlayerUI {
         if (privateChatWindow != null) {
             privateChatWindow.openWithFriend(friend);
             privateChatWindow.centerPosition(screenWidth, screenHeight);
-            // O histórico será carregado automaticamente pelo callback
         }
     }
 
@@ -616,19 +700,46 @@ public class PlayerUI {
         }
     }
 
-    // Callbacks setters para o sistema de amigos
+    // ==================== SETTERS DE CALLBACKS ====================
+
+    // Chat
+    public void setSendMessageCallback(Consumer<String> callback) { this.sendMessageCallback = callback; }
+
+    // Friend system
     public void setSendFriendRequestCallback(Consumer<String> callback) { this.sendFriendRequestCallback = callback; }
     public void setAcceptFriendRequestCallback(Consumer<String> callback) { this.acceptFriendRequestCallback = callback; }
     public void setRejectFriendRequestCallback(Consumer<String> callback) { this.rejectFriendRequestCallback = callback; }
     public void setRemoveFriendCallback(Consumer<String> callback) { this.removeFriendCallback = callback; }
     public void setSendPrivateMessageCallback(BiConsumer<String, String> callback) { this.sendPrivateMessageCallback = callback; }
     public void setRefreshFriendsCallback(Runnable callback) { this.refreshFriendsCallback = callback; }
-    public void setOnLoadPrivateChatHistory(Consumer<String> callback) {
-        this.onLoadPrivateChatHistory = callback;
+    public void setOnLoadPrivateChatHistory(Consumer<String> callback) { this.onLoadPrivateChatHistory = callback; }
+
+    // Inventory system
+    public void setOnMoveItemCallback(BiConsumer<Integer, Integer> callback) { this.onMoveItemCallback = callback; }
+    public void setOnEquipItemCallback(BiConsumer<Integer, String> callback) { this.onEquipItemCallback = callback; }
+    public void setOnUnequipItemCallback(Consumer<Integer> callback) { this.onUnequipItemCallback = callback; }
+    public void setOnDropItemCallback(Consumer<InventoryWindow.DropAction> callback) { this.onDropItemCallback = callback; }
+    public void registerItemTexture(String itemId, TextureRegion region, ItemDefinition definition) {
+        logger.info("PlayerUI.registerItemTexture - Item: {}, Category: {}", itemId, definition.getCategory());
+        if (inventoryWindow != null) {
+            inventoryWindow.registerItemTexture(itemId, region, definition);
+        } else {
+            logger.warn("InventoryWindow is null, cannot register item texture for: {}", itemId);
+        }
     }
+    // Speed
     public void setSpeedMultiplier(float multiplier) {
         this.currentSpeedMultiplier = multiplier;
     }
+
+    public boolean isItemRegistered(String itemId) {
+        if (inventoryWindow != null) {
+            return inventoryWindow.isItemRegistered(itemId);
+        }
+        return false;
+    }
+
+
     // ==================== BARRA DE VIDA ====================
 
     private void renderHealthBar() {
@@ -715,6 +826,10 @@ public class PlayerUI {
         if (privateChatWindow != null && privateChatWindow.isVisible()) {
             privateChatWindow.centerPosition(screenWidth, screenHeight);
         }
+
+        if (inventoryWindow != null && inventoryWindow.isVisible()) {
+            inventoryWindow.centerPosition(screenWidth, screenHeight);
+        }
     }
 
     public boolean isPointOverChat(int screenX, int screenY) {
@@ -739,6 +854,7 @@ public class PlayerUI {
         if (taskBar != null) taskBar.dispose();
         if (friendsWindow != null) friendsWindow.dispose();
         if (privateChatWindow != null) privateChatWindow.dispose();
+        if (inventoryWindow != null) inventoryWindow.dispose();
         logger.info("PlayerUI disposed");
     }
 }

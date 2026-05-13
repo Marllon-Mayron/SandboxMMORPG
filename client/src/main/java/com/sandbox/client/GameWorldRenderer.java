@@ -12,11 +12,9 @@ import com.badlogic.gdx.graphics.g2d.TextureRegion;
 import com.badlogic.gdx.graphics.g2d.freetype.FreeTypeFontGenerator;
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
 import com.badlogic.gdx.math.Vector2;
-import com.common.sandbox.model.MapJSON;
-import com.common.sandbox.model.Player;
-import com.common.sandbox.model.Chunk;
-import com.common.sandbox.model.WorldTile;
+import com.common.sandbox.model.*;
 import com.common.sandbox.network.packets.*;
+import com.common.sandbox.network.packets.InventoryUpdatePacket;
 import com.sandbox.client.editor.MapEditorScreen;
 import com.sandbox.client.input.PlayerInputManager;
 import com.sandbox.client.renderer.ItemRenderer;
@@ -37,6 +35,7 @@ public class GameWorldRenderer implements Screen {
     private static final int WORLD_TILE_SIZE = 64;
     private static final int CHUNK_SIZE = 32;
     private static final float PLAYER_SIZE = 48;
+    private static final float PICKUP_RANGE = 48f; // Raio para pegar itens
 
     private final SandboxClient game;
     private final boolean adminMode;
@@ -72,11 +71,15 @@ public class GameWorldRenderer implements Screen {
 
     // Rate limiting para movimentos
     private long lastMovementSendTime = 0;
-    private static final long MOVEMENT_SEND_INTERVAL_MS = 50; // 20 packets por segundo
+    private static final long MOVEMENT_SEND_INTERVAL_MS = 50;
     private long lastStatusSyncTime = 0;
-    private static final long STATUS_SYNC_INTERVAL_MS = 10000; // 10 segundos
+    private static final long STATUS_SYNC_INTERVAL_MS = 10000;
 
+    // ==================== SISTEMA DE ITENS ====================
     private ItemRenderer itemRenderer;
+    private final Map<String, GroundItem> localGroundItems = new ConcurrentHashMap<>();
+    private long lastPickupCheck = 0;
+    private static final long PICKUP_CHECK_INTERVAL_MS = 500;
 
     public GameWorldRenderer(SandboxClient game, boolean adminMode, Map<String, Player> nearbyPlayers) {
         this.game = game;
@@ -92,7 +95,6 @@ public class GameWorldRenderer implements Screen {
 
         logger.info("GameWorldRenderer created with {} initial nearby players", this.initialNearbyPlayers.size());
 
-        // ⭐ CONFIGURAR CALLBACKS IMEDIATAMENTE NO CONSTRUTOR
         setupCallbacks();
     }
 
@@ -122,7 +124,9 @@ public class GameWorldRenderer implements Screen {
         createPlayerUI();
         setupPlayerInput();
 
-        // ===== Inicializar ItemRenderer =====
+        // ⭐ CARREGAR SPRITESHEET DOS ITENS PRIMEIRO
+        loadItemSpritesheet();
+
         itemRenderer = new ItemRenderer();
 
         if (initialNearbyPlayers != null && !initialNearbyPlayers.isEmpty()) {
@@ -143,6 +147,89 @@ public class GameWorldRenderer implements Screen {
             gameCamera.setTarget(currentPlayer.getX(), currentPlayer.getY());
             gameCamera.resetPosition();
         }
+    }
+
+    private void loadItemSpritesheet() {
+        String path = "itens/spritesheet_itens.png";
+
+        // Tentar diferentes caminhos
+        String[] possiblePaths = {
+                path,
+                "assets/" + path,
+                "client/assets/" + path,
+                "../client/assets/" + path
+        };
+
+        FileHandle file = null;
+        String loadedPath = null;
+
+        for (String tryPath : possiblePaths) {
+            file = Gdx.files.internal(tryPath);
+            if (file.exists()) {
+                loadedPath = tryPath;
+                logger.info("Found item spritesheet at: {}", tryPath);
+                break;
+            }
+        }
+
+        if (loadedPath == null) {
+            logger.error("❌ Item spritesheet not found in any path!");
+            createPlaceholderSpritesheet(path);
+            return;
+        }
+
+        if (spritesheets.containsKey(loadedPath)) {
+            logger.info("Item spritesheet already loaded: {}", loadedPath);
+            return;
+        }
+
+        try {
+            Texture texture = new Texture(file);
+            texture.setFilter(Texture.TextureFilter.Linear, Texture.TextureFilter.Linear);
+            spritesheets.put(loadedPath, texture);
+
+            int cols = texture.getWidth() / TILE_SIZE;
+            int rows = texture.getHeight() / TILE_SIZE;
+            TextureRegion[][] regions = TextureRegion.split(texture, TILE_SIZE, TILE_SIZE);
+            spritesheetRegions.put(loadedPath, regions);
+
+            logger.info("✅ Loaded item spritesheet: {} ({}x{} tiles, {}x{} pixels)",
+                    loadedPath, cols, rows, texture.getWidth(), texture.getHeight());
+        } catch (Exception e) {
+            logger.error("Failed to load item spritesheet: {}", loadedPath, e);
+        }
+    }
+
+    private void createPlaceholderSpritesheet(String path) {
+        Pixmap pixmap = new Pixmap(64, 64, Pixmap.Format.RGBA8888);
+
+        // Tile 0,0 - Maçã (vermelho)
+        pixmap.setColor(0.8f, 0.2f, 0.2f, 1f);
+        pixmap.fillRectangle(0, 32, 32, 32);
+
+        // Tile 1,0 - Espada (cinza)
+        pixmap.setColor(0.5f, 0.5f, 0.5f, 1f);
+        pixmap.fillRectangle(0, 0, 32, 32);
+
+        // Tile 1,1 - Poção (azul)
+        pixmap.setColor(0.2f, 0.2f, 0.8f, 1f);
+        pixmap.fillRectangle(32, 0, 32, 32);
+
+        // Tile 0,1 - Vazio/Default
+        pixmap.setColor(0.3f, 0.3f, 0.3f, 1f);
+        pixmap.fillRectangle(32, 32, 32, 32);
+
+        Texture texture = new Texture(pixmap);
+        pixmap.dispose();
+        texture.setFilter(Texture.TextureFilter.Linear, Texture.TextureFilter.Linear);
+        spritesheets.put(path, texture);
+
+        int cols = texture.getWidth() / TILE_SIZE;
+        int rows = texture.getHeight() / TILE_SIZE;
+        TextureRegion[][] regions = TextureRegion.split(texture, TILE_SIZE, TILE_SIZE);
+        spritesheetRegions.put(path, regions);
+
+        logger.info("Created placeholder spritesheet: {} ({}x{} tiles)", path, cols, rows);
     }
 
     private void loadRequiredSpritesheets(Set<String> requiredPaths, MapJSON mapJson) {
@@ -188,6 +275,24 @@ public class GameWorldRenderer implements Screen {
             pendingMap = null;
         }
     }
+    private void registerItemTextures() {
+        if (playerUI == null) return;
+
+        // Para cada item que foi spawnado, registrar sua textura
+        for (GroundItem item : localGroundItems.values()) {
+            String itemId = item.getDefinition().getId();
+            String spritesheetPath = item.getDefinition().getSpritesheet();
+            int tileX = item.getDefinition().getTileX();
+            int tileY = item.getDefinition().getTileY();
+
+            TextureRegion[][] regions = spritesheetRegions.get(spritesheetPath);
+            if (regions != null && tileY < regions.length && tileX < regions[0].length) {
+                TextureRegion icon = regions[tileY][tileX];
+                playerUI.registerItemTexture(itemId, icon, item.getDefinition());
+                logger.info("Registered item texture for: {} - {}", itemId, item.getDefinition().getName());
+            }
+        }
+    }
 
     private Set<String> collectSpritesheetPaths(MapJSON mapJson) {
         Set<String> paths = new HashSet<>();
@@ -221,7 +326,7 @@ public class GameWorldRenderer implements Screen {
         chatDisplay.append("*** Welcome to Sandbox Experiment! ***\n");
         chatDisplay.append("*** Use WASD to move ***\n");
         chatDisplay.append("*** SHIFT to sprint | SPACE to dash ***\n");
-        chatDisplay.append("*** Press ENTER to chat | H to hide chat | C for attributes ***\n\n");
+        chatDisplay.append("*** Press ENTER to chat | H to hide chat | C for attributes | I for inventory ***\n\n");
         if (adminMode) {
             chatDisplay.append("*** ADMIN MODE: Press F12 for Map Editor ***\n");
         }
@@ -244,12 +349,164 @@ public class GameWorldRenderer implements Screen {
             }
 
             playerUI.setGold(player.getGold());
+
+            // ⭐ REGISTRAR ITENS DO INVENTÁRIO DO JOGADOR
+            registerInventoryItems();
+
+            playerUI.updateInventory(player.getInventory(), player.getGold());
         }
 
         if (gameCamera != null) {
             gameCamera.setTarget(currentPlayer.getX(), currentPlayer.getY());
             gameCamera.resetPosition();
         }
+    }
+
+    /**
+     * Registra os itens do inventário do jogador no InventoryWindow
+     */
+    private void registerInventoryItems() {
+        if (currentPlayer == null || playerUI == null) return;
+
+        Inventory inventory = currentPlayer.getInventory();
+        if (inventory == null) {
+            logger.warn("Inventory is null for player: {}", currentPlayer.getUsername());
+            return;
+        }
+
+        logger.info("=== REGISTERING INVENTORY ITEMS ===");
+        logger.info("Player: {}", currentPlayer.getUsername());
+        logger.info("Total slots in inventory: {}", inventory.getSlots().size());
+        logger.info("Equipped items: {}", inventory.getEquipped().size());
+
+        // Registrar itens nos slots do inventário
+        for (ItemStack stack : inventory.getSlots().values()) {
+            if (stack != null && !stack.isEmpty()) {
+                String itemId = stack.getItemId();
+                logger.info("Found item in inventory slot {}: {}", stack.getSlot(), itemId);
+
+                // Tentar encontrar a definição nos itens já spawnados
+                ItemDefinition def = findItemDefinition(itemId);
+
+                if (def != null) {
+                    logger.info("  - Definition found: Name={}, Category={}", def.getName(), def.getCategory());
+                    TextureRegion icon = getItemTextureFromDefinition(def);
+                    playerUI.registerItemTexture(itemId, icon, def);
+                } else {
+                    logger.warn("  - Definition NOT found for item: {}", itemId);
+                }
+            }
+        }
+
+        // Registrar itens equipados
+        for (Map.Entry<String, String> entry : inventory.getEquipped().entrySet()) {
+            String slotType = entry.getKey();
+            String itemId = entry.getValue();
+            if (itemId != null && !itemId.isEmpty()) {
+                logger.info("Found equipped item: {} in slot: {}", itemId, slotType);
+
+                ItemDefinition def = findItemDefinition(itemId);
+                if (def != null) {
+                    TextureRegion icon = getItemTextureFromDefinition(def);
+                    playerUI.registerItemTexture(itemId, icon, def);
+                }
+            }
+        }
+
+        logger.info("=== END REGISTERING INVENTORY ITEMS ===");
+    }
+
+    /**
+     * Busca a definição de um item pelos itens já spawnados no mundo
+     */
+    private ItemDefinition findItemDefinition(String itemId) {
+        // Primeiro, tentar encontrar nos itens locais já spawnados
+        for (GroundItem groundItem : localGroundItems.values()) {
+            if (groundItem.getDefinition().getId().equals(itemId)) {
+                logger.debug("Found definition for {} from localGroundItems", itemId);
+                return groundItem.getDefinition();
+            }
+        }
+
+        // Se não encontrou, tentar criar uma definição básica baseada no ID
+        // Isso é útil para itens que já estão no inventário mas não foram spawnados recentemente
+        logger.warn("Item definition not found in localGroundItems for: {}, creating placeholder", itemId);
+        return createPlaceholderDefinition(itemId);
+    }
+
+    /**
+     * Cria uma definição placeholder para itens que não foram encontrados
+     */
+    private ItemDefinition createPlaceholderDefinition(String itemId) {
+        ItemDefinition def = new ItemDefinition();
+        def.setId(itemId);
+
+        // Nome baseado no ID
+        String name = itemId;
+        switch (itemId) {
+            case "simple_sword":
+                name = "Espada Simples";
+                def.setCategory("weapon");
+                def.setTileX(1);
+                def.setTileY(0);
+                break;
+            case "apple":
+                name = "Maçã";
+                def.setCategory("consumable");
+                def.setTileX(0);
+                def.setTileY(0);
+                break;
+            case "health_potion":
+                name = "Poção de Vida";
+                def.setCategory("consumable");
+                def.setTileX(2);
+                def.setTileY(0);
+                break;
+            default:
+                name = itemId;
+                def.setCategory("common");
+                def.setTileX(0);
+                def.setTileY(0);
+                break;
+        }
+
+        def.setName(name);
+        def.setSpritesheet("itens/spritesheet_itens.png");
+
+        logger.info("Created placeholder definition for {}: Name={}, Category={}, Tile=({},{})",
+                itemId, name, def.getCategory(), def.getTileX(), def.getTileY());
+
+        return def;
+    }
+
+    /**
+     * Obtém a textura do item a partir da definição
+     */
+    private TextureRegion getItemTextureFromDefinition(ItemDefinition def) {
+        String spritesheetPath = def.getSpritesheet();
+        TextureRegion[][] regions = spritesheetRegions.get(spritesheetPath);
+
+        if (regions == null) {
+            logger.warn("Spritesheet not loaded: {}, trying to load", spritesheetPath);
+            loadItemSpritesheet();
+            regions = spritesheetRegions.get(spritesheetPath);
+        }
+
+        if (regions != null) {
+            int tileX = def.getTileX();
+            int tileY = def.getTileY();
+            if (tileY < regions.length && tileX < regions[0].length) {
+                logger.debug("Texture found for {} at ({},{})", def.getId(), tileX, tileY);
+                return regions[tileY][tileX];
+            } else {
+                logger.warn("Invalid tile coordinates for {}: ({},{}) max ({},{})",
+                        def.getId(), tileX, tileY, regions[0].length, regions.length);
+            }
+        } else {
+            logger.warn("Spritesheet still not loaded: {}", spritesheetPath);
+        }
+
+        return null;
     }
 
     private void setupCallbacks() {
@@ -273,35 +530,38 @@ public class GameWorldRenderer implements Screen {
         });
         game.getNetworkClient().setPlayerLeftCallback(this::onPlayerLeft);
 
+        // Sistema de Amigos
         game.getNetworkClient().setFriendListCallback(this::onFriendListResponse);
         game.getNetworkClient().setFriendRequestCallback(this::onFriendRequestResponse);
         game.getNetworkClient().setPrivateMessageCallback(this::onPrivateMessage);
         game.getNetworkClient().setPrivateMessageHistoryCallback(this::onPrivateMessageHistory);
 
+        // Sistema de Itens
         game.getNetworkClient().setItemSpawnCallback(this::onItemSpawn);
         game.getNetworkClient().setItemDespawnCallback(this::onItemDespawn);
 
+        // Sistema de Inventário
+        game.getNetworkClient().setInventoryCallback(this::onInventoryUpdate);
+        game.getNetworkClient().setPickupResultCallback(this::onPickupResult);
+
         logger.info("Callbacks configured");
     }
+    // ==================== CALLBACKS ====================
 
-    private void onMovementBroadcast(MovementBroadcast broadcast) {
+    public void onMovementBroadcast(MovementBroadcast broadcast) {
         Gdx.app.postRunnable(() -> {
             if (broadcast.player != null) {
                 if (currentPlayer != null && broadcast.player.getId().equals(currentPlayer.getId())) {
-                    // Apenas atualizar posição e direção
                     currentPlayer.setX(broadcast.player.getX());
                     currentPlayer.setY(broadcast.player.getY());
                     currentPlayer.setDirection(broadcast.player.getDirection());
-                    // NÃO atualizar HP, Mana, Stamina!
                 } else {
                     Player existing = otherPlayers.get(broadcast.player.getId());
                     if (existing != null) {
-                        // Apenas atualizar posição e direção do player existente
                         existing.setX(broadcast.player.getX());
                         existing.setY(broadcast.player.getY());
                         existing.setDirection(broadcast.player.getDirection());
 
-                        // Interpolação
                         Player interpolated = new Player();
                         interpolated.setId(existing.getId());
                         interpolated.setUsername(existing.getUsername());
@@ -318,7 +578,7 @@ public class GameWorldRenderer implements Screen {
         });
     }
 
-    private void onPlayerLeft(PlayerLeftPacket packet) {
+    public void onPlayerLeft(PlayerLeftPacket packet) {
         Gdx.app.postRunnable(() -> {
             Player removed = otherPlayers.remove(packet.playerId);
             if (removed != null) {
@@ -332,7 +592,7 @@ public class GameWorldRenderer implements Screen {
         });
     }
 
-    private void onChatMessage(ChatMessage chat) {
+    public void onChatMessage(ChatMessage chat) {
         Gdx.app.postRunnable(() -> {
             String formattedMsg = "SISTEMA".equals(chat.senderName)
                     ? String.format("*** %s ***", chat.message)
@@ -342,7 +602,6 @@ public class GameWorldRenderer implements Screen {
 
             chatDisplay.append(formattedMsg).append("\n");
 
-            // Truncar se necessário
             String[] lines = chatDisplay.toString().split("\n");
             if (lines.length > 100) {
                 int firstNewline = chatDisplay.indexOf("\n");
@@ -352,13 +611,12 @@ public class GameWorldRenderer implements Screen {
             }
 
             if (playerUI != null) {
-                // APENAS atualizar o histórico, NÃO adicionar mensagem separadamente
                 playerUI.updateChatHistory(chatDisplay.toString());
             }
         });
     }
 
-    private void onChunkReceived(Chunk chunk) {
+    public void onChunkReceived(Chunk chunk) {
         Gdx.app.postRunnable(() -> {
             String key = chunk.chunkX + ":" + chunk.chunkY;
             loadedChunks.put(key, chunk);
@@ -366,15 +624,7 @@ public class GameWorldRenderer implements Screen {
         });
     }
 
-    private void onPrivateMessageHistory(PrivateMessageHistoryResponse response) {
-        Gdx.app.postRunnable(() -> {
-            if (playerUI != null) {
-                playerUI.loadPrivateChatHistory(response.friendId, response.messages);
-            }
-        });
-    }
-
-    private void onFriendListResponse(FriendListResponse response) {
+    public void onFriendListResponse(FriendListResponse response) {
         Gdx.app.postRunnable(() -> {
             if (playerUI != null) {
                 playerUI.updateFriendsList(response);
@@ -382,7 +632,7 @@ public class GameWorldRenderer implements Screen {
         });
     }
 
-    private void onFriendRequestResponse(FriendRequestPacket packet) {
+    public void onFriendRequestResponse(FriendRequestPacket packet) {
         Gdx.app.postRunnable(() -> {
             if (playerUI != null) {
                 String message = getFriendActionMessage(packet);
@@ -396,11 +646,132 @@ public class GameWorldRenderer implements Screen {
         });
     }
 
-    private void onPrivateMessage(PrivateMessagePacket packet) {
+    public void onPrivateMessage(PrivateMessagePacket packet) {
         Gdx.app.postRunnable(() -> {
             if (playerUI != null) {
                 playerUI.addPrivateMessage(packet.fromUsername, packet.message, packet.timestamp);
                 playerUI.addChatMessage("[Privado] " + packet.fromUsername + ": " + packet.message);
+            }
+        });
+    }
+
+    public void onPrivateMessageHistory(PrivateMessageHistoryResponse response) {
+        Gdx.app.postRunnable(() -> {
+            if (playerUI != null) {
+                playerUI.loadPrivateChatHistory(response.friendId, response.messages);
+            }
+        });
+    }
+
+    public void onItemSpawn(ItemSpawnPacket packet) {
+        Gdx.app.postRunnable(() -> {
+            if (itemRenderer != null && packet.item != null) {
+                itemRenderer.addItem(packet.item);
+                localGroundItems.put(packet.item.getInstanceId(), packet.item);
+
+                // ⭐ IMPORTANTE: Registrar a definição do item no inventário
+                if (playerUI != null) {
+                    String itemId = packet.item.getDefinition().getId();
+                    String category = packet.item.getDefinition().getCategory();
+                    String spritesheetPath = packet.item.getDefinition().getSpritesheet();
+                    int tileX = packet.item.getDefinition().getTileX();
+                    int tileY = packet.item.getDefinition().getTileY();
+
+                    logger.info("=== REGISTERING ITEM DEFINITION ===");
+                    logger.info("Item ID: {}", itemId);
+                    logger.info("Item Name: {}", packet.item.getDefinition().getName());
+                    logger.info("Category: {}", category);
+                    logger.info("Spritesheet: {}", spritesheetPath);
+                    logger.info("Tile: ({}, {})", tileX, tileY);
+
+                    // Buscar a textura do spritesheet
+                    TextureRegion[][] regions = spritesheetRegions.get(spritesheetPath);
+                    TextureRegion icon = null;
+
+                    if (regions != null && tileY < regions.length && tileX < regions[0].length) {
+                        icon = regions[tileY][tileX];
+                        logger.info("✅ Texture found for item: {}", itemId);
+                    } else {
+                        logger.warn("❌ Texture NOT found for item: {} - regions available: {}",
+                                itemId, regions != null ? regions.length : 0);
+                    }
+
+                    // Registrar no PlayerUI (que vai passar para o InventoryWindow)
+                    playerUI.registerItemTexture(itemId, icon, packet.item.getDefinition());
+                }
+
+                logger.info("Item spawned in world: {} ({}) at ({}, {})",
+                        packet.item.getDefinition().getName(),
+                        packet.item.getDefinition().getCategory(),
+                        packet.item.getX(),
+                        packet.item.getY());
+            }
+        });
+    }
+
+    public void onItemDespawn(ItemDespawnPacket packet) {
+        Gdx.app.postRunnable(() -> {
+            if (itemRenderer != null) {
+                itemRenderer.removeItem(packet.instanceId);
+                localGroundItems.remove(packet.instanceId);
+                logger.debug("Item despawned: {}", packet.instanceId);
+            }
+        });
+    }
+
+    public void onInventoryUpdate(InventoryUpdatePacket packet) {
+        Gdx.app.postRunnable(() -> {
+            if (currentPlayer != null && packet.inventory != null) {
+                currentPlayer.setInventory(packet.inventory);
+
+                // ⭐ REGISTRAR ITENS DO INVENTÁRIO ATUALIZADO
+                for (ItemStack stack : packet.inventory.getSlots().values()) {
+                    if (stack != null && !stack.isEmpty()) {
+                        String itemId = stack.getItemId();
+                        // Verificar se já está registrado
+                        if (playerUI != null && !playerUI.isItemRegistered(itemId)) {
+                            // Tentar encontrar a definição
+                            for (GroundItem groundItem : localGroundItems.values()) {
+                                if (groundItem.getDefinition().getId().equals(itemId)) {
+                                    ItemDefinition def = groundItem.getDefinition();
+                                    String spritesheetPath = def.getSpritesheet();
+                                    TextureRegion[][] regions = spritesheetRegions.get(spritesheetPath);
+                                    TextureRegion icon = null;
+
+                                    if (regions != null) {
+                                        int tileX = def.getTileX();
+                                        int tileY = def.getTileY();
+                                        if (tileY < regions.length && tileX < regions[0].length) {
+                                            icon = regions[tileY][tileX];
+                                        }
+                                    }
+
+                                    playerUI.registerItemTexture(itemId, icon, def);
+                                    logger.info("Registered item from inventory update: {} - Category: {}", itemId, def.getCategory());
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if (playerUI != null) {
+                    playerUI.updateInventory(packet.inventory, currentPlayer.getGold());
+                }
+                logger.info("Inventory updated for {}: {} slots",
+                        currentPlayer.getUsername(), packet.inventory.getSlots().size());
+            }
+        });
+    }
+
+    public void onPickupResult(PickupResultPacket packet) {
+        Gdx.app.postRunnable(() -> {
+            if (playerUI != null) {
+                if (packet.success) {
+                    playerUI.addChatMessage("Você pegou: " + packet.itemName + " x" + packet.quantity);
+                } else {
+                    playerUI.addChatMessage("Inventário cheio! Não foi possível pegar o item.");
+                }
             }
         });
     }
@@ -446,7 +817,6 @@ public class GameWorldRenderer implements Screen {
                         if (tileData != null && !tileData.isEmpty()) {
                             String path = tileData.getSpritesheetPath();
                             if (path == null || path.isEmpty()) {
-                                logger.warn("Tile at [{},{}] layer{} has no spritesheet path", chunkX, chunkY, layer);
                                 continue;
                             }
 
@@ -477,13 +847,11 @@ public class GameWorldRenderer implements Screen {
         playerInputManager.setOnDash(() -> {
             if (currentPlayer != null && currentPlayer.canDash()) {
                 if (currentPlayer.executeDash()) {
-                    // Iniciar dash
                     isDashing = true;
                     dashTimer = Player.getDashDuration();
                     dashStartPos.set(currentPlayer.getX(), currentPlayer.getY());
                     dashDirection.set(playerInputManager.getDashDirection());
 
-                    // Atualizar UI da stamina
                     if (playerUI != null) {
                         float staminaPercent = (float) currentPlayer.getCurrentStamina() / currentPlayer.getMaxStamina() * 100;
                         playerUI.setStamina(staminaPercent);
@@ -495,364 +863,49 @@ public class GameWorldRenderer implements Screen {
         });
 
         playerInputManager.setOnSprintStart(() -> {
-            // Opcional: efeito sonoro ou visual
             logger.trace("Sprint started");
         });
 
         playerInputManager.setOnSprintEnd(() -> {
-            // Opcional: efeito sonoro ou visual
             logger.trace("Sprint ended");
         });
 
         logger.info("PlayerInputManager initialized");
     }
 
-    @Override
-    public void show() {
-        logger.info("GameWorldRenderer show()");
-        if (!initialized) {
-            init();
+    // ==================== SISTEMA DE PICKUP ====================
+
+    private void checkItemPickup() {
+        if (currentPlayer == null) return;
+
+        long now = System.currentTimeMillis();
+        if (now - lastPickupCheck < PICKUP_CHECK_INTERVAL_MS) return;
+        lastPickupCheck = now;
+
+        for (GroundItem item : localGroundItems.values()) {
+            float dx = currentPlayer.getX() - item.getX();
+            float dy = currentPlayer.getY() - item.getY();
+            float distSq = dx * dx + dy * dy;
+
+            if (distSq < PICKUP_RANGE * PICKUP_RANGE) {
+                logger.info("Picking up item: {} at distance {}",
+                        item.getDefinition().getName(), Math.sqrt(distSq));
+
+                PickupItemPacket packet = new PickupItemPacket(item.getInstanceId(), currentPlayer.getId());
+                game.getNetworkClient().sendPacket(packet);
+                break;
+            }
         }
-    }
-
-    public void onItemSpawn(ItemSpawnPacket packet) {
-        Gdx.app.postRunnable(() -> {
-            if (itemRenderer != null && packet.item != null) {
-                itemRenderer.addItem(packet.item);
-                logger.info("Item spawned in world: {} at ({}, {})",
-                        packet.item.getDefinition().getName(),
-                        packet.item.getX(),
-                        packet.item.getY());
-            }
-        });
-    }
-
-    public void onItemDespawn(ItemDespawnPacket packet) {
-        Gdx.app.postRunnable(() -> {
-            if (itemRenderer != null) {
-                itemRenderer.removeItem(packet.instanceId);
-                logger.debug("Item despawned: {}", packet.instanceId);
-            }
-        });
-    }
-
-    private void createPlayerUI() {
-        playerUI = new PlayerUI();
-
-        playerUI.setChatInputProcessor(chatInput -> {
-            String message = chatInput.trim();
-            if (!message.isEmpty() && currentPlayer != null) {
-                game.getNetworkClient().sendChat(currentPlayer.getId(), currentPlayer.getUsername(), message);
-            }
-        });
-
-        // Friend system callbacks
-        playerUI.setSendFriendRequestCallback(username -> {
-            if (currentPlayer != null) {
-                FriendRequestPacket packet = new FriendRequestPacket("SEND", username);
-                game.getNetworkClient().sendPacket(packet);
-            }
-        });
-
-        playerUI.setAcceptFriendRequestCallback(requestId -> {
-            if (currentPlayer != null) {
-                FriendRequestPacket packet = new FriendRequestPacket("ACCEPT", "");
-                packet.requestId = requestId;
-                game.getNetworkClient().sendPacket(packet);
-            }
-        });
-
-        playerUI.setRejectFriendRequestCallback(requestId -> {
-            if (currentPlayer != null) {
-                FriendRequestPacket packet = new FriendRequestPacket("REJECT", "");
-                packet.requestId = requestId;
-                game.getNetworkClient().sendPacket(packet);
-            }
-        });
-
-        playerUI.setRemoveFriendCallback(username -> {
-            if (currentPlayer != null) {
-                FriendRequestPacket packet = new FriendRequestPacket("REMOVE", username);
-                game.getNetworkClient().sendPacket(packet);
-            }
-        });
-
-        playerUI.setSendPrivateMessageCallback((friendId, message) -> {
-            if (currentPlayer != null) {
-                PrivateMessagePacket packet = new PrivateMessagePacket(
-                        currentPlayer.getId(), currentPlayer.getUsername(),
-                        friendId, "", message
-                );
-                game.getNetworkClient().sendPacket(packet);
-            }
-        });
-
-        playerUI.setRefreshFriendsCallback(() -> {
-            if (currentPlayer != null) {
-                FriendRequestPacket packet = new FriendRequestPacket("LIST", "");
-                game.getNetworkClient().sendPacket(packet);
-            }
-        });
-
-        playerUI.updateChatHistory(chatDisplay.toString());
-
-        playerUI.setOnLoadPrivateChatHistory(friendId -> {
-            if (currentPlayer != null) {
-                logger.info("Requesting private message history for friend: {}", friendId);
-                game.getNetworkClient().requestPrivateMessageHistory(friendId, 100);
-            }
-        });
-
-        playerUI.addChatMessage("*** Welcome to Sandbox Experiment! ***");
-        playerUI.addChatMessage("*** Use WASD to move ***");
-        playerUI.addChatMessage("*** SHIFT to sprint | SPACE to dash ***");
-        playerUI.addChatMessage("*** Press ENTER to chat | H to hide chat | C for attributes ***");
-        playerUI.addChatMessage("*** Click FRIENDS button to manage friends ***");
-
-        if (adminMode) {
-            playerUI.addChatMessage("*** ADMIN MODE: Press F12 for Map Editor ***");
-        }
-
-        playerUI.resize(Gdx.graphics.getWidth(), Gdx.graphics.getHeight());
-    }
-
-    private InputProcessor createInputProcessor() {
-        if (playerInputManager == null) {
-            setupPlayerInput();
-        }
-
-        final PlayerInputManager inputManager = playerInputManager;
-
-        return new InputProcessor() {
-            @Override
-            public boolean keyDown(int keycode) {
-                // Primeiro, passar para o PlayerInputManager
-                if (inputManager != null && inputManager.keyDown(keycode)) {
-                    return true;
-                }
-
-                // IMPORTANTE: Se o chat privado está visível, passar TODAS as teclas para ele
-                if (playerUI != null && playerUI.isPrivateChatVisible()) {
-                    if (playerUI.getStage() != null) {
-                        playerUI.getStage().keyDown(keycode);
-                    }
-
-                    if (keycode == Input.Keys.ENTER) {
-                        playerUI.sendPrivateChatMessage();
-                        return true;
-                    }
-
-                    if (keycode == Input.Keys.ESCAPE) {
-                        playerUI.closePrivateChat();
-                        return true;
-                    }
-
-                    return true;
-                }
-
-                if (playerUI != null && playerUI.isFriendsWindowVisible()) {
-                    if (playerUI.getStage() != null) {
-                        playerUI.getStage().keyDown(keycode);
-                    }
-                    if (keycode == Input.Keys.ESCAPE) {
-                        playerUI.toggleFriendsWindow();
-                    }
-                    return true;
-                }
-
-                if (playerUI != null && playerUI.isAttributesVisible()) {
-                    if (keycode == Input.Keys.ESCAPE) {
-                        playerUI.hideAttributes();
-                        return true;
-                    }
-                    return true;
-                }
-
-                boolean chatFocused = playerUI != null && playerUI.isChatFocused();
-
-                if (keycode == Input.Keys.F && !chatFocused) {
-                    if (playerUI != null) {
-                        playerUI.toggleFriendsWindow();
-                    }
-                    return true;
-                }
-
-                if (keycode == Input.Keys.C && !chatFocused) {
-                    if (playerUI != null) {
-                        playerUI.toggleAttributes();
-                    }
-                    return true;
-                }
-
-                if (keycode == Input.Keys.H && !chatFocused) {
-                    if (playerUI != null) {
-                        playerUI.toggleChat();
-                    }
-                    return true;
-                }
-
-                if (keycode == Input.Keys.ENTER) {
-                    if (playerUI != null) {
-                        if (playerUI.isChatFocused()) {
-                            playerUI.sendCurrentMessage();
-                        } else {
-                            playerUI.focusChat();
-                        }
-                    }
-                    return true;
-                }
-
-                if (keycode == Input.Keys.ESCAPE) {
-                    if (playerUI != null && playerUI.isChatFocused()) {
-                        playerUI.unfocusChat();
-                        return true;
-                    }
-                }
-
-                if (chatFocused && playerUI != null && playerUI.getStage() != null) {
-                    return playerUI.getStage().keyDown(keycode);
-                }
-
-                return false;
-            }
-
-            @Override
-            public boolean keyUp(int keycode) {
-                if (inputManager != null && inputManager.keyUp(keycode)) {
-                    return true;
-                }
-
-                if (playerUI != null && playerUI.isPrivateChatVisible()) {
-                    if (playerUI.getStage() != null) {
-                        return playerUI.getStage().keyUp(keycode);
-                    }
-                    return true;
-                }
-
-                boolean chatFocused = playerUI != null && playerUI.isChatFocused();
-                if (chatFocused && playerUI != null && playerUI.getStage() != null) {
-                    return playerUI.getStage().keyUp(keycode);
-                }
-                return false;
-            }
-
-            @Override
-            public boolean keyTyped(char character) {
-                if (playerUI != null && playerUI.isPrivateChatVisible()) {
-                    if (playerUI.getStage() != null) {
-                        return playerUI.getStage().keyTyped(character);
-                    }
-                    return true;
-                }
-
-                boolean chatFocused = playerUI != null && playerUI.isChatFocused();
-                if (chatFocused && playerUI != null && playerUI.getStage() != null) {
-                    return playerUI.getStage().keyTyped(character);
-                }
-                return false;
-            }
-
-            @Override
-            public boolean touchDown(int screenX, int screenY, int pointer, int button) {
-                if (playerUI != null && playerUI.isPrivateChatVisible()) {
-                    if (playerUI.getStage() != null) {
-                        return playerUI.getStage().touchDown(screenX, screenY, pointer, button);
-                    }
-                    return true;
-                }
-
-                if (playerUI != null && playerUI.getStage() != null) {
-                    boolean handled = playerUI.getStage().touchDown(screenX, screenY, pointer, button);
-                    if (handled) {
-                        return true;
-                    }
-                }
-
-                if (playerUI != null && playerUI.isChatFocused()) {
-                    if (!playerUI.isPointOverChat(screenX, screenY)) {
-                        playerUI.unfocusChat();
-                    }
-                    return true;
-                }
-
-                return false;
-            }
-
-            @Override
-            public boolean touchUp(int screenX, int screenY, int pointer, int button) {
-                if (playerUI != null && playerUI.isPrivateChatVisible()) {
-                    if (playerUI.getStage() != null) {
-                        return playerUI.getStage().touchUp(screenX, screenY, pointer, button);
-                    }
-                    return true;
-                }
-
-                if (playerUI != null && playerUI.getStage() != null) {
-                    return playerUI.getStage().touchUp(screenX, screenY, pointer, button);
-                }
-                return false;
-            }
-
-            @Override
-            public boolean touchDragged(int screenX, int screenY, int pointer) {
-                if (playerUI != null && playerUI.isPrivateChatVisible()) {
-                    if (playerUI.getStage() != null) {
-                        return playerUI.getStage().touchDragged(screenX, screenY, pointer);
-                    }
-                    return true;
-                }
-
-                if (playerUI != null && playerUI.getStage() != null) {
-                    return playerUI.getStage().touchDragged(screenX, screenY, pointer);
-                }
-                return false;
-            }
-
-            @Override
-            public boolean mouseMoved(int screenX, int screenY) {
-                if (playerUI != null && playerUI.isPrivateChatVisible()) {
-                    if (playerUI.getStage() != null) {
-                        return playerUI.getStage().mouseMoved(screenX, screenY);
-                    }
-                    return true;
-                }
-
-                if (playerUI != null && playerUI.getStage() != null) {
-                    return playerUI.getStage().mouseMoved(screenX, screenY);
-                }
-                return false;
-            }
-
-            @Override
-            public boolean scrolled(float amountX, float amountY) {
-                if (playerUI != null && playerUI.isPrivateChatVisible()) {
-                    if (playerUI.getStage() != null) {
-                        return playerUI.getStage().scrolled(amountX, amountY);
-                    }
-                    return true;
-                }
-
-                if (playerUI != null && playerUI.getStage() != null) {
-                    return playerUI.getStage().scrolled(amountX, amountY);
-                }
-                return false;
-            }
-
-            @Override
-            public boolean touchCancelled(int screenX, int screenY, int pointer, int button) {
-                return false;
-            }
-        };
     }
 
     // ==================== MÉTODOS DE MOVIMENTO ====================
 
     private void handleInput(float delta) {
-        // Verificar se UI está bloqueando input
         if (playerUI != null && (playerUI.isChatFocused() ||
                 playerUI.isFriendsWindowVisible() ||
                 playerUI.isAttributesVisible() ||
-                playerUI.isPrivateChatVisible())) {
+                playerUI.isPrivateChatVisible() ||
+                playerUI.isInventoryVisible())) {
             if (playerInputManager != null) {
                 playerInputManager.setInputBlocked(true);
             }
@@ -866,7 +919,6 @@ public class GameWorldRenderer implements Screen {
 
         if (currentPlayer == null) return;
 
-        // Regeneração
         currentPlayer.updateRegeneration(delta);
         if (playerUI != null) {
             playerUI.setStamina(currentPlayer.getStaminaPercentage() * 100);
@@ -874,13 +926,11 @@ public class GameWorldRenderer implements Screen {
             playerUI.setMana(currentPlayer.getManaPercentage() * 100);
         }
 
-        // Dash
         if (isDashing) {
             handleDash(delta);
             return;
         }
 
-        // Verificar se o jogador acabou de executar um dash
         if (playerInputManager.isDashJustExecuted()) {
             if (!isDashing && currentPlayer.getDashTimer() > 0) {
                 isDashing = true;
@@ -891,11 +941,9 @@ public class GameWorldRenderer implements Screen {
             return;
         }
 
-        // Movimento normal
         Vector2 dir = playerInputManager.getMovementDirection();
         boolean sprinting = playerInputManager.isSprinting();
 
-        // ==================== CALCULAR SPEED MULTIPLIER ====================
         float playerSpeedMultiplier = 1.0f;
         boolean moved = false;
 
@@ -931,26 +979,19 @@ public class GameWorldRenderer implements Screen {
             currentPlayer.setDirection(newDirection);
         }
 
-        // ==================== ENVIAR MOVIMENTO E STATUS PARA O SERVIDOR ====================
         long now = System.currentTimeMillis();
-
-        // Enviar sempre que houver movimento OU a cada 10 segundos (sync de status)
         boolean shouldSend = moved;
         boolean timeForSync = (now - lastStatusSyncTime) >= STATUS_SYNC_INTERVAL_MS;
 
         if (shouldSend || timeForSync) {
-            // Usar rate limiting para movimento (max 20 packets/segundo = 50ms)
             if (moved && (now - lastMovementSendTime) < MOVEMENT_SEND_INTERVAL_MS) {
-                // Muito cedo para enviar movimento, mas se for sync, pode enviar mesmo assim
                 if (!timeForSync) {
-                    // Não enviar nada ainda
+                    // Não enviar ainda
                 } else {
-                    // Enviar sync mesmo que esteja no rate limit
                     sendMovementWithStatus();
                     lastStatusSyncTime = now;
                 }
             } else {
-                // Enviar pacote completo
                 sendMovementWithStatus();
                 if (moved) {
                     lastMovementSendTime = now;
@@ -961,14 +1002,12 @@ public class GameWorldRenderer implements Screen {
             }
         }
 
-        // ==================== ATUALIZAR UI ====================
         if (playerUI != null) {
             playerUI.setSpeedMultiplier(playerSpeedMultiplier);
             playerUI.update(currentPlayer, getCurrentTerrainSpeed());
         }
     }
 
-    // Método auxiliar para enviar movimento com status
     private void sendMovementWithStatus() {
         if (currentPlayer == null || game.getNetworkClient() == null) return;
 
@@ -978,7 +1017,6 @@ public class GameWorldRenderer implements Screen {
                 currentPlayer.getY(),
                 currentPlayer.getDirection()
         );
-        // Preencher os status
         request.currentHp = currentPlayer.getCurrentHp();
         request.currentMana = currentPlayer.getCurrentMana();
         request.currentStamina = currentPlayer.getCurrentStamina();
@@ -1010,7 +1048,6 @@ public class GameWorldRenderer implements Screen {
             currentPlayer.setX(newX);
             currentPlayer.setY(newY);
         } else {
-            // Parar o dash se colidir
             isDashing = false;
             currentPlayer.setDashing(false);
             currentPlayer.setDashTimer(0);
@@ -1023,6 +1060,8 @@ public class GameWorldRenderer implements Screen {
         }
         return dir.y > 0 ? "UP" : "DOWN";
     }
+
+    // ==================== RENDERIZAÇÃO ====================
 
     private void renderChunks() {
         if (currentPlayer == null) return;
@@ -1226,6 +1265,395 @@ public class GameWorldRenderer implements Screen {
         }
     }
 
+    private void createPlayerUI() {
+        playerUI = new PlayerUI();
+        playerUI.setGame(game);
+
+        playerUI.setChatInputProcessor(chatInput -> {
+            String message = chatInput.trim();
+            if (!message.isEmpty() && currentPlayer != null) {
+                game.getNetworkClient().sendChat(currentPlayer.getId(), currentPlayer.getUsername(), message);
+            }
+        });
+
+        // Friend system callbacks
+        playerUI.setSendFriendRequestCallback(username -> {
+            if (currentPlayer != null) {
+                FriendRequestPacket packet = new FriendRequestPacket("SEND", username);
+                game.getNetworkClient().sendPacket(packet);
+            }
+        });
+
+        playerUI.setAcceptFriendRequestCallback(requestId -> {
+            if (currentPlayer != null) {
+                FriendRequestPacket packet = new FriendRequestPacket("ACCEPT", "");
+                packet.requestId = requestId;
+                game.getNetworkClient().sendPacket(packet);
+            }
+        });
+
+        playerUI.setRejectFriendRequestCallback(requestId -> {
+            if (currentPlayer != null) {
+                FriendRequestPacket packet = new FriendRequestPacket("REJECT", "");
+                packet.requestId = requestId;
+                game.getNetworkClient().sendPacket(packet);
+            }
+        });
+
+        playerUI.setRemoveFriendCallback(username -> {
+            if (currentPlayer != null) {
+                FriendRequestPacket packet = new FriendRequestPacket("REMOVE", username);
+                game.getNetworkClient().sendPacket(packet);
+            }
+        });
+
+        playerUI.setSendPrivateMessageCallback((friendId, message) -> {
+            if (currentPlayer != null) {
+                PrivateMessagePacket packet = new PrivateMessagePacket(
+                        currentPlayer.getId(), currentPlayer.getUsername(),
+                        friendId, "", message
+                );
+                game.getNetworkClient().sendPacket(packet);
+            }
+        });
+
+        playerUI.setRefreshFriendsCallback(() -> {
+            if (currentPlayer != null) {
+                FriendRequestPacket packet = new FriendRequestPacket("LIST", "");
+                game.getNetworkClient().sendPacket(packet);
+            }
+        });
+
+        playerUI.setOnLoadPrivateChatHistory(friendId -> {
+            if (currentPlayer != null) {
+                logger.info("Requesting private message history for friend: {}", friendId);
+                game.getNetworkClient().requestPrivateMessageHistory(friendId, 100);
+            }
+        });
+
+        // Inventory system callbacks
+        playerUI.setOnMoveItemCallback((fromSlot, toSlot) -> {
+            if (currentPlayer != null) {
+                InventoryUpdatePacket packet = new InventoryUpdatePacket();
+                packet.action = "MOVE_ITEM";
+                packet.slot = fromSlot;
+                packet.targetSlot = toSlot;
+                game.getNetworkClient().sendPacket(packet);
+            }
+        });
+
+        playerUI.setOnEquipItemCallback((slot, equipSlot) -> {
+            if (currentPlayer != null) {
+                InventoryUpdatePacket packet = new InventoryUpdatePacket();
+                packet.action = "EQUIP";
+                packet.slot = slot;
+                packet.equipSlot = equipSlot;
+                game.getNetworkClient().sendPacket(packet);
+            }
+        });
+
+        playerUI.setOnUnequipItemCallback(slotIndex -> {
+            if (currentPlayer != null) {
+                logger.info("Unequipping item from slot index: {}", slotIndex);
+
+                // Mapear slot index para tipo de equipamento
+                String equipSlot;
+                switch (slotIndex) {
+                    case 0: equipSlot = "weapon"; break;
+                    case 1: equipSlot = "helmet"; break;
+                    case 2: equipSlot = "chest"; break;
+                    case 3: equipSlot = "legs"; break;
+                    case 4: equipSlot = "boots"; break;
+                    default: equipSlot = "weapon"; break;
+                }
+
+                InventoryUpdatePacket packet = new InventoryUpdatePacket();
+                packet.action = "UNEQUIP";
+                packet.equipSlot = equipSlot;
+                game.getNetworkClient().sendPacket(packet);
+            }
+        });
+
+        playerUI.setOnDropItemCallback(action -> {
+            if (currentPlayer != null) {
+                ItemStack stack = currentPlayer.getInventory().getSlot(action.slot);
+                if (stack != null && !stack.isEmpty()) {
+                    logger.info("Dropping item: {} x{} from slot {}",
+                            stack.getItemId(), action.quantity, action.slot);
+
+                    DropItemPacket packet = new DropItemPacket(action.slot, action.quantity, currentPlayer.getId());
+                    game.getNetworkClient().sendPacket(packet);
+
+                    // Feedback visual
+                    playerUI.addChatMessage("Item dropped: " + stack.getItemId() + " x" + action.quantity);
+                }
+            }
+        });
+
+        playerUI.updateChatHistory(chatDisplay.toString());
+
+        playerUI.addChatMessage("*** Welcome to Sandbox Experiment! ***");
+        playerUI.addChatMessage("*** Use WASD to move ***");
+        playerUI.addChatMessage("*** SHIFT to sprint | SPACE to dash ***");
+        playerUI.addChatMessage("*** Press ENTER to chat | H to hide chat | C for attributes | I for inventory ***");
+        playerUI.addChatMessage("*** Click FRIENDS button to manage friends ***");
+
+        if (adminMode) {
+            playerUI.addChatMessage("*** ADMIN MODE: Press F12 for Map Editor ***");
+        }
+
+        playerUI.resize(Gdx.graphics.getWidth(), Gdx.graphics.getHeight());
+    }
+
+    private InputProcessor createInputProcessor() {
+        if (playerInputManager == null) {
+            setupPlayerInput();
+        }
+
+        final PlayerInputManager inputManager = playerInputManager;
+
+        return new InputProcessor() {
+            @Override
+            public boolean keyDown(int keycode) {
+                if (inputManager != null && inputManager.keyDown(keycode)) {
+                    return true;
+                }
+
+                if (playerUI != null && playerUI.isPrivateChatVisible()) {
+                    if (playerUI.getStage() != null) {
+                        playerUI.getStage().keyDown(keycode);
+                    }
+                    if (keycode == Input.Keys.ENTER) {
+                        playerUI.sendPrivateChatMessage();
+                        return true;
+                    }
+                    if (keycode == Input.Keys.ESCAPE) {
+                        playerUI.closePrivateChat();
+                        return true;
+                    }
+                    return true;
+                }
+
+                if (playerUI != null && playerUI.isFriendsWindowVisible()) {
+                    if (playerUI.getStage() != null) {
+                        playerUI.getStage().keyDown(keycode);
+                    }
+                    if (keycode == Input.Keys.ESCAPE) {
+                        playerUI.toggleFriendsWindow();
+                    }
+                    return true;
+                }
+
+                if (playerUI != null && playerUI.isAttributesVisible()) {
+                    if (keycode == Input.Keys.ESCAPE) {
+                        playerUI.hideAttributes();
+                        return true;
+                    }
+                    return true;
+                }
+
+                if (playerUI != null && playerUI.isInventoryVisible()) {
+                    if (keycode == Input.Keys.ESCAPE || keycode == Input.Keys.I) {
+                        playerUI.toggleInventory();
+                        return true;
+                    }
+                    return true;
+                }
+
+                boolean chatFocused = playerUI != null && playerUI.isChatFocused();
+
+                if (keycode == Input.Keys.F && !chatFocused) {
+                    if (playerUI != null) {
+                        playerUI.toggleFriendsWindow();
+                    }
+                    return true;
+                }
+
+                if (keycode == Input.Keys.C && !chatFocused) {
+                    if (playerUI != null) {
+                        playerUI.toggleAttributes();
+                    }
+                    return true;
+                }
+
+                if (keycode == Input.Keys.I && !chatFocused) {
+                    if (playerUI != null) {
+                        playerUI.toggleInventory();
+                    }
+                    return true;
+                }
+
+                if (keycode == Input.Keys.H && !chatFocused) {
+                    if (playerUI != null) {
+                        playerUI.toggleChat();
+                    }
+                    return true;
+                }
+
+                if (keycode == Input.Keys.ENTER) {
+                    if (playerUI != null) {
+                        if (playerUI.isChatFocused()) {
+                            playerUI.sendCurrentMessage();
+                        } else {
+                            playerUI.focusChat();
+                        }
+                    }
+                    return true;
+                }
+
+                if (keycode == Input.Keys.ESCAPE) {
+                    if (playerUI != null && playerUI.isChatFocused()) {
+                        playerUI.unfocusChat();
+                        return true;
+                    }
+                }
+
+                if (chatFocused && playerUI != null && playerUI.getStage() != null) {
+                    return playerUI.getStage().keyDown(keycode);
+                }
+
+                return false;
+            }
+
+            @Override
+            public boolean keyUp(int keycode) {
+                if (inputManager != null && inputManager.keyUp(keycode)) {
+                    return true;
+                }
+
+                if (playerUI != null && playerUI.isPrivateChatVisible()) {
+                    if (playerUI.getStage() != null) {
+                        return playerUI.getStage().keyUp(keycode);
+                    }
+                    return true;
+                }
+
+                boolean chatFocused = playerUI != null && playerUI.isChatFocused();
+                if (chatFocused && playerUI != null && playerUI.getStage() != null) {
+                    return playerUI.getStage().keyUp(keycode);
+                }
+                return false;
+            }
+
+            @Override
+            public boolean keyTyped(char character) {
+                if (playerUI != null && playerUI.isPrivateChatVisible()) {
+                    if (playerUI.getStage() != null) {
+                        return playerUI.getStage().keyTyped(character);
+                    }
+                    return true;
+                }
+
+                boolean chatFocused = playerUI != null && playerUI.isChatFocused();
+                if (chatFocused && playerUI != null && playerUI.getStage() != null) {
+                    return playerUI.getStage().keyTyped(character);
+                }
+                return false;
+            }
+
+            @Override
+            public boolean touchDown(int screenX, int screenY, int pointer, int button) {
+                if (playerUI != null && playerUI.isPrivateChatVisible()) {
+                    if (playerUI.getStage() != null) {
+                        return playerUI.getStage().touchDown(screenX, screenY, pointer, button);
+                    }
+                    return true;
+                }
+
+                if (playerUI != null && playerUI.getStage() != null) {
+                    boolean handled = playerUI.getStage().touchDown(screenX, screenY, pointer, button);
+                    if (handled) {
+                        return true;
+                    }
+                }
+
+                if (playerUI != null && playerUI.isChatFocused()) {
+                    if (!playerUI.isPointOverChat(screenX, screenY)) {
+                        playerUI.unfocusChat();
+                    }
+                    return true;
+                }
+
+                return false;
+            }
+
+            @Override
+            public boolean touchUp(int screenX, int screenY, int pointer, int button) {
+                if (playerUI != null && playerUI.isPrivateChatVisible()) {
+                    if (playerUI.getStage() != null) {
+                        return playerUI.getStage().touchUp(screenX, screenY, pointer, button);
+                    }
+                    return true;
+                }
+
+                if (playerUI != null && playerUI.getStage() != null) {
+                    return playerUI.getStage().touchUp(screenX, screenY, pointer, button);
+                }
+                return false;
+            }
+
+            @Override
+            public boolean touchDragged(int screenX, int screenY, int pointer) {
+                if (playerUI != null && playerUI.isPrivateChatVisible()) {
+                    if (playerUI.getStage() != null) {
+                        return playerUI.getStage().touchDragged(screenX, screenY, pointer);
+                    }
+                    return true;
+                }
+
+                if (playerUI != null && playerUI.getStage() != null) {
+                    return playerUI.getStage().touchDragged(screenX, screenY, pointer);
+                }
+                return false;
+            }
+
+            @Override
+            public boolean mouseMoved(int screenX, int screenY) {
+                if (playerUI != null && playerUI.isPrivateChatVisible()) {
+                    if (playerUI.getStage() != null) {
+                        return playerUI.getStage().mouseMoved(screenX, screenY);
+                    }
+                    return true;
+                }
+
+                if (playerUI != null && playerUI.getStage() != null) {
+                    return playerUI.getStage().mouseMoved(screenX, screenY);
+                }
+                return false;
+            }
+
+            @Override
+            public boolean scrolled(float amountX, float amountY) {
+                if (playerUI != null && playerUI.isPrivateChatVisible()) {
+                    if (playerUI.getStage() != null) {
+                        return playerUI.getStage().scrolled(amountX, amountY);
+                    }
+                    return true;
+                }
+
+                if (playerUI != null && playerUI.getStage() != null) {
+                    return playerUI.getStage().scrolled(amountX, amountY);
+                }
+                return false;
+            }
+
+            @Override
+            public boolean touchCancelled(int screenX, int screenY, int pointer, int button) {
+                return false;
+            }
+        };
+    }
+
+    // ==================== MÉTODOS DA SCREEN ====================
+
+    @Override
+    public void show() {
+        logger.info("GameWorldRenderer show()");
+        if (!initialized) {
+            init();
+        }
+    }
+
     @Override
     public void render(float delta) {
         if (!initialized) return;
@@ -1239,34 +1667,28 @@ public class GameWorldRenderer implements Screen {
         }
 
         handleInput(delta);
+        checkItemPickup();
 
         if (currentPlayer != null) {
             gameCamera.setTarget(currentPlayer.getX(), currentPlayer.getY());
             gameCamera.update(delta);
         }
 
-        // INICIAR O BATCH APENAS UMA VEZ
         batch.setProjectionMatrix(gameCamera.getCamera().combined);
         batch.begin();
 
-        // 1. Renderizar chunks (tiles)
         renderChunks();
 
-        // 2. Renderizar itens (acima dos tiles)
         if (itemRenderer != null) {
             itemRenderer.render(batch, gameCamera);
         }
 
-        // 3. Renderizar nomes flutuantes (acima dos itens)
         renderFloatingNames();
 
-        // FECHAR O BATCH
         batch.end();
 
-        // 4. Renderizar players (ShapeRenderer, não precisa de batch)
         renderPlayers();
 
-        // Configurar o input processor da UI
         if (playerUI != null && Gdx.input.getInputProcessor() != playerUI.getStage()) {
             Gdx.input.setInputProcessor(createInputProcessor());
         }
@@ -1275,7 +1697,6 @@ public class GameWorldRenderer implements Screen {
             playerUI.render(batch);
         }
 
-        // Atualizar a animação dos itens (fora do batch)
         if (itemRenderer != null) {
             itemRenderer.update(delta);
         }
@@ -1297,6 +1718,7 @@ public class GameWorldRenderer implements Screen {
         if (shapeRenderer != null) shapeRenderer.dispose();
         if (font != null) font.dispose();
         if (playerUI != null) playerUI.dispose();
+        if (itemRenderer != null) itemRenderer.dispose();
         for (Texture t : spritesheets.values()) t.dispose();
         logger.info("GameWorldRenderer disposed");
     }
