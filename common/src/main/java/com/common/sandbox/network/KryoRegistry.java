@@ -68,6 +68,13 @@ public class KryoRegistry {
     private static final int ID_DROP_ITEM = 174;
     private static final int ID_PICKUP_RESULT = 175;
 
+    private static final int ID_ATTACK_REQUEST = 180;
+    private static final int ID_ATTACK_BROADCAST = 181;
+    private static final int ID_DAMAGE_PACKET = 182;
+    private static final int ID_ATTACK_TYPE = 183;
+    private static final int ID_ATTACK_RESULT = 184;
+    private static final int ID_COMBAT_STATS = 185;
+
     private static boolean registered = false;
 
     public static synchronized void registerClasses(Kryo kryo) {
@@ -182,7 +189,14 @@ public class KryoRegistry {
         kryo.register(java.util.Date.class, 150);
         kryo.register(java.sql.Timestamp.class, 151);
         //hashmap
-        kryo.register(java.util.HashMap.class, 180);
+        kryo.register(java.util.HashMap.class, 179);
+
+        kryo.register(AttackRequest.class, ID_ATTACK_REQUEST);
+        kryo.register(AttackBroadcast.class, ID_ATTACK_BROADCAST);
+        kryo.register(DamagePacket.class, ID_DAMAGE_PACKET);
+        kryo.register(AttackType.class, ID_ATTACK_TYPE);
+        kryo.register(AttackResult.class, ID_ATTACK_RESULT);
+        kryo.register(CombatStats.class, ID_COMBAT_STATS);
 
         // IMPORTANTE: Permitir registro automático para classes não listadas
         kryo.setRegistrationRequired(false);

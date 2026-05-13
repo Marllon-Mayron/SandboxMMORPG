@@ -53,6 +53,11 @@ public class Player implements Serializable {
     private transient Integer lastChunkY;
     private transient long lastSaveTime;
 
+    private CombatStats combatStats;
+    private transient long lastAttackTime;  // Para cooldown
+    private transient boolean isAttacking;
+    private transient float attackTimer;
+
     // --- VALORES FIXOS DO GAME (não persistem, iguais para todos) ---
     private static final float BASE_SPEED = 400f;
     private static final float SPRINT_MULTIPLIER = 1.4f;
@@ -84,6 +89,11 @@ public class Player implements Serializable {
 
         this.attributePoints = 0;
         this.skillPoints = 0;
+
+        this.combatStats = new CombatStats();
+        this.lastAttackTime = 0;
+        this.isAttacking = false;
+        this.attackTimer = 0;
 
         long now = System.currentTimeMillis();
         this.lastRegenTime = now;
@@ -198,6 +208,15 @@ public class Player implements Serializable {
     public float getDashStartY() { return dashStartY; }
     public void setDashStartY(float dashStartY) { this.dashStartY = dashStartY; }
 
+    public CombatStats getCombatStats() { return combatStats; }
+    public void setCombatStats(CombatStats combatStats) { this.combatStats = combatStats; }
+    public long getLastAttackTime() { return lastAttackTime; }
+    public void setLastAttackTime(long lastAttackTime) { this.lastAttackTime = lastAttackTime; }
+    public boolean isAttacking() { return isAttacking; }
+    public void setAttacking(boolean attacking) { isAttacking = attacking; }
+    public float getAttackTimer() { return attackTimer; }
+    public void setAttackTimer(float attackTimer) { this.attackTimer = attackTimer; }
+
     // --- MÉTODOS DE UTILIDADE ---
 
     public void recalculateMaxStats() {
@@ -275,6 +294,50 @@ public class Player implements Serializable {
         }
         return false;
     }
+
+    // Método para verificar se pode atacar (cooldown global 2 segundos)
+    public boolean canAttack() {
+        long now = System.currentTimeMillis();
+        return (now - lastAttackTime) >= 2000; // 2 segundos cooldown
+    }
+
+    // Método para executar ataque
+    public boolean executeAttack() {
+        if (!canAttack()) return false;
+        lastAttackTime = System.currentTimeMillis();
+        isAttacking = true;
+        attackTimer = 0.3f; // duração da animação
+        return true;
+    }
+
+    // Método para atualizar estado do ataque (chamar no update)
+    public void updateAttack(float delta) {
+        if (isAttacking) {
+            attackTimer -= delta;
+            if (attackTimer <= 0) {
+                isAttacking = false;
+            }
+        }
+    }
+
+    public void updateCombatStatsFromEquipment() {
+        if (combatStats == null) combatStats = new CombatStats();
+
+        int weaponBonus = 0;
+        String equippedWeapon = inventory != null ? inventory.getEquipped().get("weapon") : null;
+
+        if (equippedWeapon != null && !equippedWeapon.isEmpty()) {
+            if (equippedWeapon.contains("sword")) weaponBonus = 5;
+            else if (equippedWeapon.contains("dagger")) weaponBonus = 3;
+            else if (equippedWeapon.contains("axe")) weaponBonus = 8;
+            else if (equippedWeapon.contains("hammer")) weaponBonus = 10;
+            else if (equippedWeapon.contains("bow")) weaponBonus = 4;
+        }
+
+        combatStats.setWeaponDamageBonus(weaponBonus);
+        combatStats.setStrengthBonus(strength / 2);
+    }
+
 
     @Override
     public String toString() {

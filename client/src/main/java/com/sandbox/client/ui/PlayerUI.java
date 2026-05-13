@@ -793,6 +793,21 @@ public class PlayerUI {
         }
     }
 
+    private void renderAttackCooldown(float screenWidth, float screenHeight) {
+        if (currentPlayer == null) return;
+
+        long now = System.currentTimeMillis();
+        long elapsed = now - currentPlayer.getLastAttackTime();
+        if (elapsed < 2000) {
+            float percent = 1.0f - (elapsed / 2000.0f);
+
+            shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
+            shapeRenderer.setColor(0.8f, 0.2f, 0.2f, 0.7f);
+            shapeRenderer.rect(screenWidth - 50, screenHeight - 50, 30, 30 * percent);
+            shapeRenderer.end();
+        }
+    }
+
     public void resize(int width, int height) {
         this.screenWidth = width;
         this.screenHeight = height;

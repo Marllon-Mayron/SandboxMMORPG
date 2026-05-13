@@ -17,6 +17,7 @@ import com.common.sandbox.network.packets.*;
 import com.common.sandbox.network.packets.InventoryUpdatePacket;
 import com.sandbox.client.editor.MapEditorScreen;
 import com.sandbox.client.input.PlayerInputManager;
+import com.sandbox.client.renderer.CombatEffectsRenderer;
 import com.sandbox.client.renderer.ItemRenderer;
 import com.sandbox.client.ui.PlayerUI;
 import com.sandbox.client.camera.GameCamera;
@@ -35,7 +36,7 @@ public class GameWorldRenderer implements Screen {
     private static final int WORLD_TILE_SIZE = 64;
     private static final int CHUNK_SIZE = 32;
     private static final float PLAYER_SIZE = 48;
-    private static final float PICKUP_RANGE = 48f; // Raio para pegar itens
+    private static final float PICKUP_RANGE = 48f;
 
     private final SandboxClient game;
     private final boolean adminMode;
@@ -81,6 +82,10 @@ public class GameWorldRenderer implements Screen {
     private long lastPickupCheck = 0;
     private static final long PICKUP_CHECK_INTERVAL_MS = 500;
 
+    // ==================== SISTEMA DE COMBATE ====================
+    private long lastAttackTime = 0;
+    private static final long ATTACK_COOLDOWN_MS = 2000; // 2 segundos
+
     public GameWorldRenderer(SandboxClient game, boolean adminMode, Map<String, Player> nearbyPlayers) {
         this.game = game;
         this.adminMode = adminMode;
@@ -124,10 +129,11 @@ public class GameWorldRenderer implements Screen {
         createPlayerUI();
         setupPlayerInput();
 
-        // ⭐ CARREGAR SPRITESHEET DOS ITENS PRIMEIRO
+        // Carregar spritesheet dos itens
         loadItemSpritesheet();
 
         itemRenderer = new ItemRenderer();
+
 
         if (initialNearbyPlayers != null && !initialNearbyPlayers.isEmpty()) {
             logger.info("Adding {} initial nearby players to world", initialNearbyPlayers.size());
@@ -146,13 +152,14 @@ public class GameWorldRenderer implements Screen {
         if (currentPlayer != null) {
             gameCamera.setTarget(currentPlayer.getX(), currentPlayer.getY());
             gameCamera.resetPosition();
+            // Inicializar stats de combate do jogador
+            currentPlayer.updateCombatStatsFromEquipment();
         }
     }
 
     private void loadItemSpritesheet() {
         String path = "itens/spritesheet_itens.png";
 
-        // Tentar diferentes caminhos
         String[] possiblePaths = {
                 path,
                 "assets/" + path,
@@ -202,20 +209,12 @@ public class GameWorldRenderer implements Screen {
 
     private void createPlaceholderSpritesheet(String path) {
         Pixmap pixmap = new Pixmap(64, 64, Pixmap.Format.RGBA8888);
-
-        // Tile 0,0 - Maçã (vermelho)
         pixmap.setColor(0.8f, 0.2f, 0.2f, 1f);
         pixmap.fillRectangle(0, 32, 32, 32);
-
-        // Tile 1,0 - Espada (cinza)
         pixmap.setColor(0.5f, 0.5f, 0.5f, 1f);
         pixmap.fillRectangle(0, 0, 32, 32);
-
-        // Tile 1,1 - Poção (azul)
         pixmap.setColor(0.2f, 0.2f, 0.8f, 1f);
         pixmap.fillRectangle(32, 0, 32, 32);
-
-        // Tile 0,1 - Vazio/Default
         pixmap.setColor(0.3f, 0.3f, 0.3f, 1f);
         pixmap.fillRectangle(32, 32, 32, 32);
 
@@ -223,290 +222,6 @@ public class GameWorldRenderer implements Screen {
         pixmap.dispose();
         texture.setFilter(Texture.TextureFilter.Linear, Texture.TextureFilter.Linear);
         spritesheets.put(path, texture);
-
-        int cols = texture.getWidth() / TILE_SIZE;
-        int rows = texture.getHeight() / TILE_SIZE;
-        TextureRegion[][] regions = TextureRegion.split(texture, TILE_SIZE, TILE_SIZE);
-        spritesheetRegions.put(path, regions);
-
-        logger.info("Created placeholder spritesheet: {} ({}x{} tiles)", path, cols, rows);
-    }
-
-    private void loadRequiredSpritesheets(Set<String> requiredPaths, MapJSON mapJson) {
-        logger.info("Loading required spritesheets (on main thread): {}", requiredPaths);
-
-        for (String path : requiredPaths) {
-            FileHandle file = Gdx.files.internal(path);
-            if (!file.exists()) {
-                file = Gdx.files.internal("assets/" + path);
-            }
-            if (!file.exists()) {
-                file = Gdx.files.internal("client/assets/" + path);
-            }
-            if (!file.exists()) {
-                file = Gdx.files.absolute("C:/Users/Marllon/IdeaProjects/sandbox-simulator/client/assets/" + path);
-            }
-
-            if (file.exists()) {
-                try {
-                    Texture texture = new Texture(file);
-                    texture.setFilter(Texture.TextureFilter.Linear, Texture.TextureFilter.Linear);
-                    spritesheets.put(path, texture);
-
-                    int cols = texture.getWidth() / TILE_SIZE;
-                    int rows = texture.getHeight() / TILE_SIZE;
-                    TextureRegion[][] regions = TextureRegion.split(texture, TILE_SIZE, TILE_SIZE);
-                    spritesheetRegions.put(path, regions);
-
-                    logger.info("Loaded spritesheet: {} ({}x{} tiles)", path, cols, rows);
-                } catch (Exception e) {
-                    logger.error("Failed to load spritesheet: {}", path, e);
-                }
-            } else {
-                logger.error("Required spritesheet not found: {}", path);
-            }
-        }
-
-        logger.info("Total spritesheets loaded: {}", spritesheets.size());
-        spritesheetsLoaded = true;
-
-        if (pendingMap != null) {
-            loadMapIntoWorld(pendingMap);
-            pendingMap = null;
-        }
-    }
-    private void registerItemTextures() {
-        if (playerUI == null) return;
-
-        // Para cada item que foi spawnado, registrar sua textura
-        for (GroundItem item : localGroundItems.values()) {
-            String itemId = item.getDefinition().getId();
-            String spritesheetPath = item.getDefinition().getSpritesheet();
-            int tileX = item.getDefinition().getTileX();
-            int tileY = item.getDefinition().getTileY();
-
-            TextureRegion[][] regions = spritesheetRegions.get(spritesheetPath);
-            if (regions != null && tileY < regions.length && tileX < regions[0].length) {
-                TextureRegion icon = regions[tileY][tileX];
-                playerUI.registerItemTexture(itemId, icon, item.getDefinition());
-                logger.info("Registered item texture for: {} - {}", itemId, item.getDefinition().getName());
-            }
-        }
-    }
-
-    private Set<String> collectSpritesheetPaths(MapJSON mapJson) {
-        Set<String> paths = new HashSet<>();
-
-        for (Map.Entry<String, MapJSON.ChunkData> entry : mapJson.getChunks().entrySet()) {
-            MapJSON.ChunkData jsonChunk = entry.getValue();
-
-            for (int layer = 0; layer < 3; layer++) {
-                for (int x = 0; x < CHUNK_SIZE; x++) {
-                    for (int y = 0; y < CHUNK_SIZE; y++) {
-                        MapJSON.TileData tileData = jsonChunk.getTile(layer, x, y);
-                        if (tileData != null && !tileData.isEmpty()) {
-                            String path = tileData.getSpritesheetPath();
-                            if (path != null && !path.isEmpty()) {
-                                paths.add(path);
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        logger.info("Spritesheets required by map: {}", paths);
-        return paths;
-    }
-
-    public void setCurrentPlayer(Player player) {
-        this.currentPlayer = player;
-        logger.info("Current player: {} at ({}, {})", player.getUsername(), player.getX(), player.getY());
-
-        chatDisplay.append("*** Welcome to Sandbox Experiment! ***\n");
-        chatDisplay.append("*** Use WASD to move ***\n");
-        chatDisplay.append("*** SHIFT to sprint | SPACE to dash ***\n");
-        chatDisplay.append("*** Press ENTER to chat | H to hide chat | C for attributes | I for inventory ***\n\n");
-        if (adminMode) {
-            chatDisplay.append("*** ADMIN MODE: Press F12 for Map Editor ***\n");
-        }
-
-        if (playerUI != null) {
-            playerUI.update(currentPlayer, 1.0f);
-            playerUI.updateChatHistory(chatDisplay.toString());
-
-            if (player.getMaxHp() > 0) {
-                float healthPercent = (float) player.getCurrentHp() / player.getMaxHp() * 100;
-                playerUI.setHealth(healthPercent);
-            }
-            if (player.getMaxMana() > 0) {
-                float manaPercent = (float) player.getCurrentMana() / player.getMaxMana() * 100;
-                playerUI.setMana(manaPercent);
-            }
-            if (player.getMaxStamina() > 0) {
-                float staminaPercent = (float) player.getCurrentStamina() / player.getMaxStamina() * 100;
-                playerUI.setStamina(staminaPercent);
-            }
-
-            playerUI.setGold(player.getGold());
-
-            // ⭐ REGISTRAR ITENS DO INVENTÁRIO DO JOGADOR
-            registerInventoryItems();
-
-            playerUI.updateInventory(player.getInventory(), player.getGold());
-        }
-
-        if (gameCamera != null) {
-            gameCamera.setTarget(currentPlayer.getX(), currentPlayer.getY());
-            gameCamera.resetPosition();
-        }
-    }
-
-    /**
-     * Registra os itens do inventário do jogador no InventoryWindow
-     */
-    private void registerInventoryItems() {
-        if (currentPlayer == null || playerUI == null) return;
-
-        Inventory inventory = currentPlayer.getInventory();
-        if (inventory == null) {
-            logger.warn("Inventory is null for player: {}", currentPlayer.getUsername());
-            return;
-        }
-
-        logger.info("=== REGISTERING INVENTORY ITEMS ===");
-        logger.info("Player: {}", currentPlayer.getUsername());
-        logger.info("Total slots in inventory: {}", inventory.getSlots().size());
-        logger.info("Equipped items: {}", inventory.getEquipped().size());
-
-        // Registrar itens nos slots do inventário
-        for (ItemStack stack : inventory.getSlots().values()) {
-            if (stack != null && !stack.isEmpty()) {
-                String itemId = stack.getItemId();
-                logger.info("Found item in inventory slot {}: {}", stack.getSlot(), itemId);
-
-                // Tentar encontrar a definição nos itens já spawnados
-                ItemDefinition def = findItemDefinition(itemId);
-
-                if (def != null) {
-                    logger.info("  - Definition found: Name={}, Category={}", def.getName(), def.getCategory());
-                    TextureRegion icon = getItemTextureFromDefinition(def);
-                    playerUI.registerItemTexture(itemId, icon, def);
-                } else {
-                    logger.warn("  - Definition NOT found for item: {}", itemId);
-                }
-            }
-        }
-
-        // Registrar itens equipados
-        for (Map.Entry<String, String> entry : inventory.getEquipped().entrySet()) {
-            String slotType = entry.getKey();
-            String itemId = entry.getValue();
-            if (itemId != null && !itemId.isEmpty()) {
-                logger.info("Found equipped item: {} in slot: {}", itemId, slotType);
-
-                ItemDefinition def = findItemDefinition(itemId);
-                if (def != null) {
-                    TextureRegion icon = getItemTextureFromDefinition(def);
-                    playerUI.registerItemTexture(itemId, icon, def);
-                }
-            }
-        }
-
-        logger.info("=== END REGISTERING INVENTORY ITEMS ===");
-    }
-
-    /**
-     * Busca a definição de um item pelos itens já spawnados no mundo
-     */
-    private ItemDefinition findItemDefinition(String itemId) {
-        // Primeiro, tentar encontrar nos itens locais já spawnados
-        for (GroundItem groundItem : localGroundItems.values()) {
-            if (groundItem.getDefinition().getId().equals(itemId)) {
-                logger.debug("Found definition for {} from localGroundItems", itemId);
-                return groundItem.getDefinition();
-            }
-        }
-
-        // Se não encontrou, tentar criar uma definição básica baseada no ID
-        // Isso é útil para itens que já estão no inventário mas não foram spawnados recentemente
-        logger.warn("Item definition not found in localGroundItems for: {}, creating placeholder", itemId);
-        return createPlaceholderDefinition(itemId);
-    }
-
-    /**
-     * Cria uma definição placeholder para itens que não foram encontrados
-     */
-    private ItemDefinition createPlaceholderDefinition(String itemId) {
-        ItemDefinition def = new ItemDefinition();
-        def.setId(itemId);
-
-        // Nome baseado no ID
-        String name = itemId;
-        switch (itemId) {
-            case "simple_sword":
-                name = "Espada Simples";
-                def.setCategory("weapon");
-                def.setTileX(1);
-                def.setTileY(0);
-                break;
-            case "apple":
-                name = "Maçã";
-                def.setCategory("consumable");
-                def.setTileX(0);
-                def.setTileY(0);
-                break;
-            case "health_potion":
-                name = "Poção de Vida";
-                def.setCategory("consumable");
-                def.setTileX(2);
-                def.setTileY(0);
-                break;
-            default:
-                name = itemId;
-                def.setCategory("common");
-                def.setTileX(0);
-                def.setTileY(0);
-                break;
-        }
-
-        def.setName(name);
-        def.setSpritesheet("itens/spritesheet_itens.png");
-
-        logger.info("Created placeholder definition for {}: Name={}, Category={}, Tile=({},{})",
-                itemId, name, def.getCategory(), def.getTileX(), def.getTileY());
-
-        return def;
-    }
-
-    /**
-     * Obtém a textura do item a partir da definição
-     */
-    private TextureRegion getItemTextureFromDefinition(ItemDefinition def) {
-        String spritesheetPath = def.getSpritesheet();
-        TextureRegion[][] regions = spritesheetRegions.get(spritesheetPath);
-
-        if (regions == null) {
-            logger.warn("Spritesheet not loaded: {}, trying to load", spritesheetPath);
-            loadItemSpritesheet();
-            regions = spritesheetRegions.get(spritesheetPath);
-        }
-
-        if (regions != null) {
-            int tileX = def.getTileX();
-            int tileY = def.getTileY();
-            if (tileY < regions.length && tileX < regions[0].length) {
-                logger.debug("Texture found for {} at ({},{})", def.getId(), tileX, tileY);
-                return regions[tileY][tileX];
-            } else {
-                logger.warn("Invalid tile coordinates for {}: ({},{}) max ({},{})",
-                        def.getId(), tileX, tileY, regions[0].length, regions.length);
-            }
-        } else {
-            logger.warn("Spritesheet still not loaded: {}", spritesheetPath);
-        }
-
-        return null;
     }
 
     private void setupCallbacks() {
@@ -518,12 +233,11 @@ public class GameWorldRenderer implements Screen {
         game.getNetworkClient().setMapLoadCallback(response -> {
             if (response.success && response.mapJson != null) {
                 logger.info("Map loaded, processing...");
-
-                Set<String> requiredPaths = collectSpritesheetPaths(response.mapJson);
                 pendingMap = response.mapJson;
                 spritesheetsLoaded = false;
 
                 Gdx.app.postRunnable(() -> {
+                    Set<String> requiredPaths = collectSpritesheetPaths(response.mapJson);
                     loadRequiredSpritesheets(requiredPaths, response.mapJson);
                 });
             }
@@ -544,9 +258,55 @@ public class GameWorldRenderer implements Screen {
         game.getNetworkClient().setInventoryCallback(this::onInventoryUpdate);
         game.getNetworkClient().setPickupResultCallback(this::onPickupResult);
 
+        // ==================== SISTEMA DE COMBATE ====================
+        game.getNetworkClient().setAttackBroadcastCallback(this::onAttackBroadcast);
+        game.getNetworkClient().setDamagePacketCallback(this::onDamagePacket);
+
         logger.info("Callbacks configured");
     }
-    // ==================== CALLBACKS ====================
+
+    // ==================== CALLBACKS DE COMBATE ====================
+
+    public void onAttackBroadcast(AttackBroadcast broadcast) {
+        Gdx.app.postRunnable(() -> {
+            // Mostrar dano no chat se for o alvo
+            if (currentPlayer != null && broadcast.getResult() != null &&
+                    broadcast.getResult().getTargetId() != null &&
+                    broadcast.getResult().getTargetId().equals(currentPlayer.getId())) {
+                String critMsg = broadcast.getResult().isWasCritical() ? " (CRITICAL!)" : "";
+                if (playerUI != null) {
+                    playerUI.addChatMessage("⚔️ You took " + broadcast.getResult().getDamage() + " damage from " +
+                            broadcast.getAttackerName() + critMsg);
+                    // Atualizar barra de vida
+                    playerUI.setHealth(currentPlayer.getHpPercentage() * 100);
+                }
+            }
+
+            // Feedback se for o atacante
+            if (currentPlayer != null && broadcast.getAttackerId() != null &&
+                    broadcast.getAttackerId().equals(currentPlayer.getId())) {
+                if (playerUI != null && broadcast.getResult() != null && broadcast.getResult().isSuccess()) {
+                    String critMsg = broadcast.getResult().isWasCritical() ? " (CRITICAL!)" : "";
+                    playerUI.addChatMessage("⚔️ You dealt " + broadcast.getResult().getDamage() + " damage to " +
+                            broadcast.getResult().getTargetName() + critMsg);
+                }
+            }
+        });
+    }
+
+    public void onDamagePacket(DamagePacket packet) {
+        Gdx.app.postRunnable(() -> {
+            if (currentPlayer != null && packet.getTargetId().equals(currentPlayer.getId())) {
+                currentPlayer.setCurrentHp(packet.getNewHp());
+                if (playerUI != null) {
+                    playerUI.setHealth(currentPlayer.getHpPercentage() * 100);
+                    playerUI.addChatMessage("❤️ You have " + currentPlayer.getCurrentHp() + "/" + currentPlayer.getMaxHp() + " HP");
+                }
+            }
+        });
+    }
+
+    // ==================== CALLBACKS EXISTENTES ====================
 
     public void onMovementBroadcast(MovementBroadcast broadcast) {
         Gdx.app.postRunnable(() -> {
@@ -723,37 +483,7 @@ public class GameWorldRenderer implements Screen {
         Gdx.app.postRunnable(() -> {
             if (currentPlayer != null && packet.inventory != null) {
                 currentPlayer.setInventory(packet.inventory);
-
-                // ⭐ REGISTRAR ITENS DO INVENTÁRIO ATUALIZADO
-                for (ItemStack stack : packet.inventory.getSlots().values()) {
-                    if (stack != null && !stack.isEmpty()) {
-                        String itemId = stack.getItemId();
-                        // Verificar se já está registrado
-                        if (playerUI != null && !playerUI.isItemRegistered(itemId)) {
-                            // Tentar encontrar a definição
-                            for (GroundItem groundItem : localGroundItems.values()) {
-                                if (groundItem.getDefinition().getId().equals(itemId)) {
-                                    ItemDefinition def = groundItem.getDefinition();
-                                    String spritesheetPath = def.getSpritesheet();
-                                    TextureRegion[][] regions = spritesheetRegions.get(spritesheetPath);
-                                    TextureRegion icon = null;
-
-                                    if (regions != null) {
-                                        int tileX = def.getTileX();
-                                        int tileY = def.getTileY();
-                                        if (tileY < regions.length && tileX < regions[0].length) {
-                                            icon = regions[tileY][tileX];
-                                        }
-                                    }
-
-                                    playerUI.registerItemTexture(itemId, icon, def);
-                                    logger.info("Registered item from inventory update: {} - Category: {}", itemId, def.getCategory());
-                                    break;
-                                }
-                            }
-                        }
-                    }
-                }
+                currentPlayer.updateCombatStatsFromEquipment();
 
                 if (playerUI != null) {
                     playerUI.updateInventory(packet.inventory, currentPlayer.getGold());
@@ -795,11 +525,67 @@ public class GameWorldRenderer implements Screen {
         }
     }
 
+    private Set<String> collectSpritesheetPaths(MapJSON mapJson) {
+        Set<String> paths = new HashSet<>();
+        for (Map.Entry<String, MapJSON.ChunkData> entry : mapJson.getChunks().entrySet()) {
+            MapJSON.ChunkData jsonChunk = entry.getValue();
+            for (int layer = 0; layer < 3; layer++) {
+                for (int x = 0; x < CHUNK_SIZE; x++) {
+                    for (int y = 0; y < CHUNK_SIZE; y++) {
+                        MapJSON.TileData tileData = jsonChunk.getTile(layer, x, y);
+                        if (tileData != null && !tileData.isEmpty()) {
+                            String path = tileData.getSpritesheetPath();
+                            if (path != null && !path.isEmpty()) {
+                                paths.add(path);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        return paths;
+    }
+
+    private void loadRequiredSpritesheets(Set<String> requiredPaths, MapJSON mapJson) {
+        logger.info("Loading required spritesheets: {}", requiredPaths);
+
+        for (String path : requiredPaths) {
+            FileHandle file = Gdx.files.internal(path);
+            if (!file.exists()) {
+                file = Gdx.files.internal("assets/" + path);
+            }
+            if (!file.exists()) {
+                file = Gdx.files.internal("client/assets/" + path);
+            }
+
+            if (file.exists()) {
+                try {
+                    Texture texture = new Texture(file);
+                    texture.setFilter(Texture.TextureFilter.Linear, Texture.TextureFilter.Linear);
+                    spritesheets.put(path, texture);
+
+                    int cols = texture.getWidth() / TILE_SIZE;
+                    int rows = texture.getHeight() / TILE_SIZE;
+                    TextureRegion[][] regions = TextureRegion.split(texture, TILE_SIZE, TILE_SIZE);
+                    spritesheetRegions.put(path, regions);
+                } catch (Exception e) {
+                    logger.error("Failed to load spritesheet: {}", path, e);
+                }
+            } else {
+                logger.error("Required spritesheet not found: {}", path);
+            }
+        }
+
+        spritesheetsLoaded = true;
+        if (pendingMap != null) {
+            loadMapIntoWorld(pendingMap);
+            pendingMap = null;
+        }
+    }
+
     public void loadMapIntoWorld(MapJSON map) {
         loadedChunks.clear();
         logger.info("Loading map with {} chunks", map.getChunks().size());
-
-        int totalTiles = 0;
 
         for (Map.Entry<String, MapJSON.ChunkData> entry : map.getChunks().entrySet()) {
             String[] coords = entry.getKey().split(":");
@@ -813,30 +599,21 @@ public class GameWorldRenderer implements Screen {
                 for (int x = 0; x < CHUNK_SIZE; x++) {
                     for (int y = 0; y < CHUNK_SIZE; y++) {
                         MapJSON.TileData tileData = jsonChunk.getTile(layer, x, y);
-
                         if (tileData != null && !tileData.isEmpty()) {
                             String path = tileData.getSpritesheetPath();
-                            if (path == null || path.isEmpty()) {
-                                continue;
-                            }
-
+                            if (path == null || path.isEmpty()) continue;
                             int tileId = tileData.getTileId();
                             String tag = tileData.getTag();
-
                             if (tileId < 0) continue;
-
                             boolean isSolidTile = "solid".equals(tag);
-
                             chunk.setTile(x, y, path, tileId, isSolidTile, tag);
-                            totalTiles++;
                         }
                     }
                 }
             }
             loadedChunks.put(entry.getKey(), chunk);
-            logger.debug("Loaded chunk [{},{}]", chunkX, chunkY);
         }
-        logger.info("Total tiles loaded: {}", totalTiles);
+        logger.info("Map loaded into world");
     }
 
     // ==================== SETUP DO INPUT MANAGER ====================
@@ -856,19 +633,12 @@ public class GameWorldRenderer implements Screen {
                         float staminaPercent = (float) currentPlayer.getCurrentStamina() / currentPlayer.getMaxStamina() * 100;
                         playerUI.setStamina(staminaPercent);
                     }
-
-                    logger.debug("Dash executed by {}", currentPlayer.getUsername());
                 }
             }
         });
 
-        playerInputManager.setOnSprintStart(() -> {
-            logger.trace("Sprint started");
-        });
-
-        playerInputManager.setOnSprintEnd(() -> {
-            logger.trace("Sprint ended");
-        });
+        playerInputManager.setOnSprintStart(() -> {});
+        playerInputManager.setOnSprintEnd(() -> {});
 
         logger.info("PlayerInputManager initialized");
     }
@@ -898,9 +668,55 @@ public class GameWorldRenderer implements Screen {
         }
     }
 
+    // ==================== SISTEMA DE COMBATE ====================
+    private void performAttack() {
+        if (currentPlayer == null) return;
+
+        long now = System.currentTimeMillis();
+        if (now - lastAttackTime < ATTACK_COOLDOWN_MS) {
+            if (playerUI != null) {
+                long remaining = (ATTACK_COOLDOWN_MS - (now - lastAttackTime)) / 1000;
+                playerUI.addChatMessage("⚠️ Attack on cooldown! (" + remaining + "s)");
+            }
+            return;
+        }
+
+        // Verificar se tem arma equipada
+        String weaponId = currentPlayer.getInventory().getEquipped().get("weapon");
+        AttackType attackType = AttackType.MELEE_SWORD;
+
+        if (weaponId != null && !weaponId.isEmpty()) {
+            if (weaponId.contains("dagger")) {
+                attackType = AttackType.MELEE_DAGGER;
+            } else if (weaponId.contains("axe")) {
+                attackType = AttackType.MELEE_AXE;
+            } else if (weaponId.contains("bow")) {
+                attackType = AttackType.RANGED_BOW;
+            }
+        }
+
+        lastAttackTime = now;
+
+        // Enviar para o servidor
+        AttackRequest request = new AttackRequest(
+                currentPlayer.getId(),
+                currentPlayer.getX(),
+                currentPlayer.getY(),
+                attackType
+        );
+        game.getNetworkClient().sendPacket(request);
+
+        logger.info("⚔️ Attack performed by {} with {}", currentPlayer.getUsername(), attackType.getName());
+
+        if (playerUI != null) {
+            playerUI.addChatMessage("⚔️ You attacked with " + attackType.getName() + "!");
+        }
+    }
+
     // ==================== MÉTODOS DE MOVIMENTO ====================
 
     private void handleInput(float delta) {
+        // Verificar se UI está bloqueando input
         if (playerUI != null && (playerUI.isChatFocused() ||
                 playerUI.isFriendsWindowVisible() ||
                 playerUI.isAttributesVisible() ||
@@ -919,11 +735,19 @@ public class GameWorldRenderer implements Screen {
 
         if (currentPlayer == null) return;
 
+        // Atualizar regeneração
         currentPlayer.updateRegeneration(delta);
+        currentPlayer.updateAttack(delta); // Atualizar estado do ataque
+
         if (playerUI != null) {
             playerUI.setStamina(currentPlayer.getStaminaPercentage() * 100);
             playerUI.setHealth(currentPlayer.getHpPercentage() * 100);
             playerUI.setMana(currentPlayer.getManaPercentage() * 100);
+        }
+
+        // ==================== DETECTAR CLIQUE ESQUERDO PARA ATACAR ====================
+        if (Gdx.input.isButtonJustPressed(Input.Buttons.LEFT)) {
+            performAttack();
         }
 
         if (isDashing) {
@@ -1203,7 +1027,6 @@ public class GameWorldRenderer implements Screen {
             if (interpolated != null && lastUpdate != null) {
                 long elapsed = Math.min(now - lastUpdate, 100);
                 float alpha = Math.min(1.0f, elapsed / 50.0f);
-
                 renderX = interpolated.getX() + (player.getX() - interpolated.getX()) * alpha;
                 renderY = interpolated.getY() + (player.getY() - interpolated.getY()) * alpha;
 
@@ -1218,7 +1041,13 @@ public class GameWorldRenderer implements Screen {
 
             shapeRenderer.setColor(0, 0, 0, 0.5f);
             shapeRenderer.rect(x - 2, y - 2, PLAYER_SIZE + 4, PLAYER_SIZE + 4);
-            shapeRenderer.setColor(0.5f, 0.7f, 0.3f, 1);
+
+            // Cor diferente se estiver atacando
+            if (player.isAttacking()) {
+                shapeRenderer.setColor(0.9f, 0.3f, 0.2f, 1);
+            } else {
+                shapeRenderer.setColor(0.5f, 0.7f, 0.3f, 1);
+            }
             shapeRenderer.rect(x, y, PLAYER_SIZE, PLAYER_SIZE);
         }
 
@@ -1227,7 +1056,13 @@ public class GameWorldRenderer implements Screen {
             float y = currentPlayer.getY() - PLAYER_SIZE/2;
             shapeRenderer.setColor(0, 0, 0, 0.5f);
             shapeRenderer.rect(x - 2, y - 2, PLAYER_SIZE + 4, PLAYER_SIZE + 4);
-            shapeRenderer.setColor(0.2f, 0.6f, 0.9f, 1);
+
+            // Cor diferente se estiver atacando
+            if (currentPlayer.isAttacking()) {
+                shapeRenderer.setColor(0.95f, 0.4f, 0.3f, 1);
+            } else {
+                shapeRenderer.setColor(0.2f, 0.6f, 0.9f, 1);
+            }
             shapeRenderer.rect(x, y, PLAYER_SIZE, PLAYER_SIZE);
         }
 
@@ -1255,6 +1090,13 @@ public class GameWorldRenderer implements Screen {
             font.draw(batch, player.getUsername(),
                     renderX - (player.getUsername().length() * 5),
                     renderY + PLAYER_SIZE/2 + 25);
+
+            // Mostrar HP
+            String hpText = player.getCurrentHp() + "/" + player.getMaxHp();
+            font.setColor(0.8f, 0.2f, 0.2f, 1f);
+            font.draw(batch, hpText,
+                    renderX - (hpText.length() * 4),
+                    renderY + PLAYER_SIZE/2 + 12);
         }
 
         if (currentPlayer != null) {
@@ -1262,6 +1104,36 @@ public class GameWorldRenderer implements Screen {
             font.draw(batch, currentPlayer.getUsername(),
                     currentPlayer.getX() - (currentPlayer.getUsername().length() * 5),
                     currentPlayer.getY() + PLAYER_SIZE/2 + 25);
+
+            String hpText = currentPlayer.getCurrentHp() + "/" + currentPlayer.getMaxHp();
+            font.setColor(0.8f, 0.2f, 0.2f, 1f);
+            font.draw(batch, hpText,
+                    currentPlayer.getX() - (hpText.length() * 4),
+                    currentPlayer.getY() + PLAYER_SIZE/2 + 12);
+        }
+    }
+
+    private void renderAttackCooldown() {
+        if (currentPlayer == null) return;
+
+        long now = System.currentTimeMillis();
+        long elapsed = now - lastAttackTime;
+        if (elapsed < ATTACK_COOLDOWN_MS) {
+            float percent = 1.0f - (float) elapsed / ATTACK_COOLDOWN_MS;
+
+            // Posição fixa no canto superior direito da TELA (não do mundo)
+            float x = Gdx.graphics.getWidth() - 60;
+            float y = Gdx.graphics.getHeight() - 60;
+
+            // Usar UI camera para coordenadas de tela
+            OrthographicCamera uiCam = new OrthographicCamera(Gdx.graphics.getWidth(), Gdx.graphics.getHeight());
+            uiCam.setToOrtho(false);
+            shapeRenderer.setProjectionMatrix(uiCam.combined);
+
+            shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
+            shapeRenderer.setColor(0.8f, 0.2f, 0.2f, 0.8f);
+            shapeRenderer.rect(x, y, 40, 40 * percent);
+            shapeRenderer.end();
         }
     }
 
@@ -1354,9 +1226,6 @@ public class GameWorldRenderer implements Screen {
 
         playerUI.setOnUnequipItemCallback(slotIndex -> {
             if (currentPlayer != null) {
-                logger.info("Unequipping item from slot index: {}", slotIndex);
-
-                // Mapear slot index para tipo de equipamento
                 String equipSlot;
                 switch (slotIndex) {
                     case 0: equipSlot = "weapon"; break;
@@ -1366,7 +1235,6 @@ public class GameWorldRenderer implements Screen {
                     case 4: equipSlot = "boots"; break;
                     default: equipSlot = "weapon"; break;
                 }
-
                 InventoryUpdatePacket packet = new InventoryUpdatePacket();
                 packet.action = "UNEQUIP";
                 packet.equipSlot = equipSlot;
@@ -1378,23 +1246,18 @@ public class GameWorldRenderer implements Screen {
             if (currentPlayer != null) {
                 ItemStack stack = currentPlayer.getInventory().getSlot(action.slot);
                 if (stack != null && !stack.isEmpty()) {
-                    logger.info("Dropping item: {} x{} from slot {}",
-                            stack.getItemId(), action.quantity, action.slot);
-
                     DropItemPacket packet = new DropItemPacket(action.slot, action.quantity, currentPlayer.getId());
                     game.getNetworkClient().sendPacket(packet);
-
-                    // Feedback visual
                     playerUI.addChatMessage("Item dropped: " + stack.getItemId() + " x" + action.quantity);
                 }
             }
         });
 
         playerUI.updateChatHistory(chatDisplay.toString());
-
         playerUI.addChatMessage("*** Welcome to Sandbox Experiment! ***");
         playerUI.addChatMessage("*** Use WASD to move ***");
         playerUI.addChatMessage("*** SHIFT to sprint | SPACE to dash ***");
+        playerUI.addChatMessage("*** LEFT CLICK to attack! ***");
         playerUI.addChatMessage("*** Press ENTER to chat | H to hide chat | C for attributes | I for inventory ***");
         playerUI.addChatMessage("*** Click FRIENDS button to manage friends ***");
 
@@ -1646,6 +1509,49 @@ public class GameWorldRenderer implements Screen {
 
     // ==================== MÉTODOS DA SCREEN ====================
 
+    public void setCurrentPlayer(Player player) {
+        this.currentPlayer = player;
+        logger.info("Current player: {} at ({}, {})", player.getUsername(), player.getX(), player.getY());
+
+        chatDisplay.append("*** Welcome to Sandbox Experiment! ***\n");
+        chatDisplay.append("*** Use WASD to move ***\n");
+        chatDisplay.append("*** SHIFT to sprint | SPACE to dash ***\n");
+        chatDisplay.append("*** LEFT CLICK to attack! ***\n");
+        chatDisplay.append("*** Press ENTER to chat | H to hide chat | C for attributes | I for inventory ***\n\n");
+        if (adminMode) {
+            chatDisplay.append("*** ADMIN MODE: Press F12 for Map Editor ***\n");
+        }
+
+        if (playerUI != null) {
+            playerUI.update(currentPlayer, 1.0f);
+            playerUI.updateChatHistory(chatDisplay.toString());
+
+            if (player.getMaxHp() > 0) {
+                float healthPercent = (float) player.getCurrentHp() / player.getMaxHp() * 100;
+                playerUI.setHealth(healthPercent);
+            }
+            if (player.getMaxMana() > 0) {
+                float manaPercent = (float) player.getCurrentMana() / player.getMaxMana() * 100;
+                playerUI.setMana(manaPercent);
+            }
+            if (player.getMaxStamina() > 0) {
+                float staminaPercent = (float) player.getCurrentStamina() / player.getMaxStamina() * 100;
+                playerUI.setStamina(staminaPercent);
+            }
+
+            playerUI.setGold(player.getGold());
+            playerUI.updateInventory(player.getInventory(), player.getGold());
+        }
+
+        if (gameCamera != null) {
+            gameCamera.setTarget(currentPlayer.getX(), currentPlayer.getY());
+            gameCamera.resetPosition();
+        }
+
+        // Inicializar stats de combate
+        currentPlayer.updateCombatStatsFromEquipment();
+    }
+
     @Override
     public void show() {
         logger.info("GameWorldRenderer show()");
@@ -1674,6 +1580,7 @@ public class GameWorldRenderer implements Screen {
             gameCamera.update(delta);
         }
 
+        // ==================== RENDERIZAÇÃO COM BATCH ====================
         batch.setProjectionMatrix(gameCamera.getCamera().combined);
         batch.begin();
 
@@ -1686,9 +1593,15 @@ public class GameWorldRenderer implements Screen {
         renderFloatingNames();
 
         batch.end();
+        // ==================== FIM DA RENDERIZAÇÃO COM BATCH ====================
 
+        // Renderizar players (ShapeRenderer)
         renderPlayers();
 
+        // Renderizar cooldown de ataque (ShapeRenderer)
+        renderAttackCooldown();
+
+        // UI (Stage)
         if (playerUI != null && Gdx.input.getInputProcessor() != playerUI.getStage()) {
             Gdx.input.setInputProcessor(createInputProcessor());
         }
@@ -1700,6 +1613,7 @@ public class GameWorldRenderer implements Screen {
         if (itemRenderer != null) {
             itemRenderer.update(delta);
         }
+
     }
 
     @Override

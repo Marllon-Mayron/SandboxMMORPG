@@ -124,7 +124,7 @@ public class InventoryWindow {
     }
 
     private Window createWindow() {
-        Window win = new Window("", skin, "default");
+        Window win = new Window("INVENTORY", skin, "default");
         win.setModal(false);
         win.setMovable(true);
         win.setSize(WINDOW_WIDTH, WINDOW_HEIGHT);

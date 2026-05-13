@@ -47,10 +47,14 @@ public class NetworkClient {
     private Consumer<FriendRequestPacket> friendRequestCallback;
     private Consumer<PrivateMessagePacket> privateMessageCallback;
     private Consumer<PrivateMessageHistoryResponse> privateMessageHistoryCallback;
+
     private Consumer<InventoryUpdatePacket> inventoryCallback;
     private Consumer<PickupResultPacket> pickupResultCallback;
     private Consumer<ItemSpawnPacket> itemSpawnCallback;
     private Consumer<ItemDespawnPacket> itemDespawnCallback;
+
+    private Consumer<AttackBroadcast> attackBroadcastCallback;
+    private Consumer<DamagePacket> damagePacketCallback;
 
     public NetworkClient(String host, int port) {
         this.host = host;
@@ -241,6 +245,12 @@ public class NetworkClient {
         this.itemDespawnCallback = callback;
         logger.info("ItemDespawnCallback set");
     }
+    public void setAttackBroadcastCallback(Consumer<AttackBroadcast> callback) {
+        this.attackBroadcastCallback = callback;
+    }
+    public void setDamagePacketCallback(Consumer<DamagePacket> callback) {
+        this.damagePacketCallback = callback;
+    }
 
     private class ClientHandler extends SimpleChannelInboundHandler<Object> {
         @Override
@@ -277,7 +287,6 @@ public class NetworkClient {
                     privateMessageHistoryCallback.accept((PrivateMessageHistoryResponse) msg);
                 } else if (msg instanceof Chunk && chunkCallback != null) {
                     chunkCallback.accept((Chunk) msg);
-                    // ⭐ ADICIONAR ESTES CASOS PARA ITENS
                 } else if (msg instanceof ItemSpawnPacket) {
                     logger.info("ItemSpawnPacket received, callback exists: {}", itemSpawnCallback != null);
                     if (itemSpawnCallback != null) {
@@ -298,7 +307,11 @@ public class NetworkClient {
                     pickupResultCallback.accept((PickupResultPacket) msg);
                 } else if (msg instanceof DropItemPacket) {
                     // Enviar para servidor (já está sendo enviado)
-                }else {
+                } else if (msg instanceof AttackBroadcast && attackBroadcastCallback != null) {
+                    attackBroadcastCallback.accept((AttackBroadcast) msg);
+                } else if (msg instanceof DamagePacket && damagePacketCallback != null) {
+                    damagePacketCallback.accept((DamagePacket) msg);
+                } else {
                     logger.warn("Unhandled packet type: {}", msg.getClass().getSimpleName());
                 }
             } catch (Exception e) {

@@ -92,6 +92,10 @@ public class GameServerHandler extends SimpleChannelInboundHandler<Object> {
                 handleDropItem(ctx, (DropItemPacket) msg);
             } else if (msg instanceof InventoryUpdatePacket) {
                 handleInventoryUpdate(ctx, (InventoryUpdatePacket) msg);
+            } else if (msg instanceof AttackRequest) {
+                if (currentPlayer != null) {
+                    handleAttack(ctx, (AttackRequest) msg);
+                }
             } else {
                 logger.warn("Tipo de pacote desconhecido: {}", msg.getClass().getSimpleName());
             }
@@ -934,6 +938,52 @@ public class GameServerHandler extends SimpleChannelInboundHandler<Object> {
 
     private boolean isEquippableCategory(String category) {
         return "weapon".equals(category) || "armor".equals(category) || "equipment".equals(category);
+    }
+
+    private void handleAttack(ChannelHandlerContext ctx, AttackRequest request) {
+        CombatManager combatManager = CombatManager.getInstance();
+        Collection<Player> allPlayers = GameWorld.getInstance().getAllPlayers();
+
+        // Encontrar alvo mais próximo
+        Player target = combatManager.findNearestTarget(currentPlayer, request.attackType, allPlayers);
+
+        if (target == null) {
+            logger.debug("{} tried to attack but no target in range", currentPlayer.getUsername());
+            return;
+        }
+
+        // Processar ataque
+        AttackResult result = combatManager.processAttack(currentPlayer, target, request.attackType);
+
+        if (result.isSuccess()) {
+            // Broadcast do ataque para todos os jogadores
+            AttackBroadcast broadcast = new AttackBroadcast(
+                    currentPlayer.getId(),
+                    currentPlayer.getUsername(),
+                    currentPlayer.getX(),
+                    currentPlayer.getY(),
+                    result
+            );
+            broadcastToAll(broadcast);
+
+            // Enviar dano específico para o alvo (atualizar HP)
+            DamagePacket damagePacket = new DamagePacket(
+                    target.getId(),
+                    result.getDamage(),
+                    result.isWasCritical(),
+                    result.getTargetRemainingHp(),
+                    request.attackType
+            );
+
+            // Enviar para o alvo
+            Channel targetChannel = getChannelByPlayerId(target.getId());
+            if (targetChannel != null) {
+                targetChannel.writeAndFlush(damagePacket);
+            }
+
+            // Enviar atualização de status para o atacante
+            sendPacket(ctx, damagePacket);
+        }
     }
 
     @Override
