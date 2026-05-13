@@ -57,6 +57,7 @@ public class PlayerUI {
     private Label staminaPercentLabel;
     private Label speedLabel;
     private Label speedValueLabel;
+    private float currentSpeedMultiplier = 1.0f;
 
     // Componentes do Chat
     private boolean chatVisible = true;
@@ -84,7 +85,7 @@ public class PlayerUI {
     private Consumer<String> onLoadPrivateChatHistory;
 
     // Dimensões fixas
-    private static final int HUD_WIDTH = 120;
+    private static final int HUD_WIDTH = 160;
     private static final int CHAT_WIDTH = 420;
     private static final int CHAT_HEIGHT = 300;
 
@@ -452,8 +453,10 @@ public class PlayerUI {
         }
 
         // Speed
-        int speedPercent = Math.round(terrainSpeed * 100);
-        speedValueLabel.setText(speedPercent + "%");
+        int terrainPercent = Math.round(terrainSpeed * 100);
+        float totalMultiplier = terrainSpeed * currentSpeedMultiplier;
+        String speedDisplay = String.format("(%d%% / %.1fx)", terrainPercent, totalMultiplier);
+        speedValueLabel.setText(speedDisplay);
 
         if (terrainSpeed < 0.7f) {
             speedValueLabel.setColor(Color.RED);
@@ -622,6 +625,9 @@ public class PlayerUI {
     public void setRefreshFriendsCallback(Runnable callback) { this.refreshFriendsCallback = callback; }
     public void setOnLoadPrivateChatHistory(Consumer<String> callback) {
         this.onLoadPrivateChatHistory = callback;
+    }
+    public void setSpeedMultiplier(float multiplier) {
+        this.currentSpeedMultiplier = multiplier;
     }
     // ==================== BARRA DE VIDA ====================
 

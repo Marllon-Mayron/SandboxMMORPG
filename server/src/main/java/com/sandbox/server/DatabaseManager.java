@@ -144,7 +144,8 @@ public class DatabaseManager {
         String sql = "SELECT id, username, email, password_hash, x, y, direction, " +
                 "level, experience, gold, current_hp, current_mana, current_stamina, " +
                 "max_hp, max_mana, max_stamina, strength, agility, wisdom, " +
-                "attribute_points, skill_points " +
+                "attribute_points, skill_points, " +
+                "hp_regen_per_second, mana_regen_per_second, stamina_regen_per_second " +
                 "FROM players WHERE username = ?";
 
         try (Connection conn = getConnection();
@@ -164,7 +165,6 @@ public class DatabaseManager {
                     player.setY(rs.getFloat("y"));
                     player.setDirection(rs.getString("direction") != null ? rs.getString("direction") : "DOWN");
 
-                    // Novos campos
                     player.setLevel(rs.getInt("level"));
                     player.setExperience(rs.getInt("experience"));
                     player.setGold(rs.getInt("gold"));
@@ -179,13 +179,21 @@ public class DatabaseManager {
                     player.setWisdom(rs.getInt("wisdom"));
                     player.setAttributePoints(rs.getInt("attribute_points"));
                     player.setSkillPoints(rs.getInt("skill_points"));
+
+                    // Regeneração
+                    player.setHpRegenPerSecond(rs.getInt("hp_regen_per_second"));
+                    player.setManaRegenPerSecond(rs.getInt("mana_regen_per_second"));
+                    player.setStaminaRegenPerSecond(rs.getInt("stamina_regen_per_second"));
+
                     player.setOnline(true);
 
                     updateLastLogin(player.getId());
-                    savePlayerPosition(player); // Salvar para garantir que está online
+                    savePlayerPosition(player);
 
-                    logger.info("✅ Jogador {} carregado - Level {} | HP {}/{} | Gold {}",
-                            username, player.getLevel(), player.getCurrentHp(), player.getMaxHp(), player.getGold());
+                    logger.info("✅ Jogador {} carregado - Level {} | HP {}/{} | Stamina {}/{}",
+                            username, player.getLevel(),
+                            player.getCurrentHp(), player.getMaxHp(),
+                            player.getCurrentStamina(), player.getMaxStamina());
                     return player;
                 }
             }
@@ -194,6 +202,57 @@ public class DatabaseManager {
         } catch (SQLException e) {
             logger.error("❌ Erro ao autenticar jogador", e);
             return null;
+        }
+    }
+
+    /**
+     * Salva a posição do jogador (síncrono - usado no logout)
+     */
+    public void savePlayerPosition(Player player) {
+        String sql = "UPDATE players SET " +
+                "x = ?, y = ?, direction = ?, " +
+                "last_login = CURRENT_TIMESTAMP, " +
+                "is_online = true, " +
+                "level = ?, experience = ?, gold = ?, " +
+                "current_hp = ?, current_mana = ?, current_stamina = ?, " +
+                "max_hp = ?, max_mana = ?, max_stamina = ?, " +
+                "strength = ?, agility = ?, wisdom = ?, " +
+                "attribute_points = ?, skill_points = ?, " +
+                "hp_regen_per_second = ?, mana_regen_per_second = ?, stamina_regen_per_second = ? " +
+                "WHERE id = ?::uuid";
+
+        try (Connection conn = getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+
+            pstmt.setFloat(1, player.getX());
+            pstmt.setFloat(2, player.getY());
+            pstmt.setString(3, player.getDirection());
+            pstmt.setInt(4, player.getLevel());
+            pstmt.setInt(5, player.getExperience());
+            pstmt.setInt(6, player.getGold());
+            pstmt.setInt(7, player.getCurrentHp());
+            pstmt.setInt(8, player.getCurrentMana());
+            pstmt.setInt(9, player.getCurrentStamina());
+            pstmt.setInt(10, player.getMaxHp());
+            pstmt.setInt(11, player.getMaxMana());
+            pstmt.setInt(12, player.getMaxStamina());
+            pstmt.setInt(13, player.getStrength());
+            pstmt.setInt(14, player.getAgility());
+            pstmt.setInt(15, player.getWisdom());
+            pstmt.setInt(16, player.getAttributePoints());
+            pstmt.setInt(17, player.getSkillPoints());
+            pstmt.setInt(18, player.getHpRegenPerSecond());
+            pstmt.setInt(19, player.getManaRegenPerSecond());
+            pstmt.setInt(20, player.getStaminaRegenPerSecond());
+            pstmt.setObject(21, UUID.fromString(player.getId()));
+
+            int updated = pstmt.executeUpdate();
+            if (updated > 0) {
+                logger.debug("✅ Player {} saved", player.getUsername());
+            }
+
+        } catch (SQLException e) {
+            logger.error("❌ Erro ao salvar jogador {}", player.getUsername(), e);
         }
     }
 
@@ -230,55 +289,6 @@ public class DatabaseManager {
         Thread.startVirtualThread(() -> {
             savePlayerPosition(player);
         });
-    }
-
-    /**
-     * Salva a posição do jogador (síncrono - usado no logout)
-     */
-    public void savePlayerPosition(Player player) {
-        String sql = "UPDATE players SET " +
-                "x = ?, y = ?, direction = ?, " +
-                "last_login = CURRENT_TIMESTAMP, " +
-                "is_online = true, " +
-                "level = ?, experience = ?, gold = ?, " +
-                "current_hp = ?, current_mana = ?, current_stamina = ?, " +
-                "max_hp = ?, max_mana = ?, max_stamina = ?, " +
-                "strength = ?, agility = ?, wisdom = ?, " +
-                "attribute_points = ?, skill_points = ? " +
-                "WHERE id = ?::uuid";
-
-        try (Connection conn = getConnection();
-             PreparedStatement pstmt = conn.prepareStatement(sql)) {
-
-            pstmt.setFloat(1, player.getX());
-            pstmt.setFloat(2, player.getY());
-            pstmt.setString(3, player.getDirection());
-            pstmt.setInt(4, player.getLevel());
-            pstmt.setInt(5, player.getExperience());
-            pstmt.setInt(6, player.getGold());
-            pstmt.setInt(7, player.getCurrentHp());
-            pstmt.setInt(8, player.getCurrentMana());
-            pstmt.setInt(9, player.getCurrentStamina());
-            pstmt.setInt(10, player.getMaxHp());
-            pstmt.setInt(11, player.getMaxMana());
-            pstmt.setInt(12, player.getMaxStamina());
-            pstmt.setInt(13, player.getStrength());
-            pstmt.setInt(14, player.getAgility());
-            pstmt.setInt(15, player.getWisdom());
-            pstmt.setInt(16, player.getAttributePoints());
-            pstmt.setInt(17, player.getSkillPoints());
-            pstmt.setObject(18, UUID.fromString(player.getId()));
-
-            int updated = pstmt.executeUpdate();
-            if (updated > 0) {
-                logger.debug("✅ Player {} saved: Level {} | HP {}/{} | Gold {}",
-                        player.getUsername(), player.getLevel(),
-                        player.getCurrentHp(), player.getMaxHp(), player.getGold());
-            }
-
-        } catch (SQLException e) {
-            logger.error("❌ Erro ao salvar jogador {}", player.getUsername(), e);
-        }
     }
 
     public void setPlayerOffline(String playerId) {

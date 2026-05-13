@@ -116,15 +116,16 @@ public class GameWorld {
             player.setY(y);
             player.setDirection(direction);
 
-            // FORÇAR SALVAMENTO PERIÓDICO MAIS FREQUENTE
+            // NÃO modificar stamina aqui! O cliente gerencia stamina
+
+            // Salvar posição periodicamente
             long now = System.currentTimeMillis();
             Long lastSave = lastPositionSave.get(playerId);
-            if (lastSave == null || (now - lastSave) >= 5000) { // Salvar a cada 5 segundos
+            if (lastSave == null || (now - lastSave) >= 5000) {
                 DatabaseManager.getInstance().savePlayerPositionAsync(player);
                 lastPositionSave.put(playerId, now);
             }
 
-            // Verificar mudança de chunk
             checkChunkTransition(player);
         }
     }

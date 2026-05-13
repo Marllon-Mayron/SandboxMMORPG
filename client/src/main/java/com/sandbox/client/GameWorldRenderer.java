@@ -11,12 +11,14 @@ import com.badlogic.gdx.graphics.g2d.SpriteBatch;
 import com.badlogic.gdx.graphics.g2d.TextureRegion;
 import com.badlogic.gdx.graphics.g2d.freetype.FreeTypeFontGenerator;
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
+import com.badlogic.gdx.math.Vector2;
 import com.common.sandbox.model.MapJSON;
 import com.common.sandbox.model.Player;
 import com.common.sandbox.model.Chunk;
 import com.common.sandbox.model.WorldTile;
 import com.common.sandbox.network.packets.*;
 import com.sandbox.client.editor.MapEditorScreen;
+import com.sandbox.client.input.PlayerInputManager;
 import com.sandbox.client.ui.PlayerUI;
 import com.sandbox.client.camera.GameCamera;
 import org.slf4j.Logger;
@@ -60,6 +62,17 @@ public class GameWorldRenderer implements Screen {
     private final Map<String, Player> initialNearbyPlayers;
     private final StringBuilder chatDisplay;
 
+    // ==================== SISTEMA DE MOVIMENTO ====================
+    private PlayerInputManager playerInputManager;
+    private boolean isDashing = false;
+    private float dashTimer = 0;
+    private Vector2 dashStartPos;
+    private Vector2 dashDirection;
+
+    // Rate limiting para movimentos
+    private long lastMovementSendTime = 0;
+    private static final long MOVEMENT_SEND_INTERVAL_MS = 50; // 20 packets por segundo
+
     public GameWorldRenderer(SandboxClient game, boolean adminMode, Map<String, Player> nearbyPlayers) {
         this.game = game;
         this.adminMode = adminMode;
@@ -69,6 +82,8 @@ public class GameWorldRenderer implements Screen {
         this.spritesheets = new HashMap<>();
         this.spritesheetRegions = new HashMap<>();
         this.chatDisplay = new StringBuilder();
+        this.dashStartPos = new Vector2();
+        this.dashDirection = new Vector2();
 
         logger.info("GameWorldRenderer created with {} initial nearby players", this.initialNearbyPlayers.size());
     }
@@ -148,6 +163,7 @@ public class GameWorldRenderer implements Screen {
 
         chatDisplay.append("*** Welcome to Sandbox Experiment! ***\n");
         chatDisplay.append("*** Use WASD to move ***\n");
+        chatDisplay.append("*** SHIFT to sprint | SPACE to dash ***\n");
         chatDisplay.append("*** Press ENTER to chat | H to hide chat | C for attributes ***\n\n");
         if (adminMode) {
             chatDisplay.append("*** ADMIN MODE: Press F12 for Map Editor ***\n");
@@ -288,8 +304,6 @@ public class GameWorldRenderer implements Screen {
         });
     }
 
-    // ==================== SISTEMA DE AMIGOS CALLBACKS ====================
-
     private void onFriendListResponse(FriendListResponse response) {
         Gdx.app.postRunnable(() -> {
             if (playerUI != null) {
@@ -385,6 +399,44 @@ public class GameWorldRenderer implements Screen {
         logger.info("Total tiles loaded: {}", totalTiles);
     }
 
+    // ==================== SETUP DO INPUT MANAGER ====================
+
+    private void setupPlayerInput() {
+        playerInputManager = new PlayerInputManager();
+
+        playerInputManager.setOnDash(() -> {
+            if (currentPlayer != null && currentPlayer.canDash()) {
+                if (currentPlayer.executeDash()) {
+                    // Iniciar dash
+                    isDashing = true;
+                    dashTimer = Player.getDashDuration();
+                    dashStartPos.set(currentPlayer.getX(), currentPlayer.getY());
+                    dashDirection.set(playerInputManager.getDashDirection());
+
+                    // Atualizar UI da stamina
+                    if (playerUI != null) {
+                        float staminaPercent = (float) currentPlayer.getCurrentStamina() / currentPlayer.getMaxStamina() * 100;
+                        playerUI.setStamina(staminaPercent);
+                    }
+
+                    logger.debug("Dash executed by {}", currentPlayer.getUsername());
+                }
+            }
+        });
+
+        playerInputManager.setOnSprintStart(() -> {
+            // Opcional: efeito sonoro ou visual
+            logger.trace("Sprint started");
+        });
+
+        playerInputManager.setOnSprintEnd(() -> {
+            // Opcional: efeito sonoro ou visual
+            logger.trace("Sprint ended");
+        });
+
+        logger.info("PlayerInputManager initialized");
+    }
+
     @Override
     public void show() {
         logger.info("GameWorldRenderer show()");
@@ -413,6 +465,7 @@ public class GameWorldRenderer implements Screen {
 
         createPlayerUI();
         setupCallbacks();
+        setupPlayerInput(); // <-- IMPORTANTE: Inicializar o input manager aqui
 
         if (initialNearbyPlayers != null && !initialNearbyPlayers.isEmpty()) {
             logger.info("Adding {} initial nearby players to world", initialNearbyPlayers.size());
@@ -428,7 +481,6 @@ public class GameWorldRenderer implements Screen {
         initialized = true;
         game.getNetworkClient().requestMapLoad("11111111-1111-1111-1111-111111111111");
 
-        // Se o player já estiver definido, posiciona a camera nele imediatamente
         if (currentPlayer != null) {
             gameCamera.setTarget(currentPlayer.getX(), currentPlayer.getY());
             gameCamera.resetPosition();
@@ -504,6 +556,7 @@ public class GameWorldRenderer implements Screen {
 
         playerUI.addChatMessage("*** Welcome to Sandbox Experiment! ***");
         playerUI.addChatMessage("*** Use WASD to move ***");
+        playerUI.addChatMessage("*** SHIFT to sprint | SPACE to dash ***");
         playerUI.addChatMessage("*** Press ENTER to chat | H to hide chat | C for attributes ***");
         playerUI.addChatMessage("*** Click FRIENDS button to manage friends ***");
 
@@ -511,37 +564,43 @@ public class GameWorldRenderer implements Screen {
             playerUI.addChatMessage("*** ADMIN MODE: Press F12 for Map Editor ***");
         }
 
-        Gdx.input.setInputProcessor(createInputProcessor());
         playerUI.resize(Gdx.graphics.getWidth(), Gdx.graphics.getHeight());
     }
 
     private InputProcessor createInputProcessor() {
+        if (playerInputManager == null) {
+            setupPlayerInput();
+        }
+
+        final PlayerInputManager inputManager = playerInputManager;
+
         return new InputProcessor() {
             @Override
             public boolean keyDown(int keycode) {
+                // Primeiro, passar para o PlayerInputManager
+                if (inputManager != null && inputManager.keyDown(keycode)) {
+                    return true;
+                }
+
                 // IMPORTANTE: Se o chat privado está visível, passar TODAS as teclas para ele
                 if (playerUI != null && playerUI.isPrivateChatVisible()) {
-                    // Garantir que o stage da UI processe as teclas
                     if (playerUI.getStage() != null) {
                         playerUI.getStage().keyDown(keycode);
                     }
 
-                    // Tratar ENTER para enviar mensagem no chat privado
                     if (keycode == Input.Keys.ENTER) {
                         playerUI.sendPrivateChatMessage();
                         return true;
                     }
 
-                    // Tratar ESC para fechar
                     if (keycode == Input.Keys.ESCAPE) {
                         playerUI.closePrivateChat();
                         return true;
                     }
 
-                    return true; // Bloquear todas as teclas quando o chat privado está aberto
+                    return true;
                 }
 
-                // Se a janela de amigos está visível
                 if (playerUI != null && playerUI.isFriendsWindowVisible()) {
                     if (playerUI.getStage() != null) {
                         playerUI.getStage().keyDown(keycode);
@@ -552,7 +611,6 @@ public class GameWorldRenderer implements Screen {
                     return true;
                 }
 
-                // Se a janela de atributos está aberta
                 if (playerUI != null && playerUI.isAttributesVisible()) {
                     if (keycode == Input.Keys.ESCAPE) {
                         playerUI.hideAttributes();
@@ -563,7 +621,6 @@ public class GameWorldRenderer implements Screen {
 
                 boolean chatFocused = playerUI != null && playerUI.isChatFocused();
 
-                // Tecla F - abrir janela de amigos
                 if (keycode == Input.Keys.F && !chatFocused) {
                     if (playerUI != null) {
                         playerUI.toggleFriendsWindow();
@@ -571,7 +628,6 @@ public class GameWorldRenderer implements Screen {
                     return true;
                 }
 
-                // Tecla C - abrir janela de atributos
                 if (keycode == Input.Keys.C && !chatFocused) {
                     if (playerUI != null) {
                         playerUI.toggleAttributes();
@@ -579,7 +635,6 @@ public class GameWorldRenderer implements Screen {
                     return true;
                 }
 
-                // Tecla H - esconder/mostrar chat
                 if (keycode == Input.Keys.H && !chatFocused) {
                     if (playerUI != null) {
                         playerUI.toggleChat();
@@ -587,7 +642,6 @@ public class GameWorldRenderer implements Screen {
                     return true;
                 }
 
-                // Tecla ENTER - chat global
                 if (keycode == Input.Keys.ENTER) {
                     if (playerUI != null) {
                         if (playerUI.isChatFocused()) {
@@ -599,7 +653,6 @@ public class GameWorldRenderer implements Screen {
                     return true;
                 }
 
-                // Tecla ESC
                 if (keycode == Input.Keys.ESCAPE) {
                     if (playerUI != null && playerUI.isChatFocused()) {
                         playerUI.unfocusChat();
@@ -607,7 +660,6 @@ public class GameWorldRenderer implements Screen {
                     }
                 }
 
-                // Se o chat global está focado, passar teclas para o stage
                 if (chatFocused && playerUI != null && playerUI.getStage() != null) {
                     return playerUI.getStage().keyDown(keycode);
                 }
@@ -617,7 +669,10 @@ public class GameWorldRenderer implements Screen {
 
             @Override
             public boolean keyUp(int keycode) {
-                // Se o chat privado está visível, passar para o stage
+                if (inputManager != null && inputManager.keyUp(keycode)) {
+                    return true;
+                }
+
                 if (playerUI != null && playerUI.isPrivateChatVisible()) {
                     if (playerUI.getStage() != null) {
                         return playerUI.getStage().keyUp(keycode);
@@ -634,7 +689,6 @@ public class GameWorldRenderer implements Screen {
 
             @Override
             public boolean keyTyped(char character) {
-                // Se o chat privado está visível, passar para o stage
                 if (playerUI != null && playerUI.isPrivateChatVisible()) {
                     if (playerUI.getStage() != null) {
                         return playerUI.getStage().keyTyped(character);
@@ -651,7 +705,6 @@ public class GameWorldRenderer implements Screen {
 
             @Override
             public boolean touchDown(int screenX, int screenY, int pointer, int button) {
-                // Se o chat privado está visível, passar cliques para o stage
                 if (playerUI != null && playerUI.isPrivateChatVisible()) {
                     if (playerUI.getStage() != null) {
                         return playerUI.getStage().touchDown(screenX, screenY, pointer, button);
@@ -738,15 +791,148 @@ public class GameWorldRenderer implements Screen {
 
             @Override
             public boolean touchCancelled(int screenX, int screenY, int pointer, int button) {
-                if (playerUI != null && playerUI.isPrivateChatVisible()) {
-                    if (playerUI.getStage() != null) {
-                        return playerUI.getStage().touchCancelled(screenX, screenY, pointer, button);
-                    }
-                    return true;
-                }
                 return false;
             }
         };
+    }
+
+    // ==================== MÉTODOS DE MOVIMENTO ====================
+
+    private void handleInput(float delta) {
+        // Verificar se UI está bloqueando input
+        if (playerUI != null && (playerUI.isChatFocused() ||
+                playerUI.isFriendsWindowVisible() ||
+                playerUI.isAttributesVisible() ||
+                playerUI.isPrivateChatVisible())) {
+            if (playerInputManager != null) {
+                playerInputManager.setInputBlocked(true);
+            }
+            return;
+        }
+
+        if (playerInputManager != null) {
+            playerInputManager.setInputBlocked(false);
+            playerInputManager.update(delta);
+        }
+
+        if (currentPlayer == null) return;
+
+        // Regeneração
+        currentPlayer.updateRegeneration(delta);
+        if (playerUI != null) {
+            playerUI.setStamina(currentPlayer.getStaminaPercentage() * 100);
+            playerUI.setHealth(currentPlayer.getHpPercentage() * 100);
+            playerUI.setMana(currentPlayer.getManaPercentage() * 100);
+        }
+
+        // Dash
+        if (isDashing) {
+            handleDash(delta);
+            return;
+        }
+
+        // Verificar se o jogador acabou de executar um dash
+        if (playerInputManager.isDashJustExecuted()) {
+            if (!isDashing && currentPlayer.getDashTimer() > 0) {
+                isDashing = true;
+                dashTimer = currentPlayer.getDashTimer();
+                dashStartPos.set(currentPlayer.getX(), currentPlayer.getY());
+                dashDirection.set(playerInputManager.getDashDirection());
+            }
+            return;
+        }
+
+        // Movimento normal
+        Vector2 dir = playerInputManager.getMovementDirection();
+        boolean sprinting = playerInputManager.isSprinting();
+
+        // ==================== CALCULAR SPEED MULTIPLIER ====================
+        float playerSpeedMultiplier = 1.0f;
+
+        if (dir.x != 0 || dir.y != 0) {
+            float baseSpeed = Player.getBaseSpeed();
+            float terrainSpeed = getCurrentTerrainSpeed();
+
+            if (sprinting && currentPlayer.getCurrentStamina() > 0) {
+                playerSpeedMultiplier = Player.getSprintMultiplier();
+                if (!currentPlayer.consumeStaminaForSprint(delta)) {
+                    sprinting = false;
+                    playerSpeedMultiplier = 1.0f;
+                }
+                if (playerUI != null) {
+                    playerUI.setStamina(currentPlayer.getStaminaPercentage() * 100);
+                }
+            }
+
+            float speed = baseSpeed * terrainSpeed * playerSpeedMultiplier * delta;
+            String newDirection = getDirectionFromVector(dir);
+
+            float newX = currentPlayer.getX() + dir.x * speed;
+            float newY = currentPlayer.getY() + dir.y * speed;
+
+            if (!isColliding(newX, currentPlayer.getY())) {
+                currentPlayer.setX(newX);
+            }
+            if (!isColliding(currentPlayer.getX(), newY)) {
+                currentPlayer.setY(newY);
+            }
+
+            currentPlayer.setDirection(newDirection);
+
+            // Rate limiting para movimento
+            long now = System.currentTimeMillis();
+            if (now - lastMovementSendTime >= MOVEMENT_SEND_INTERVAL_MS) {
+                game.getNetworkClient().sendMovement(
+                        currentPlayer.getId(),
+                        currentPlayer.getX(),
+                        currentPlayer.getY(),
+                        currentPlayer.getDirection()
+                );
+                lastMovementSendTime = now;
+            }
+        }
+
+        // ==================== ATUALIZAR UI COM O MULTIPLICADOR ====================
+        if (playerUI != null) {
+            // Atualizar o speed multiplier na UI ANTES do update
+            playerUI.setSpeedMultiplier(playerSpeedMultiplier);
+            playerUI.update(currentPlayer, getCurrentTerrainSpeed());
+        }
+    }
+
+    private void handleDash(float delta) {
+        dashTimer -= delta;
+        currentPlayer.setDashTimer(dashTimer);
+
+        if (dashTimer <= 0) {
+            isDashing = false;
+            currentPlayer.setDashing(false);
+            currentPlayer.setDashTimer(0);
+            return;
+        }
+
+        float progress = 1.0f - (dashTimer / Player.getDashDuration());
+        float dashDistance = Player.getDashDistance();
+
+        float newX = dashStartPos.x + dashDirection.x * dashDistance * progress;
+        float newY = dashStartPos.y + dashDirection.y * dashDistance * progress;
+
+        if (!isColliding(newX, newY)) {
+            currentPlayer.setX(newX);
+            currentPlayer.setY(newY);
+        } else {
+            // Parar o dash se colidir
+            isDashing = false;
+            currentPlayer.setDashing(false);
+            currentPlayer.setDashTimer(0);
+        }
+    }
+
+    private String getDirectionFromVector(Vector2 dir) {
+        if (Math.abs(dir.x) > Math.abs(dir.y)) {
+            return dir.x > 0 ? "RIGHT" : "LEFT";
+        }
+        return dir.y > 0 ? "UP" : "DOWN";
     }
 
     private void renderChunks() {
@@ -832,7 +1018,6 @@ public class GameWorldRenderer implements Screen {
 
                 if (chunk != null) {
                     WorldTile tile = chunk.getTile(localX, localY);
-                    // Não pode andar se: tile é vazio OU tile é sólido
                     if (tile == null || tile.isEmpty() || tile.isSolid()) {
                         return true;
                     }
@@ -957,80 +1142,6 @@ public class GameWorldRenderer implements Screen {
         }
     }
 
-    private void handleInput(float delta) {
-        // IMPORTANTE: Verificar TODAS as condições que devem bloquear o movimento
-        if (playerUI != null) {
-            // Bloquear movimento se:
-            // - Chat global está focado
-            // - Janela de amigos está visível
-            // - Janela de atributos está visível
-            // - Chat privado está visível
-            if (playerUI.isChatFocused() ||
-                    playerUI.isFriendsWindowVisible() ||
-                    playerUI.isAttributesVisible() ||
-                    playerUI.isPrivateChatVisible()) {
-                return;
-            }
-        }
-        if (currentPlayer == null) return;
-
-        float baseSpeed = 400f;
-        float terrainSpeed = getCurrentTerrainSpeed();
-        float speed = baseSpeed * terrainSpeed * delta;
-
-        if (speed <= 0.01f) speed = baseSpeed * delta;
-
-        float moveX = 0, moveY = 0;
-        String newDirection = currentPlayer.getDirection();
-
-        if (Gdx.input.isKeyPressed(Input.Keys.W)) { moveY += 1; newDirection = "UP"; }
-        if (Gdx.input.isKeyPressed(Input.Keys.S)) { moveY -= 1; newDirection = "DOWN"; }
-        if (Gdx.input.isKeyPressed(Input.Keys.A)) { moveX -= 1; newDirection = "LEFT"; }
-        if (Gdx.input.isKeyPressed(Input.Keys.D)) { moveX += 1; newDirection = "RIGHT"; }
-
-        if (moveX != 0 || moveY != 0) {
-            float length = (float) Math.sqrt(moveX * moveX + moveY * moveY);
-            if (length > 0) {
-                moveX = moveX / length;
-                moveY = moveY / length;
-            }
-
-            float newX = currentPlayer.getX() + moveX * speed;
-            float newY = currentPlayer.getY() + moveY * speed;
-
-            if (!isColliding(newX, currentPlayer.getY())) {
-                currentPlayer.setX(newX);
-            }
-            if (!isColliding(currentPlayer.getX(), newY)) {
-                currentPlayer.setY(newY);
-            }
-
-            if (!newDirection.equals(currentPlayer.getDirection())) {
-                currentPlayer.setDirection(newDirection);
-            }
-
-            game.getNetworkClient().sendMovement(
-                    currentPlayer.getId(),
-                    currentPlayer.getX(),
-                    currentPlayer.getY(),
-                    currentPlayer.getDirection()
-            );
-        }
-
-        if (playerUI != null && currentPlayer != null) {
-            playerUI.update(currentPlayer, terrainSpeed);
-
-            float healthPercent = (float) currentPlayer.getCurrentHp() / currentPlayer.getMaxHp() * 100;
-            float manaPercent = (float) currentPlayer.getCurrentMana() / currentPlayer.getMaxMana() * 100;
-            float staminaPercent = (float) currentPlayer.getCurrentStamina() / currentPlayer.getMaxStamina() * 100;
-
-            playerUI.setHealth(healthPercent);
-            playerUI.setMana(manaPercent);
-            playerUI.setStamina(staminaPercent);
-            playerUI.setGold(currentPlayer.getGold());
-        }
-    }
-
     @Override
     public void render(float delta) {
         if (!initialized) return;
@@ -1045,7 +1156,6 @@ public class GameWorldRenderer implements Screen {
 
         handleInput(delta);
 
-        // Atualiza a camera para seguir o jogador com suavidade
         if (currentPlayer != null) {
             gameCamera.setTarget(currentPlayer.getX(), currentPlayer.getY());
             gameCamera.update(delta);
@@ -1058,6 +1168,11 @@ public class GameWorldRenderer implements Screen {
         batch.begin();
         renderFloatingNames();
         batch.end();
+
+        // Configurar o input processor da UI
+        if (playerUI != null && Gdx.input.getInputProcessor() != playerUI.getStage()) {
+            Gdx.input.setInputProcessor(createInputProcessor());
+        }
 
         if (playerUI != null) {
             playerUI.render(batch);
