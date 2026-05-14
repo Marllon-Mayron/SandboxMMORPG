@@ -12,13 +12,18 @@ import com.badlogic.gdx.graphics.g2d.TextureRegion;
 import com.badlogic.gdx.graphics.g2d.freetype.FreeTypeFontGenerator;
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
 import com.badlogic.gdx.math.Vector2;
+import com.badlogic.gdx.math.Vector3;
 import com.common.sandbox.model.*;
 import com.common.sandbox.network.packets.*;
+import com.common.sandbox.network.packets.AttackInfo;
 import com.common.sandbox.network.packets.InventoryUpdatePacket;
 import com.sandbox.client.editor.MapEditorScreen;
 import com.sandbox.client.input.PlayerInputManager;
+import com.sandbox.client.renderer.AttackHitboxRenderer;
 import com.sandbox.client.renderer.CombatEffectsRenderer;
 import com.sandbox.client.renderer.ItemRenderer;
+import com.sandbox.client.renderer.effects.AttackEffectManager;
+import com.sandbox.client.renderer.effects.ProjectileRenderer;
 import com.sandbox.client.ui.PlayerUI;
 import com.sandbox.client.camera.GameCamera;
 import org.slf4j.Logger;
@@ -84,7 +89,9 @@ public class GameWorldRenderer implements Screen {
 
     // ==================== SISTEMA DE COMBATE ====================
     private long lastAttackTime = 0;
-    private static final long ATTACK_COOLDOWN_MS = 2000; // 2 segundos
+    private AttackHitboxRenderer attackHitboxRenderer;
+    private AttackEffectManager attackEffectManager;
+    private ProjectileRenderer projectileRenderer;
 
     public GameWorldRenderer(SandboxClient game, boolean adminMode, Map<String, Player> nearbyPlayers) {
         this.game = game;
@@ -133,7 +140,9 @@ public class GameWorldRenderer implements Screen {
         loadItemSpritesheet();
 
         itemRenderer = new ItemRenderer();
-
+        attackHitboxRenderer = new AttackHitboxRenderer();
+        attackEffectManager = new AttackEffectManager();
+        projectileRenderer = new ProjectileRenderer();
 
         if (initialNearbyPlayers != null && !initialNearbyPlayers.isEmpty()) {
             logger.info("Adding {} initial nearby players to world", initialNearbyPlayers.size());
@@ -261,6 +270,7 @@ public class GameWorldRenderer implements Screen {
         // Sistema de Combate
         game.getNetworkClient().setAttackBroadcastCallback(this::onAttackBroadcast);
         game.getNetworkClient().setDamagePacketCallback(this::onDamagePacket);
+        game.getNetworkClient().setProjectileStateCallback(this::onProjectileState);
 
         logger.info("Callbacks configured");
     }
@@ -269,26 +279,58 @@ public class GameWorldRenderer implements Screen {
 
     public void onAttackBroadcast(AttackBroadcast broadcast) {
         Gdx.app.postRunnable(() -> {
-            // Mostrar dano no chat se for o alvo
-            if (currentPlayer != null && broadcast.getResult() != null &&
-                    broadcast.getResult().getTargetId() != null &&
-                    broadcast.getResult().getTargetId().equals(currentPlayer.getId())) {
-                String critMsg = broadcast.getResult().isWasCritical() ? " (CRITICAL!)" : "";
-                if (playerUI != null) {
-                    playerUI.addChatMessage("⚔️ You took " + broadcast.getResult().getDamage() + " damage from " +
-                            broadcast.getAttackerName() + critMsg);
-                    // Atualizar barra de vida
-                    playerUI.setHealth(currentPlayer.getHpPercentage() * 100);
+            // Mostrar hitbox do ataque
+            if (attackEffectManager != null) {
+                attackEffectManager.addAttackEffect(broadcast);
+            }
+
+            if (attackHitboxRenderer != null && broadcast != null && broadcast.attackDef != null) {
+                float targetX = broadcast.targetX;
+                float targetY = broadcast.targetY;
+
+                // Se não veio target, calcular baseado na direção do primeiro resultado
+                if (targetX == 0 && targetY == 0 && broadcast.results != null && !broadcast.results.isEmpty()) {
+                    AttackResult firstResult = broadcast.results.get(0);
+                    float angle = (float) Math.atan2(firstResult.getKnockbackY(), firstResult.getKnockbackX());
+                    targetX = broadcast.attackerX + (float) Math.cos(angle) * 50;
+                    targetY = broadcast.attackerY + (float) Math.sin(angle) * 50;
                 }
+
+                attackHitboxRenderer.showHitbox(
+                        broadcast.attackDef,
+                        broadcast.attackerX,
+                        broadcast.attackerY,
+                        targetX,
+                        targetY
+                );
             }
 
             // Feedback se for o atacante
-            if (currentPlayer != null && broadcast.getAttackerId() != null &&
-                    broadcast.getAttackerId().equals(currentPlayer.getId())) {
-                if (playerUI != null && broadcast.getResult() != null && broadcast.getResult().isSuccess()) {
-                    String critMsg = broadcast.getResult().isWasCritical() ? " (CRITICAL!)" : "";
-                    playerUI.addChatMessage("⚔️ You dealt " + broadcast.getResult().getDamage() + " damage to " +
-                            broadcast.getResult().getTargetName() + critMsg);
+            if (currentPlayer != null && broadcast != null &&
+                    broadcast.attackerId != null &&
+                    broadcast.attackerId.equals(currentPlayer.getId())) {
+
+                if (playerUI != null && broadcast.results != null && !broadcast.results.isEmpty()) {
+                    AttackResult result = broadcast.results.get(0);
+                    if (result.isSuccess()) {
+                        String critMsg = result.isWasCritical() ? " (CRITICAL!)" : "";
+                        playerUI.addChatMessage("⚔️ You dealt " + result.getDamage() +
+                                " damage to " + result.getTargetName() + critMsg);
+                    }
+                }
+            }
+
+            // Feedback se for o alvo (procurar em todos os resultados)
+            if (currentPlayer != null && broadcast != null && broadcast.results != null) {
+                for (AttackResult result : broadcast.results) {
+                    if (result.getTargetId() != null && result.getTargetId().equals(currentPlayer.getId())) {
+                        if (playerUI != null) {
+                            playerUI.addChatMessage("❤️ You took " + result.getDamage() +
+                                    " damage from " + broadcast.attackerName);
+                            playerUI.setHealth(currentPlayer.getHpPercentage() * 100);
+                        }
+                        break;
+                    }
                 }
             }
         });
@@ -345,12 +387,16 @@ public class GameWorldRenderer implements Screen {
                     currentPlayer.setGold(packet.gold);
                     currentPlayer.setExperience(packet.experience);
 
+                    if (packet.currentAttackCooldown > 0) {
+                        currentPlayer.setCurrentAttackCooldown(packet.currentAttackCooldown);
+                    }
                     if (playerUI != null) {
                         playerUI.setHealth(currentPlayer.getCurrentHp(), currentPlayer.getMaxHp());
                         playerUI.setMana(currentPlayer.getCurrentMana(), currentPlayer.getMaxMana());
                         playerUI.setStamina(currentPlayer.getCurrentStamina(), currentPlayer.getMaxStamina());
                         playerUI.setGold(currentPlayer.getGold());
                     }
+
                     logger.info("Updated SELF: HP={}/{}", currentPlayer.getCurrentHp(), currentPlayer.getMaxHp());
                 }
             } else {
@@ -579,6 +625,14 @@ public class GameWorldRenderer implements Screen {
         });
     }
 
+    public void onProjectileState(ProjectileStatePacket packet) {
+        Gdx.app.postRunnable(() -> {
+            if (projectileRenderer != null) {
+                projectileRenderer.onProjectileState(packet);
+            }
+        });
+    }
+
     private String getFriendActionMessage(FriendRequestPacket packet) {
         switch (packet.action) {
             case "SENT": return "*** Friend request sent to " + packet.targetUsername + " ***";
@@ -742,48 +796,205 @@ public class GameWorldRenderer implements Screen {
     }
 
     // ==================== SISTEMA DE COMBATE ====================
+    private float getRemainingCooldown() {
+        if (currentPlayer == null) return 0;
+        long now = System.currentTimeMillis();
+        long elapsed = now - currentPlayer.getLastAttackTime();
+        float cooldownSecs = currentPlayer.getCurrentAttackCooldown();
+        long cooldownMillis = (long)(cooldownSecs * 1000);
+        float remaining = (cooldownMillis - elapsed) / 1000f;
+        return Math.max(0, remaining);
+    }
+
     private void performAttack() {
         if (currentPlayer == null) return;
 
-        long now = System.currentTimeMillis();
-        if (now - lastAttackTime < ATTACK_COOLDOWN_MS) {
-            if (playerUI != null) {
-                long remaining = (ATTACK_COOLDOWN_MS - (now - lastAttackTime)) / 1000;
-                playerUI.addChatMessage("⚠️ Attack on cooldown! (" + remaining + "s)");
+        // Verificar cooldown (agora usa o valor recebido do servidor)
+        if (!currentPlayer.canAttack()) {
+            float remainingSeconds = getRemainingCooldown();
+            if (playerUI != null && remainingSeconds > 0) {
+                playerUI.addChatMessage(String.format("⚔️ Arma recarregando... %.1fs", remainingSeconds));
             }
             return;
         }
 
-        // Verificar se tem arma equipada
+        // Verificar se clicou no chat
+        if (playerUI != null && playerUI.isPointOverChat(Gdx.input.getX(), Gdx.input.getY())) {
+            return;
+        }
+
+        // Obter posição do mouse no mundo
+        Vector3 mousePos3D = new Vector3(Gdx.input.getX(), Gdx.input.getY(), 0);
+        gameCamera.getCamera().unproject(mousePos3D);
+        float mouseWorldX = mousePos3D.x;
+        float mouseWorldY = mousePos3D.y;
+
+        // Obter arma equipada
         String weaponId = currentPlayer.getInventory().getEquipped().get("weapon");
-        AttackType attackType = AttackType.MELEE_SWORD;
+        AttackDefinition attackDef;
 
         if (weaponId != null && !weaponId.isEmpty()) {
-            if (weaponId.contains("dagger")) {
-                attackType = AttackType.MELEE_DAGGER;
-            } else if (weaponId.contains("axe")) {
-                attackType = AttackType.MELEE_AXE;
-            } else if (weaponId.contains("bow")) {
-                attackType = AttackType.RANGED_BOW;
+            // Buscar definição da arma equipada no cache local
+            ItemDefinition weaponDef = getItemDefinition(weaponId);
+            if (weaponDef != null) {
+                // Criar AttackDefinition baseado nas propriedades da arma
+                attackDef = createAttackDefinitionFromWeapon(weaponDef);
+            } else {
+                attackDef = AttackDefinition.createMeleeSword();
             }
+        } else {
+            // Sem arma - ataque padrão (soco)
+            attackDef = AttackDefinition.createMeleeSword();
+            attackDef.setName("Soco");
+            attackDef.setDamageMultiplier(0.5f);
         }
 
-        lastAttackTime = now;
+        // Mostrar hitbox localmente (apenas para feedback visual)
+        if (attackHitboxRenderer != null) {
+            attackHitboxRenderer.showHitbox(attackDef,
+                    currentPlayer.getX(), currentPlayer.getY(),
+                    mouseWorldX, mouseWorldY);
+        }
 
-        // Enviar para o servidor
-        AttackRequest request = new AttackRequest(
+        // Enviar para o servidor (o servidor vai aplicar o cooldown real)
+        AttackInfo attackInfo = new AttackInfo(
                 currentPlayer.getId(),
+                currentPlayer.getUsername(),
                 currentPlayer.getX(),
                 currentPlayer.getY(),
-                attackType
+                attackDef.getId(),
+                mouseWorldX,
+                mouseWorldY
         );
-        game.getNetworkClient().sendPacket(request);
+        game.getNetworkClient().sendPacket(attackInfo);
 
-        logger.info("⚔️ Attack performed by {} with {}", currentPlayer.getUsername(), attackType.getName());
+        // Aplicar cooldown LOCALMENTE para feedback imediato
+        // O servidor vai confirmar/sincronizar depois via PlayerStatePacket
+        currentPlayer.setLastAttackTime(System.currentTimeMillis());
 
         if (playerUI != null) {
-            playerUI.addChatMessage("⚔️ You attacked with " + attackType.getName() + "!");
+            playerUI.addChatMessage("⚔️ " + attackDef.getName() + "!");
         }
+    }
+
+    // Método auxiliar para criar AttackDefinition a partir do ItemDefinition
+    private AttackDefinition createAttackDefinitionFromWeapon(ItemDefinition weaponDef) {
+        AttackDefinition def = new AttackDefinition();
+
+        def.setId(weaponDef.getAttackId());
+        def.setName(weaponDef.getName());
+        def.setAttackAnimation(weaponDef.getAttackAnimation());
+        def.setRanged(weaponDef.isRanged());
+
+        if (weaponDef.isRanged()) {
+            // Ataque à distância
+            def.setHitboxType(AttackHitboxType.CIRCLE);
+            def.setRange(weaponDef.getProjectileRange());
+            def.setRadius(24f);
+            def.setDamageMultiplier(1.0f);
+            def.setCooldownSeconds(1.0f / weaponDef.getAttackSpeed());
+            def.setStaminaCost(10f);
+            def.setMaxTargets(1);
+            def.setKnockbackPower(15f);
+            def.setProjectileId(weaponDef.getProjectileId());
+            def.setProjectileSpeed(weaponDef.getProjectileSpeed());
+        } else {
+            // Ataque corpo a corpo
+            def.setHitboxType(AttackHitboxType.RECTANGLE);
+            def.setRange(64f);
+            def.setWidth(48f);
+            def.setHeight(32f);
+            def.setDamageMultiplier(weaponDef.getDamage() / 10.0f);
+            def.setCooldownSeconds(1.0f / weaponDef.getAttackSpeed());
+            def.setStaminaCost(5f);
+            def.setMaxTargets(3);
+            def.setKnockbackPower(30f);
+        }
+
+        return def;
+    }
+
+    // Cache de definições de itens (para não buscar toda hora)
+    private final Map<String, ItemDefinition> itemDefinitionCache = new HashMap<>();
+
+    private ItemDefinition getItemDefinition(String itemId) {
+        // Em produção, isso viria do servidor ou de um cache local
+        // Por enquanto, retorna definições básicas para teste
+        if (itemDefinitionCache.containsKey(itemId)) {
+            return itemDefinitionCache.get(itemId);
+        }
+
+        // Simular busca - na prática, você teria um ItemManager no cliente
+        ItemDefinition def = new ItemDefinition();
+        switch (itemId) {
+            case "simple_bow":
+                def.setName("Arco Simples");
+                def.setAttackId("ranged_bow");
+                def.setAttackAnimation("bow_shoot");
+                def.setRanged(true);
+                def.setProjectileId("arrow");
+                def.setProjectileSpeed(600f);
+                def.setProjectileRange(400f);
+                def.setAttackSpeed(0.8f);
+                def.setDamage(8);
+                break;
+            case "long_bow":
+                def.setName("Arco Longo");
+                def.setAttackId("ranged_bow");
+                def.setAttackAnimation("bow_shoot");
+                def.setRanged(true);
+                def.setProjectileId("arrow");
+                def.setProjectileSpeed(900f);
+                def.setProjectileRange(550f);
+                def.setAttackSpeed(0.6f);
+                def.setDamage(15);
+                break;
+            case "quick_bow":
+                def.setName("Arco Rápido");
+                def.setAttackId("ranged_bow");
+                def.setAttackAnimation("bow_shoot");
+                def.setRanged(true);
+                def.setProjectileId("arrow");
+                def.setProjectileSpeed(450f);
+                def.setProjectileRange(300f);
+                def.setAttackSpeed(1.3f);
+                def.setDamage(6);
+                break;
+            case "dagger":
+                def.setName("Adaga");
+                def.setAttackId("melee_dagger");
+                def.setAttackAnimation("dagger_stab");
+                def.setRanged(false);
+                def.setAttackSpeed(1.5f);
+                def.setDamage(6);
+                break;
+            case "simple_axe":
+                def.setName("Machado Simples");
+                def.setAttackId("melee_axe");
+                def.setAttackAnimation("sword_slash");
+                def.setRanged(false);
+                def.setAttackSpeed(0.7f);
+                def.setDamage(14);
+                break;
+            case "iron_sword":
+                def.setName("Espada de Ferro");
+                def.setAttackId("melee_sword");
+                def.setAttackAnimation("sword_slash");
+                def.setRanged(false);
+                def.setAttackSpeed(0.8f);
+                def.setDamage(18);
+                break;
+            default:
+                def.setName("Espada Simples");
+                def.setAttackId("melee_sword");
+                def.setAttackAnimation("sword_slash");
+                def.setRanged(false);
+                def.setAttackSpeed(1.0f);
+                def.setDamage(10);
+        }
+
+        itemDefinitionCache.put(itemId, def);
+        return def;
     }
 
     // ==================== MÉTODOS DE MOVIMENTO ====================
@@ -1064,12 +1275,9 @@ public class GameWorldRenderer implements Screen {
     }
 
     private void renderHealthBars() {
-        if (otherPlayers.isEmpty()) {
-            return;
-        }
+        if (otherPlayers.isEmpty()) return;
 
-        // Configurar a projecao da camera
-        shapeRenderer.setProjectionMatrix(gameCamera.getCamera().combined);
+        // NÃO chamar shapeRenderer.begin() aqui - ela já está aberta no método render()
 
         for (Player player : otherPlayers.values()) {
             if (player == null) continue;
@@ -1106,9 +1314,6 @@ public class GameWorldRenderer implements Screen {
             int maxHp = player.getMaxHp();
             float healthPercent = (maxHp > 0) ? (float) currentHp / maxHp : 0f;
 
-            // Desenhar a barra - INICIAR O SHAPE RENDERER
-            shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
-
             // Fundo (cinza escuro)
             shapeRenderer.setColor(0.2f, 0.2f, 0.2f, 0.8f);
             shapeRenderer.rect(barX, barY, barWidth, barHeight);
@@ -1117,32 +1322,13 @@ public class GameWorldRenderer implements Screen {
             float fillWidth = barWidth * healthPercent;
             if (fillWidth > 0) {
                 if (healthPercent > 0.6f) {
-                    shapeRenderer.setColor(0.2f, 0.8f, 0.2f, 0.9f); // Verde
+                    shapeRenderer.setColor(0.2f, 0.8f, 0.2f, 0.9f);
                 } else if (healthPercent > 0.3f) {
-                    shapeRenderer.setColor(0.9f, 0.7f, 0.2f, 0.9f); // Amarelo
+                    shapeRenderer.setColor(0.9f, 0.7f, 0.2f, 0.9f);
                 } else {
-                    shapeRenderer.setColor(0.9f, 0.2f, 0.2f, 0.9f); // Vermelho
+                    shapeRenderer.setColor(0.9f, 0.2f, 0.2f, 0.9f);
                 }
-                shapeRenderer.rect(barX + 1, barY + 1, fillWidth - 2, barHeight - 2);
-            }
-
-            shapeRenderer.end();
-
-            // Desenhar a borda (em LINHA, separado)
-            shapeRenderer.begin(ShapeRenderer.ShapeType.Line);
-            shapeRenderer.setColor(1f, 1f, 1f, 0.9f);
-            shapeRenderer.rect(barX, barY, barWidth, barHeight);
-            shapeRenderer.end();
-
-            // Desenhar texto de vida (opcional)
-            if (font != null) {
-                batch.begin();
-                String hpText = currentHp + "/" + maxHp;
-                float textX = renderX - (hpText.length() * 4);
-                float textY = renderY + PLAYER_SIZE / 2 + 22;
-                font.setColor(1f, 1f, 1f, 0.8f);
-                font.draw(batch, hpText, textX, textY);
-                batch.end();
+                shapeRenderer.rect(barX + 1, barY + 1, Math.max(0, fillWidth - 2), barHeight - 2);
             }
         }
     }
@@ -1244,24 +1430,39 @@ public class GameWorldRenderer implements Screen {
     private void renderAttackCooldown() {
         if (currentPlayer == null) return;
 
-        long now = System.currentTimeMillis();
-        long elapsed = now - lastAttackTime;
-        if (elapsed < ATTACK_COOLDOWN_MS) {
-            float percent = 1.0f - (float) elapsed / ATTACK_COOLDOWN_MS;
+        // Verificar se está em cooldown
+        if (!currentPlayer.canAttack()) {
+            long now = System.currentTimeMillis();
+            long elapsed = now - currentPlayer.getLastAttackTime();
+            float cooldownSecs = currentPlayer.getCurrentAttackCooldown();
+            long cooldownMillis = (long)(cooldownSecs * 1000);
+            float percent = 1.0f - (float) elapsed / cooldownMillis;
 
-            // Posição fixa no canto superior direito da TELA (não do mundo)
-            float x = Gdx.graphics.getWidth() - 60;
-            float y = Gdx.graphics.getHeight() - 60;
+            if (percent > 0 && percent < 1.0f) {
+                // Posição fixa no canto superior direito da TELA
+                float x = Gdx.graphics.getWidth() - 80;
+                float y = Gdx.graphics.getHeight() - 80;
 
-            // Usar UI camera para coordenadas de tela
-            OrthographicCamera uiCam = new OrthographicCamera(Gdx.graphics.getWidth(), Gdx.graphics.getHeight());
-            uiCam.setToOrtho(false);
-            shapeRenderer.setProjectionMatrix(uiCam.combined);
+                OrthographicCamera uiCam = new OrthographicCamera(Gdx.graphics.getWidth(), Gdx.graphics.getHeight());
+                uiCam.setToOrtho(false);
+                shapeRenderer.setProjectionMatrix(uiCam.combined);
 
-            shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
-            shapeRenderer.setColor(0.8f, 0.2f, 0.2f, 0.8f);
-            shapeRenderer.rect(x, y, 40, 40 * percent);
-            shapeRenderer.end();
+                shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
+                // Fundo escuro
+                shapeRenderer.setColor(0.2f, 0.2f, 0.2f, 0.8f);
+                shapeRenderer.rect(x, y, 60, 60);
+                // Círculo de cooldown
+                shapeRenderer.setColor(0.8f, 0.2f, 0.2f, 0.8f);
+                shapeRenderer.rect(x, y, 60, 60 * percent);
+                shapeRenderer.end();
+
+                // Texto do tempo restante
+                float remaining = (cooldownMillis - elapsed) / 1000f;
+                font.setColor(Color.WHITE);
+                batch.begin();
+                font.draw(batch, String.format("%.1f", remaining), x + 20, y + 35);
+                batch.end();
+            }
         }
     }
 
@@ -1498,6 +1699,16 @@ public class GameWorldRenderer implements Screen {
                         return true;
                     }
                 }
+                if (keycode == Input.Keys.F3) {
+                    if (attackHitboxRenderer != null) {
+                        attackHitboxRenderer.setDebugMode(!attackHitboxRenderer.isDebugMode());
+                        if (playerUI != null) {
+                            playerUI.addChatMessage("🔍 Hitbox Debug: " +
+                                    (attackHitboxRenderer.isDebugMode() ? "ON ✓" : "OFF ✗"));
+                        }
+                    }
+                    return true;
+                }
 
                 if (chatFocused && playerUI != null && playerUI.getStage() != null) {
                     return playerUI.getStage().keyDown(keycode);
@@ -1703,12 +1914,24 @@ public class GameWorldRenderer implements Screen {
         handleInput(delta);
         checkItemPickup();
 
+        if (attackHitboxRenderer != null) {
+            attackHitboxRenderer.update(delta);
+        }
+
+        if (attackEffectManager != null) {
+            attackEffectManager.update(delta);
+        }
+
+        if (projectileRenderer != null) {
+            projectileRenderer.update(delta);
+        }
+
         if (currentPlayer != null) {
             gameCamera.setTarget(currentPlayer.getX(), currentPlayer.getY());
             gameCamera.update(delta);
         }
 
-        // ==================== RENDERIZAÇÃO COM BATCH (TEXTURAS E TEXTOS) ====================
+        // ==================== RENDERIZAÇÃO COM BATCH (TEXTURAS) ====================
         batch.setProjectionMatrix(gameCamera.getCamera().combined);
         batch.begin();
 
@@ -1718,21 +1941,25 @@ public class GameWorldRenderer implements Screen {
             itemRenderer.render(batch, gameCamera);
         }
 
-        renderFloatingNames(); // Nomes dos jogadores
+        renderFloatingNames();
+
+        if (attackHitboxRenderer != null) {
+            attackHitboxRenderer.renderInfo(font, batch, gameCamera);
+        }
 
         batch.end();
         // ==================== FIM DO BATCH ====================
 
         // ==================== RENDERIZAÇÃO COM SHAPERENDERER ====================
+        // TODOS OS SHAPES DEVEM ESTAR DENTRO DE UM ÚNICO begin/end
 
-        // Barras de vida (ShapeRenderer.Filled)
-        renderHealthBars();
-
-        // Players (os quadrados)
         shapeRenderer.setProjectionMatrix(gameCamera.getCamera().combined);
         shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
 
-        // Desenhar outros players
+        // Desenhar barras de vida dos players
+        renderHealthBars();
+
+        // Desenhar players (quadrados)
         for (Player player : otherPlayers.values()) {
             float renderX = player.getX();
             float renderY = player.getY();
@@ -1745,16 +1972,19 @@ public class GameWorldRenderer implements Screen {
                 float alpha = Math.min(1.0f, elapsed / 50.0f);
                 renderX = interpolated.getX() + (player.getX() - interpolated.getX()) * alpha;
                 renderY = interpolated.getY() + (player.getY() - interpolated.getY()) * alpha;
+
+                if (alpha >= 0.99f) {
+                    interpolatedPlayers.remove(player.getId());
+                    lastUpdateTime.remove(player.getId());
+                }
             }
 
             float px = renderX - PLAYER_SIZE/2;
             float py = renderY - PLAYER_SIZE/2;
 
-            // Sombra
             shapeRenderer.setColor(0, 0, 0, 0.5f);
             shapeRenderer.rect(px - 2, py - 2, PLAYER_SIZE + 4, PLAYER_SIZE + 4);
 
-            // Corpo (vermelho se estiver atacando)
             if (player.isAttacking()) {
                 shapeRenderer.setColor(0.9f, 0.3f, 0.2f, 1);
             } else {
@@ -1779,6 +2009,35 @@ public class GameWorldRenderer implements Screen {
             shapeRenderer.rect(px, py, PLAYER_SIZE, PLAYER_SIZE);
         }
 
+        // Desenhar hitbox (AINDA DENTRO DO shapeRenderer.begin)
+        renderAttackHitbox();
+
+        shapeRenderer.end();  // FIM do primeiro shapeRenderer (Filled)
+
+        // ==================== SEGUNDO SHAPERENDERER PARA LINHAS/EFEITOS ====================
+        shapeRenderer.begin(ShapeRenderer.ShapeType.Line);
+
+        // Desenhar bordas das barras de vida (linhas)
+        renderHealthBars();
+
+        // Desenhar efeitos de ataque (flechas, espadas, etc.) - AGORA COMO LINE
+        if (attackEffectManager != null) {
+            attackEffectManager.renderLines(shapeRenderer);
+        }
+
+        if (projectileRenderer != null) {
+            projectileRenderer.renderFilled(shapeRenderer);
+        }
+        shapeRenderer.end();
+
+        // ==================== TERCEIRO SHAPERENDERER PARA PREENCHIMENTO DOS EFETIOS ====================
+        // Efeitos que precisam de filled (círculos, etc.)
+        shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
+
+        if (attackEffectManager != null) {
+            attackEffectManager.renderFilled(shapeRenderer);
+        }
+
         shapeRenderer.end();
 
         // ==================== COOLDOWN DE ATAQUE ====================
@@ -1795,6 +2054,12 @@ public class GameWorldRenderer implements Screen {
 
         if (itemRenderer != null) {
             itemRenderer.update(delta);
+        }
+    }
+
+    private void renderAttackHitbox() {
+        if (attackHitboxRenderer != null && attackHitboxRenderer.isActive()) {
+            attackHitboxRenderer.render(shapeRenderer);
         }
     }
 

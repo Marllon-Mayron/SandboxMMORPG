@@ -17,6 +17,9 @@ public class AttackResult implements Serializable {
     private float knockbackX;
     private float knockbackY;
 
+    private float targetX;
+    private float targetY;
+
     public AttackResult() {}
 
     public AttackResult(boolean success, int damage, boolean wasCritical, boolean targetDied,
@@ -33,9 +36,22 @@ public class AttackResult implements Serializable {
         this.attackTypeId = attackType != null ? attackType.getId() : 1;
         this.knockbackX = knockbackX;
         this.knockbackY = knockbackY;
+        this.targetX = 0;
+        this.targetY = 0;
     }
 
-    // Getters
+    // Construtor com posição do alvo
+    public AttackResult(boolean success, int damage, boolean wasCritical, boolean targetDied,
+                        String targetId, String targetName, int targetRemainingHp,
+                        AttackType attackType, float knockbackX, float knockbackY,
+                        float targetX, float targetY) {
+        this(success, damage, wasCritical, targetDied, targetId, targetName, targetRemainingHp,
+                attackType, knockbackX, knockbackY);
+        this.targetX = targetX;
+        this.targetY = targetY;
+    }
+
+    // Getters existentes
     public boolean isSuccess() { return success; }
     public int getDamage() { return damage; }
     public boolean isWasCritical() { return wasCritical; }
@@ -47,6 +63,10 @@ public class AttackResult implements Serializable {
     public int getAttackTypeId() { return attackTypeId; }
     public float getKnockbackX() { return knockbackX; }
     public float getKnockbackY() { return knockbackY; }
+
+    // NOVOS GETTERS
+    public float getTargetX() { return targetX; }
+    public float getTargetY() { return targetY; }
 
     // Setters
     public void setSuccess(boolean success) { this.success = success; }
@@ -60,8 +80,9 @@ public class AttackResult implements Serializable {
     public void setAttackTypeId(int attackTypeId) { this.attackTypeId = attackTypeId; }
     public void setKnockbackX(float knockbackX) { this.knockbackX = knockbackX; }
     public void setKnockbackY(float knockbackY) { this.knockbackY = knockbackY; }
+    public void setTargetX(float targetX) { this.targetX = targetX; }
+    public void setTargetY(float targetY) { this.targetY = targetY; }
 
-    // Métodos helpers
     public AttackType getAttackType() {
         return AttackType.fromId(attackTypeId);
     }

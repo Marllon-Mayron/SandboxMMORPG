@@ -69,7 +69,7 @@ public class KryoRegistry {
     private static final int ID_ATTACK_TYPE = 183;
     private static final int ID_ATTACK_RESULT = 184;
     private static final int ID_COMBAT_STATS = 185;
-
+    private static final int ID_PROJECTILE_STATE = 190;
     private static boolean registered = false;
 
     public static synchronized void registerClasses(Kryo kryo) {
@@ -131,6 +131,9 @@ public class KryoRegistry {
         kryo.register(PickupItemPacket.class, ID_PICKUP_ITEM);
         kryo.register(DropItemPacket.class, ID_DROP_ITEM);
         kryo.register(PickupResultPacket.class, ID_PICKUP_RESULT);
+
+        kryo.register(ProjectileStatePacket.class, ID_PROJECTILE_STATE);
+        kryo.register(Projectile.class, 191);
 
         // Arrays multidimensionais
         kryo.register(int[][].class, 90);

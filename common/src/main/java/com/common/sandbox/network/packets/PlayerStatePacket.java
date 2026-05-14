@@ -3,9 +3,6 @@ package com.common.sandbox.network.packets;
 import com.common.sandbox.network.Packet;
 import com.common.sandbox.model.Player;
 
-/**
- * Pacote unificado que contém TODOS os dados de um jogador
- */
 public class PlayerStatePacket extends Packet {
     public String playerId;
     public String username;
@@ -27,6 +24,8 @@ public class PlayerStatePacket extends Packet {
     public int level;
     public int gold;
     public int experience;
+
+    public float currentAttackCooldown;
 
     // Indica se é uma atualização completa (para sincronização inicial)
     public boolean fullSync = false;
@@ -55,6 +54,8 @@ public class PlayerStatePacket extends Packet {
         this.level = player.getLevel();
         this.gold = player.getGold();
         this.experience = player.getExperience();
+
+        this.currentAttackCooldown = player.getCurrentAttackCooldown();
     }
 
     public int getMaxHp() {
@@ -71,7 +72,7 @@ public class PlayerStatePacket extends Packet {
 
     @Override
     public String toString() {
-        return String.format("PlayerState{id=%s, name=%s, pos=(%.1f,%.1f), hp=%d/%d, lvl=%d, str=%d}",
-                playerId, username, x, y, currentHp, getMaxHp(), level, strength);
+        return String.format("PlayerState{id=%s, name=%s, pos=(%.1f,%.1f), hp=%d/%d, lvl=%d, str=%d, cooldown=%.2f}",
+                playerId, username, x, y, currentHp, getMaxHp(), level, strength, currentAttackCooldown);
     }
 }

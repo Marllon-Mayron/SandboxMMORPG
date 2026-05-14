@@ -496,12 +496,6 @@ public class PlayerUI {
             manaValueLabel.setText(currentMana + "/" + maxMana);
             staminaValueLabel.setText(currentStamina + "/" + maxStamina);
 
-            logger.info("📊 UI Updated from Player: {} - HP={}/{}, Mana={}/{}, Stamina={}/{}",
-                    player.getUsername(),
-                    currentHp, maxHp,
-                    currentMana, maxMana,
-                    currentStamina, maxStamina);
-
             if (attributesWindow != null && attributesWindow.isVisible()) {
                 attributesWindow.update(player);
             }

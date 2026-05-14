@@ -9,12 +9,14 @@ import io.netty.channel.Channel;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.ArrayList;
 import java.util.Collection;
+import java.util.List;
 
 public class CombatManager {
     private static final Logger logger = LoggerFactory.getLogger(CombatManager.class);
     private static CombatManager instance;
-    private static final long GLOBAL_ATTACK_COOLDOWN_MS = 2000;
+    private static final long GLOBAL_ATTACK_COOLDOWN_MS = 0;//2000;
 
     private CombatManager() {}
 
@@ -28,29 +30,9 @@ public class CombatManager {
     /**
      * Processa um ataque de um jogador contra outro
      */
-    public AttackResult processAttack(Player attacker, Player target, AttackType attackType) {
+    public AttackResult processAttack(Player attacker, Player target, AttackDefinition attackDef) {
         if (attacker == null || target == null) {
-            return new AttackResult(false, 0, false, false, null, null, 0, attackType, 0, 0);
-        }
-
-        // Verificar se pode atacar
-        if (!attacker.canAttack()) {
-            logger.debug("{} cannot attack yet (cooldown)", attacker.getUsername());
-            return new AttackResult(false, 0, false, false, target.getId(), target.getUsername(),
-                    target.getCurrentHp(), attackType, 0, 0);
-        }
-
-        // Verificar range
-        float rangePixels = attackType.getRange() * 64;
-        float dx = target.getX() - attacker.getX();
-        float dy = target.getY() - attacker.getY();
-        float distance = (float) Math.sqrt(dx * dx + dy * dy);
-
-        if (distance > rangePixels) {
-            logger.debug("{} target {} out of range (distance: {} > {})",
-                    attacker.getUsername(), target.getUsername(), distance, rangePixels);
-            return new AttackResult(false, 0, false, false, target.getId(), target.getUsername(),
-                    target.getCurrentHp(), attackType, 0, 0);
+            return new AttackResult(false, 0, false, false, null, null, 0, AttackType.MELEE_SWORD, 0, 0);
         }
 
         // Atualizar stats do atacante baseado no equipamento
@@ -58,13 +40,15 @@ public class CombatManager {
 
         // Calcular dano
         CombatStats stats = attacker.getCombatStats();
-        int damage = calculateDamageWithCritical(stats);
-        boolean wasCritical = isCriticalHit(stats);
+        int damage = stats.getBaseDamage() + stats.getWeaponDamageBonus() + stats.getStrengthBonus();
+        damage = (int) (damage * attackDef.getDamageMultiplier());
 
-        // Aplicar multiplicador do tipo de ataque
-        damage = (int) (damage * attackType.getDamageMultiplier());
+        // Chance de crítico
+        boolean wasCritical = (int)(Math.random() * 100) < stats.getCriticalChance();
+        if (wasCritical) {
+            damage = damage * stats.getCriticalDamage() / 100;
+        }
 
-        // Garantir dano mínimo
         damage = Math.max(1, damage);
 
         // Aplicar dano ao alvo
@@ -73,10 +57,10 @@ public class CombatManager {
 
         boolean targetDied = newHp <= 0;
 
-        // Calcular knockback
+        // Calcular knockback (direção do atacante para o alvo)
         float angle = (float) Math.atan2(target.getY() - attacker.getY(), target.getX() - attacker.getX());
-        float knockbackX = (float) Math.cos(angle) * 30;
-        float knockbackY = (float) Math.sin(angle) * 30;
+        float knockbackX = (float) Math.cos(angle) * attackDef.getKnockbackPower();
+        float knockbackY = (float) Math.sin(angle) * attackDef.getKnockbackPower();
 
         // Aplicar knockback (apenas se não morreu)
         if (!targetDied) {
@@ -89,26 +73,22 @@ public class CombatManager {
             }
         }
 
-        // Executar o ataque no attacker (iniciar cooldown)
-        attacker.executeAttack();
-
-        // Salvar no banco (assíncrono)
+        // Salvar no banco
         DatabaseManager.getInstance().savePlayerAsync(target);
         DatabaseManager.getInstance().savePlayerAsync(attacker);
 
-        logger.info("⚔️ ATTACK: {} -> {} | Damage: {}{} | Target HP: {}/{} | Range: {:.1f}",
+        logger.info("⚔️ ATTACK: {} -> {} | Damage: {}{} | Target HP: {}/{}",
                 attacker.getUsername(), target.getUsername(), damage,
                 wasCritical ? " (CRITICAL!)" : "",
-                newHp, target.getMaxHp(), distance);
+                newHp, target.getMaxHp());
 
         if (targetDied) {
-            logger.info("💀 {} killed {}!", attacker.getUsername(), target.getUsername());
             handlePlayerDeath(target, attacker);
         }
 
         return new AttackResult(true, damage, wasCritical, targetDied,
                 target.getId(), target.getUsername(), newHp,
-                attackType, knockbackX, knockbackY);
+                AttackType.MELEE_SWORD, knockbackX, knockbackY);
     }
 
     private int calculateDamageWithCritical(CombatStats stats) {
@@ -124,6 +104,7 @@ public class CombatManager {
         return (int)(Math.random() * 100) < stats.getCriticalChance();
     }
 
+    // CombatManager.java
     private void updateCombatStatsFromEquipment(Player player) {
         if (player.getCombatStats() == null) {
             player.setCombatStats(new CombatStats());
@@ -134,11 +115,13 @@ public class CombatManager {
                 player.getInventory().getEquipped().get("weapon") : null;
 
         if (equippedWeapon != null && !equippedWeapon.isEmpty()) {
-            if (equippedWeapon.contains("sword")) weaponBonus = 5;
-            else if (equippedWeapon.contains("dagger")) weaponBonus = 3;
-            else if (equippedWeapon.contains("axe")) weaponBonus = 8;
-            else if (equippedWeapon.contains("hammer")) weaponBonus = 10;
-            else if (equippedWeapon.contains("bow")) weaponBonus = 4;
+            ItemDefinition def = ItemManager.getInstance().getItemDefinition(equippedWeapon);
+            if (def != null) {
+                weaponBonus = def.getDamage();  // ← USA O DANO REAL DO ITEM
+                logger.debug("Weapon found: {}, Damage: {}", def.getName(), weaponBonus);
+            } else {
+                logger.warn("Weapon definition not found: {}", equippedWeapon);
+            }
         }
 
         player.getCombatStats().setWeaponDamageBonus(weaponBonus);
@@ -170,7 +153,7 @@ public class CombatManager {
         return nearest;
     }
 
-    private void handlePlayerDeath(Player dead, Player killer) {
+    public void handlePlayerDeath(Player dead, Player killer) {
         // Dar experiência ao killer
         int xpGained = 50 + dead.getLevel() * 10;
         boolean leveledUp = killer.addExperience(xpGained);
@@ -203,5 +186,106 @@ public class CombatManager {
 
         logger.info("📊 Broadcast death state for {}: HP={}/{}, Pos=({},{})",
                 dead.getUsername(), dead.getCurrentHp(), dead.getMaxHp(), dead.getX(), dead.getY());
+    }
+
+    public List<AttackResult> processAreaAttack(Player attacker, AttackDefinition attackDef,
+                                                float targetX, float targetY,
+                                                Collection<Player> allPlayers) {
+        List<AttackResult> results = new ArrayList<>();
+
+        logger.info("=== PROCESS AREA ATTACK ===");
+        logger.info("Attacker: {}", attacker.getUsername());
+        logger.info("Attack: {}", attackDef.getName());
+        logger.info("Target pos: ({}, {})", targetX, targetY);
+        logger.info("Total players in world: {}", allPlayers.size());
+
+        // Verificar cooldown
+        if (!attacker.canAttack()) {
+            logger.warn("Attacker {} is on cooldown", attacker.getUsername());
+            return results;
+        }
+
+        // Verificar recursos (mana/stamina)
+        if (attackDef.getStaminaCost() > 0 && attacker.getCurrentStamina() < attackDef.getStaminaCost()) {
+            logger.warn("Attacker {} has insufficient stamina: {}/{}",
+                    attacker.getUsername(), attacker.getCurrentStamina(), attackDef.getStaminaCost());
+            return results;
+        }
+
+        // Consumir recursos
+        if (attackDef.getStaminaCost() > 0) {
+            attacker.setCurrentStamina(attacker.getCurrentStamina() - (int) attackDef.getStaminaCost());
+            logger.info("Consumed {} stamina, remaining: {}", attackDef.getStaminaCost(), attacker.getCurrentStamina());
+        }
+
+        // Detectar alvos na hitbox
+        List<Player> targets = HitboxDetector.getPlayersInHitbox(attacker, attackDef,
+                targetX, targetY, allPlayers);
+
+        logger.info("Targets found in hitbox: {}", targets.size());
+        for (Player t : targets) {
+            logger.info("  - Target: {} at ({}, {})", t.getUsername(), t.getX(), t.getY());
+        }
+
+        // Atualizar stats do atacante
+        updateCombatStatsFromEquipment(attacker);
+
+        // Aplicar dano a cada alvo
+        for (Player target : targets) {
+            AttackResult result = applyDamageToTarget(attacker, target, attackDef);
+            results.add(result);
+            logger.info("Damage applied to {}: {} damage", target.getUsername(), result.getDamage());
+        }
+
+        // Iniciar cooldown do ataque
+        attacker.executeAttack();
+        logger.info("Attack completed, cooldown started");
+
+        return results;
+    }
+
+    private AttackResult applyDamageToTarget(Player attacker, Player target, AttackDefinition attackDef) {
+        CombatStats stats = attacker.getCombatStats();
+
+        // Calcular dano base
+        int damage = stats.getBaseDamage() + stats.getWeaponDamageBonus() + stats.getStrengthBonus();
+        damage = (int) (damage * attackDef.getDamageMultiplier());
+
+        // Chance de crítico
+        boolean wasCritical = (int)(Math.random() * 100) < stats.getCriticalChance();
+        if (wasCritical) {
+            damage = damage * stats.getCriticalDamage() / 100;
+        }
+
+        damage = Math.max(1, damage);
+
+        // Aplicar dano
+        int newHp = Math.max(0, target.getCurrentHp() - damage);
+        target.setCurrentHp(newHp);
+
+        boolean targetDied = newHp <= 0;
+
+        // Knockback na direção do ataque
+        float angle = (float) Math.atan2(target.getY() - attacker.getY(),
+                target.getX() - attacker.getX());
+        float knockbackX = (float) Math.cos(angle) * attackDef.getKnockbackPower();
+        float knockbackY = (float) Math.sin(angle) * attackDef.getKnockbackPower();
+
+        if (!targetDied && !ChunkManager.getInstance().isSolid(target.getX() + knockbackX,
+                target.getY() + knockbackY)) {
+            target.setX(target.getX() + knockbackX);
+            target.setY(target.getY() + knockbackY);
+        }
+
+        if (targetDied) {
+            handlePlayerDeath(target, attacker);
+        }
+
+        DatabaseManager.getInstance().savePlayerAsync(target);
+
+        return new AttackResult(true, damage, wasCritical, targetDied,
+                target.getId(), target.getUsername(), newHp,
+                AttackType.MELEE_SWORD, knockbackX, knockbackY,
+                target.getX(), target.getY());
     }
 }

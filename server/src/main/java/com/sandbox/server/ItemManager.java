@@ -45,7 +45,9 @@ public class ItemManager {
     }
 
     private void loadItemDefinitions() {
-        // Espada Simples
+        // ==================== ESPADAS ====================
+
+        // Espada Simples (cooldown 1.0s)
         ItemDefinition sword = new ItemDefinition();
         sword.setId("simple_sword");
         sword.setName("Espada Simples");
@@ -54,32 +56,156 @@ public class ItemManager {
         sword.setTileX(1);
         sword.setTileY(0);
         sword.setDamage(10);
+        sword.setAttackId("melee_sword");
+        sword.setAttackAnimation("sword_slash");
+        sword.setAttackCooldown(1.0f);  // Cooldown de 1 segundo
+        sword.setRanged(false);
         itemDefinitions.put(sword.getId(), sword);
-        logger.info("Loaded item definition: {}", sword.getName());
+        logger.info("Loaded weapon: {} (Melee, Damage: {}, Cooldown: {}s)",
+                sword.getName(), sword.getDamage(), sword.getAttackCooldown());
 
-        // Maca (fruta que cura)
+        // Espada de Ferro (cooldown 1.25s - mais lenta, mais dano)
+        ItemDefinition ironSword = new ItemDefinition();
+        ironSword.setId("iron_sword");
+        ironSword.setName("Espada de Ferro");
+        ironSword.setCategory("weapon");
+        ironSword.setSpritesheet("itens/spritesheet_itens.png");
+        ironSword.setTileX(1);
+        ironSword.setTileY(0);
+        ironSword.setDamage(18);
+        ironSword.setAttackId("melee_sword");
+        ironSword.setAttackAnimation("sword_slash");
+        ironSword.setAttackCooldown(1.25f);  // Cooldown de 1.25 segundos
+        ironSword.setRanged(false);
+        itemDefinitions.put(ironSword.getId(), ironSword);
+        logger.info("Loaded weapon: {} (Melee, Damage: {}, Cooldown: {}s)",
+                ironSword.getName(), ironSword.getDamage(), ironSword.getAttackCooldown());
+
+        // ==================== ADAGAS ====================
+
+        // Adaga (cooldown 0.67s - muito rápida, menos dano)
+        ItemDefinition dagger = new ItemDefinition();
+        dagger.setId("dagger");
+        dagger.setName("Adaga");
+        dagger.setCategory("weapon");
+        dagger.setSpritesheet("itens/spritesheet_itens.png");
+        dagger.setTileX(2);
+        dagger.setTileY(0);
+        dagger.setDamage(6);
+        dagger.setAttackId("melee_dagger");
+        dagger.setAttackAnimation("dagger_stab");
+        dagger.setAttackCooldown(0.67f);  // Cooldown de 0.67 segundos
+        dagger.setRanged(false);
+        itemDefinitions.put(dagger.getId(), dagger);
+        logger.info("Loaded weapon: {} (Melee Fast, Damage: {}, Cooldown: {}s)",
+                dagger.getName(), dagger.getDamage(), dagger.getAttackCooldown());
+
+        // ==================== MACHADOS ====================
+
+        // Machado Simples (cooldown 1.43s - muito lento, muito dano)
+        ItemDefinition axe = new ItemDefinition();
+        axe.setId("simple_axe");
+        axe.setName("Machado Simples");
+        axe.setCategory("weapon");
+        axe.setSpritesheet("itens/spritesheet_itens.png");
+        axe.setTileX(3);
+        axe.setTileY(0);
+        axe.setDamage(14);
+        axe.setAttackId("melee_axe");
+        axe.setAttackAnimation("sword_slash");
+        axe.setAttackCooldown(1.43f);  // Cooldown de 1.43 segundos
+        axe.setRanged(false);
+        itemDefinitions.put(axe.getId(), axe);
+        logger.info("Loaded weapon: {} (Melee Heavy, Damage: {}, Cooldown: {}s)",
+                axe.getName(), axe.getDamage(), axe.getAttackCooldown());
+
+        // ==================== ARCOS ====================
+
+        // Arco Simples (cooldown 1.25s)
+        ItemDefinition simpleBow = new ItemDefinition();
+        simpleBow.setId("simple_bow");
+        simpleBow.setName("Arco Simples");
+        simpleBow.setCategory("weapon");
+        simpleBow.setSpritesheet("itens/spritesheet_itens.png");
+        simpleBow.setTileX(0);
+        simpleBow.setTileY(1);
+        simpleBow.setDamage(8);
+        simpleBow.setAttackId("ranged_bow");
+        simpleBow.setAttackAnimation("bow_shoot");
+        simpleBow.setAttackCooldown(1.25f);  // Cooldown de 1.25 segundos
+        simpleBow.setRanged(true);
+        simpleBow.setProjectileId("arrow");
+        simpleBow.setProjectileSpeed(600f);
+        simpleBow.setProjectileRange(400f);
+        itemDefinitions.put(simpleBow.getId(), simpleBow);
+        logger.info("Loaded weapon: {} (Ranged, Damage: {}, Cooldown: {}s, ProjectileSpeed: {})",
+                simpleBow.getName(), simpleBow.getDamage(), simpleBow.getAttackCooldown(), simpleBow.getProjectileSpeed());
+
+        // Arco Longo (cooldown 1.67s - mais lento, mais dano)
+        ItemDefinition longBow = new ItemDefinition();
+        longBow.setId("long_bow");
+        longBow.setName("Arco Longo");
+        longBow.setCategory("weapon");
+        longBow.setSpritesheet("itens/spritesheet_itens.png");
+        longBow.setTileX(1);
+        longBow.setTileY(1);
+        longBow.setDamage(15);
+        longBow.setAttackId("ranged_bow");
+        longBow.setAttackAnimation("bow_shoot");
+        longBow.setAttackCooldown(1.67f);  // Cooldown de 1.67 segundos
+        longBow.setRanged(true);
+        longBow.setProjectileId("arrow");
+        longBow.setProjectileSpeed(900f);
+        longBow.setProjectileRange(550f);
+        itemDefinitions.put(longBow.getId(), longBow);
+        logger.info("Loaded weapon: {} (Ranged, Damage: {}, Cooldown: {}s, ProjectileSpeed: {})",
+                longBow.getName(), longBow.getDamage(), longBow.getAttackCooldown(), longBow.getProjectileSpeed());
+
+        // Arco Rápido (cooldown 0.77s - rápido, menos dano)
+        ItemDefinition quickBow = new ItemDefinition();
+        quickBow.setId("quick_bow");
+        quickBow.setName("Arco Rápido");
+        quickBow.setCategory("weapon");
+        quickBow.setSpritesheet("itens/spritesheet_itens.png");
+        quickBow.setTileX(2);
+        quickBow.setTileY(1);
+        quickBow.setDamage(6);
+        quickBow.setAttackId("ranged_bow");
+        quickBow.setAttackAnimation("bow_shoot");
+        quickBow.setAttackCooldown(0.77f);  // Cooldown de 0.77 segundos
+        quickBow.setRanged(true);
+        quickBow.setProjectileId("arrow");
+        quickBow.setProjectileSpeed(450f);
+        quickBow.setProjectileRange(300f);
+        itemDefinitions.put(quickBow.getId(), quickBow);
+        logger.info("Loaded weapon: {} (Ranged Fast, Damage: {}, Cooldown: {}s, ProjectileSpeed: {})",
+                quickBow.getName(), quickBow.getDamage(), quickBow.getAttackCooldown(), quickBow.getProjectileSpeed());
+
+        // ==================== ITENS CONSUMÍVEIS ====================
+
+        // Maçã
         ItemDefinition apple = new ItemDefinition();
         apple.setId("apple");
-        apple.setName("Maca");
+        apple.setName("Maçã");
         apple.setCategory("consumable");
         apple.setSpritesheet("itens/spritesheet_itens.png");
         apple.setTileX(0);
         apple.setTileY(0);
         apple.setHealAmount(25);
         itemDefinitions.put(apple.getId(), apple);
-        logger.info("Loaded item definition: {}", apple.getName());
+        logger.info("Loaded consumable: {} (Heal: {})", apple.getName(), apple.getHealAmount());
 
-        // Pocao de Vida
+        // Poção de Vida
         ItemDefinition healthPotion = new ItemDefinition();
         healthPotion.setId("health_potion");
-        healthPotion.setName("Pocao de Vida");
+        healthPotion.setName("Poção de Vida");
         healthPotion.setCategory("consumable");
         healthPotion.setSpritesheet("itens/spritesheet_itens.png");
-        healthPotion.setTileX(2);
-        healthPotion.setTileY(0);
+        healthPotion.setTileX(3);
+        healthPotion.setTileY(1);
         healthPotion.setHealAmount(50);
         itemDefinitions.put(healthPotion.getId(), healthPotion);
-        logger.info("Loaded item definition: {}", healthPotion.getName());
+        logger.info("Loaded consumable: {} (Heal: {})", healthPotion.getName(), healthPotion.getHealAmount());
     }
 
     public void spawnWorldItems() {
@@ -90,15 +216,29 @@ public class ItemManager {
 
         logger.info("=== SPAWNING WORLD ITEMS ===");
 
-        // Limpar itens existentes
         groundItems.clear();
         chunkItems.clear();
 
-        // Spawnar itens com diferentes tempos de vida
-        spawnItem("simple_sword", 400, 300, 60);      // 60 segundos
-        spawnItem("apple", 450, 350, 45);              // 45 segundos
-        spawnItem("simple_sword", 500, 400, 90);       // 90 segundos
-        spawnItem("health_potion", 350, 250, 30);      // 30 segundos
+        // Espadas
+        spawnItem("simple_sword", 400, 300, 60);
+        spawnItem("iron_sword", 550, 320, 90);
+
+        // Adaga
+        spawnItem("dagger", 350, 400, 45);
+
+        // Arcos
+        spawnItem("simple_bow", 500, 350, 60);
+        spawnItem("long_bow", 600, 380, 90);
+        spawnItem("quick_bow", 450, 420, 60);
+
+        // Machado
+        spawnItem("simple_axe", 480, 280, 75);
+
+        // Consumíveis
+        spawnItem("apple", 430, 330, 45);
+        spawnItem("health_potion", 380, 270, 30);
+        spawnItem("apple", 520, 370, 45);
+        spawnItem("health_potion", 560, 310, 30);
 
         worldItemsSpawned = true;
         logger.info("World items spawned: {} items", groundItems.size());

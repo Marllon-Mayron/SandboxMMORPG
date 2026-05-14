@@ -2,6 +2,7 @@ package com.sandbox.server;
 
 import com.common.sandbox.model.*;
 import com.common.sandbox.network.packets.*;
+import com.common.sandbox.network.packets.AttackInfo;
 import com.common.sandbox.network.packets.InventoryUpdatePacket;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
@@ -14,6 +15,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.sql.SQLException;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
@@ -92,9 +94,9 @@ public class GameServerHandler extends SimpleChannelInboundHandler<Object> {
                 handleDropItem(ctx, (DropItemPacket) msg);
             } else if (msg instanceof InventoryUpdatePacket) {
                 handleInventoryUpdate(ctx, (InventoryUpdatePacket) msg);
-            } else if (msg instanceof AttackRequest) {
+            } else if (msg instanceof AttackInfo) {
                 if (currentPlayer != null) {
-                    handleAttack(ctx, (AttackRequest) msg);
+                    handleAttack(ctx, (AttackInfo) msg);
                 }
             } else {
                 logger.warn("Tipo de pacote desconhecido: {}", msg.getClass().getSimpleName());
@@ -119,6 +121,7 @@ public class GameServerHandler extends SimpleChannelInboundHandler<Object> {
             if (player != null) {
                 logger.info("Login Sucesso - Usuario: {}", request.username);
                 currentPlayer = player;
+
                 GameWorld.getInstance().addPlayer(player, channelId);
 
                 LoginResponse response = new LoginResponse(true, "Login bem-sucedido!", player);
@@ -312,6 +315,7 @@ public class GameServerHandler extends SimpleChannelInboundHandler<Object> {
 
             // BROADCAST - Criar pacote com os valores ATUAIS do servidor
             PlayerStatePacket broadcast = new PlayerStatePacket(player);
+            broadcast.currentAttackCooldown = player.getCurrentAttackCooldown();
             broadcastToAll(broadcast);
 
             // SALVAR NO BANCO
@@ -655,8 +659,8 @@ public class GameServerHandler extends SimpleChannelInboundHandler<Object> {
         }
     }
 
-    private Channel getChannelByPlayerId(String playerId) {
-        for (Channel channel : channels) {
+    public static Channel getChannelByPlayerId(String playerId) {
+        for (Channel channel : getChannels()) {
             GameServerHandler handler = (GameServerHandler) channel.pipeline().last();
             if (handler != null && handler.currentPlayer != null &&
                     handler.currentPlayer.getId().equals(playerId)) {
@@ -906,47 +910,249 @@ public class GameServerHandler extends SimpleChannelInboundHandler<Object> {
         return "weapon".equals(category) || "armor".equals(category) || "equipment".equals(category);
     }
 
-    private void handleAttack(ChannelHandlerContext ctx, AttackRequest request) {
-        CombatManager combatManager = CombatManager.getInstance();
-        Collection<Player> allPlayers = GameWorld.getInstance().getAllPlayers();
+    private void handleAttack(ChannelHandlerContext ctx, AttackInfo attackInfo) {
+        if (currentPlayer == null) return;
 
-        Player target = combatManager.findNearestTarget(currentPlayer, request.attackType, allPlayers);
-
-        if (target == null) {
-            logger.debug("{} tried to attack but no target in range", currentPlayer.getUsername());
+        // Verificar cooldown baseado na arma equipada
+        if (!currentPlayer.canAttack()) {
+            logger.debug("{} cannot attack yet (weapon cooldown)", currentPlayer.getUsername());
             return;
         }
 
-        AttackResult result = combatManager.processAttack(currentPlayer, target, request.attackType);
+        // Carregar definição do ataque
+        AttackDefinition attackDef = getAttackDefinition(attackInfo.attackId);
+        if (attackDef == null) {
+            logger.warn("Unknown attack: {}", attackInfo.attackId);
+            return;
+        }
 
-        if (result.isSuccess()) {
+        // Verificar recursos (stamina)
+        if (attackDef.getStaminaCost() > 0 && currentPlayer.getCurrentStamina() < attackDef.getStaminaCost()) {
+            if (ctx.channel().isActive()) {
+                ChatMessage error = new ChatMessage("SISTEMA", "SISTEMA",
+                        "Stamina insuficiente! Necessário: " + (int)attackDef.getStaminaCost());
+                ctx.writeAndFlush(error);
+            }
+            return;
+        }
+
+        // Consumir stamina
+        if (attackDef.getStaminaCost() > 0) {
+            currentPlayer.setCurrentStamina(currentPlayer.getCurrentStamina() - (int) attackDef.getStaminaCost());
+        }
+
+        // Calcular dano
+        updateCombatStatsFromEquipment(currentPlayer);
+        CombatStats stats = currentPlayer.getCombatStats();
+        int damage = stats.getBaseDamage() + stats.getWeaponDamageBonus() + stats.getStrengthBonus();
+        damage = (int) (damage * attackDef.getDamageMultiplier());
+
+        boolean wasCritical = (int)(Math.random() * 100) < stats.getCriticalChance();
+        if (wasCritical) {
+            damage = damage * stats.getCriticalDamage() / 100;
+        }
+        damage = Math.max(1, damage);
+
+        // INICIAR COOLDOWN - Isso define o lastAttackTime
+        currentPlayer.executeAttack();
+
+        // Log para debug
+        float cooldownSecs = currentPlayer.getCurrentAttackCooldown();
+        logger.info("⚔️ {} attacking with {} | Cooldown: {:.1f}s | Damage: {}",
+                currentPlayer.getUsername(), attackDef.getName(), cooldownSecs, damage);
+
+        if (attackDef.isRanged()) {
+            // Criar projétil
+            ProjectileManager.getInstance().spawnProjectile(
+                    currentPlayer, attackDef,
+                    attackInfo.targetX, attackInfo.targetY,
+                    damage, wasCritical
+            );
+
+            // Broadcast do efeito de disparo
+            AttackBroadcast shootEffect = new AttackBroadcast();
+            shootEffect.attackerId = currentPlayer.getId();
+            shootEffect.attackerName = currentPlayer.getUsername();
+            shootEffect.attackerX = currentPlayer.getX();
+            shootEffect.attackerY = currentPlayer.getY();
+            shootEffect.targetX = attackInfo.targetX;
+            shootEffect.targetY = attackInfo.targetY;
+            shootEffect.attackDef = attackDef;
+            GameServerHandler.broadcastToAll(shootEffect);
+
+        } else {
+            // Ataque corpo a corpo (instantâneo)
+            Collection<Player> allPlayers = GameWorld.getInstance().getAllPlayers();
+            List<AttackResult> results = CombatManager.getInstance().processAreaAttack(
+                    currentPlayer, attackDef, attackInfo.targetX, attackInfo.targetY, allPlayers
+            );
+
+            if (!results.isEmpty()) {
+                AttackBroadcast broadcast = new AttackBroadcast(
+                        currentPlayer.getId(), currentPlayer.getUsername(),
+                        currentPlayer.getX(), currentPlayer.getY(),
+                        attackInfo.targetX, attackInfo.targetY,
+                        attackDef, results
+                );
+                GameServerHandler.broadcastToAll(broadcast);
+            }
+        }
+
+        // Salvar estado
+        GameWorld.getInstance().savePlayer(currentPlayer);
+    }
+
+    private void updateCombatStatsFromEquipment(Player player) {
+        if (player.getCombatStats() == null) {
+            player.setCombatStats(new CombatStats());
+        }
+
+        int weaponBonus = 0;
+        String equippedWeapon = player.getInventory() != null ?
+                player.getInventory().getEquipped().get("weapon") : null;
+
+        logger.info("=== EQUIPMENT CHECK ===");
+        logger.info("Player: {}", player.getUsername());
+        logger.info("Equipped weapon ID: {}", equippedWeapon);
+
+        if (equippedWeapon != null && !equippedWeapon.isEmpty()) {
+            ItemDefinition def = ItemManager.getInstance().getItemDefinition(equippedWeapon);
+            if (def != null) {
+                weaponBonus = def.getDamage();  // ← USA O DANO REAL DO ITEM
+                logger.info("Weapon found: {}, Damage: {}", def.getName(), weaponBonus);
+            } else {
+                logger.warn("Weapon definition NOT FOUND for: {}", equippedWeapon);
+            }
+        } else {
+            logger.info("No weapon equipped, using base damage only");
+        }
+
+        player.getCombatStats().setWeaponDamageBonus(weaponBonus);
+        player.getCombatStats().setStrengthBonus(player.getStrength() / 2);
+
+        logger.info("Final: BaseDamage={}, WeaponBonus={}, StrengthBonus={}, Total={}",
+                player.getCombatStats().getBaseDamage(),
+                weaponBonus,
+                player.getStrength() / 2,
+                player.getCombatStats().getBaseDamage() + weaponBonus + (player.getStrength() / 2));
+    }
+
+    private void handleAttackInfo(ChannelHandlerContext ctx, AttackInfo attackInfo) {
+        if (currentPlayer == null) return;
+
+        // Carregar definição do ataque baseado no ID
+        AttackDefinition attackDef = getAttackDefinition(attackInfo.attackId);
+        if (attackDef == null) {
+            logger.warn("Unknown attack: {}", attackInfo.attackId);
+            return;
+        }
+
+        // Verificar cooldown
+        if (!currentPlayer.canAttack()) {
+            logger.debug("{} cannot attack yet (cooldown)", currentPlayer.getUsername());
+            return;
+        }
+
+        // Verificar recursos
+        if (attackDef.getManaCost() > 0 && currentPlayer.getCurrentMana() < attackDef.getManaCost()) {
+            if (ctx.channel().isActive()) {
+                ChatMessage error = new ChatMessage("SISTEMA", "SISTEMA",
+                        "Mana insuficiente! Necessário: " + (int)attackDef.getManaCost());
+                ctx.writeAndFlush(error);
+            }
+            return;
+        }
+
+        if (attackDef.getStaminaCost() > 0 && currentPlayer.getCurrentStamina() < attackDef.getStaminaCost()) {
+            if (ctx.channel().isActive()) {
+                ChatMessage error = new ChatMessage("SISTEMA", "SISTEMA",
+                        "Stamina insuficiente! Necessário: " + (int)attackDef.getStaminaCost());
+                ctx.writeAndFlush(error);
+            }
+            return;
+        }
+
+        // Consumir recursos
+        if (attackDef.getManaCost() > 0) {
+            currentPlayer.setCurrentMana(currentPlayer.getCurrentMana() - (int) attackDef.getManaCost());
+        }
+        if (attackDef.getStaminaCost() > 0) {
+            currentPlayer.setCurrentStamina(currentPlayer.getCurrentStamina() - (int) attackDef.getStaminaCost());
+        }
+
+        // Encontrar alvos na hitbox
+        Collection<Player> allPlayers = GameWorld.getInstance().getAllPlayers();
+        List<Player> targets = HitboxDetector.getPlayersInHitbox(currentPlayer, attackDef,
+                attackInfo.targetX, attackInfo.targetY,
+                allPlayers);
+
+        // Processar ataques
+        List<AttackResult> results = new ArrayList<>();
+        for (Player target : targets) {
+            AttackResult result = CombatManager.getInstance().processAttack(currentPlayer, target, attackDef);
+            if (result.isSuccess()) {
+                results.add(result);
+            }
+        }
+
+        // Iniciar cooldown
+        currentPlayer.executeAttack();
+
+        // Salvar estado
+        GameWorld.getInstance().savePlayer(currentPlayer);
+        for (AttackResult result : results) {
+            Player target = GameWorld.getInstance().getPlayer(result.getTargetId());
+            if (target != null) {
+                GameWorld.getInstance().savePlayer(target);
+            }
+        }
+
+        // Broadcast do ataque
+        if (!results.isEmpty()) {
             AttackBroadcast broadcast = new AttackBroadcast(
                     currentPlayer.getId(),
                     currentPlayer.getUsername(),
                     currentPlayer.getX(),
                     currentPlayer.getY(),
-                    result
+                    attackInfo.targetX,
+                    attackInfo.targetY,
+                    attackDef,
+                    results
             );
             broadcastToAll(broadcast);
 
-            DamagePacket damagePacket = new DamagePacket(
-                    target.getId(),
-                    result.getDamage(),
-                    result.isWasCritical(),
-                    result.getTargetRemainingHp(),
-                    request.attackType
-            );
+            // Enviar dano individual para cada alvo
+            for (AttackResult result : results) {
+                DamagePacket damagePacket = new DamagePacket(
+                        result.getTargetId(),
+                        result.getDamage(),
+                        result.isWasCritical(),
+                        result.getTargetRemainingHp(),
+                        AttackType.MELEE_SWORD
+                );
 
-            Channel targetChannel = getChannelByPlayerId(target.getId());
-            if (targetChannel != null) {
-                targetChannel.writeAndFlush(damagePacket);
+                Channel targetChannel = getChannelByPlayerId(result.getTargetId());
+                if (targetChannel != null) {
+                    targetChannel.writeAndFlush(damagePacket);
+                }
             }
+        }
 
-            sendPacket(ctx, damagePacket);
+        // Atualizar estado do atacante
+        PlayerStatePacket stateUpdate = new PlayerStatePacket(currentPlayer);
+        sendPacket(ctx, stateUpdate);
 
-            // Enviar atualização de estado completo após o dano
-            PlayerStatePacket stateUpdate = new PlayerStatePacket(currentPlayer);
-            sendPacket(ctx, stateUpdate);
+        logger.info("⚔️ {} attacked at ({}, {}) with {} - Hit {} targets",
+                currentPlayer.getUsername(), attackInfo.targetX, attackInfo.targetY,
+                attackDef.getName(), results.size());
+    }
+
+    private AttackDefinition getAttackDefinition(String attackId) {
+        switch (attackId) {
+            case "melee_sword": return AttackDefinition.createMeleeSword();
+            case "melee_dagger": return AttackDefinition.createMeleeDagger();
+            case "ranged_bow": return AttackDefinition.createRangedBow();
+            default: return null;
         }
     }
 

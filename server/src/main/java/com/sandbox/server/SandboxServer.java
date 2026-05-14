@@ -56,6 +56,8 @@ public class SandboxServer {
             logger.info("✅ Itens mundiais spawnados: {} itens", itemManager.getItemCount());
             logger.info("----------------------------------------");
 
+            ProjectileManager.getInstance();
+
             // Verificar se os itens foram criados corretamente
             itemManager.printAllItems();
 
@@ -148,10 +150,11 @@ public class SandboxServer {
         GameWorld.getInstance().saveAllPlayersOnShutdown();
 
         // Desligar gerenciadores
-        ItemManager.getInstance().shutdown();  // ← DESLIGA O ITEM MANAGER
-        ChunkManager.getInstance().close();     // Fecha chunk manager
+        ItemManager.getInstance().shutdown();
+        ChunkManager.getInstance().close();
         DatabaseManager.getInstance().close();
         RedisManager.getInstance().close();
+        ProjectileManager.getInstance().shutdown();
 
         if (bossGroup != null) bossGroup.shutdownGracefully();
         if (workerGroup != null) workerGroup.shutdownGracefully();

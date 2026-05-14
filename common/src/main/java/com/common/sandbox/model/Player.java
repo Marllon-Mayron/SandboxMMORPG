@@ -59,6 +59,9 @@ public class Player implements Serializable {
     private transient boolean isAttacking;
     private transient float attackTimer;
 
+    // NOVO CAMPO - Cooldown atual recebido do servidor (cliente usa isso)
+    private transient float currentAttackCooldown = 1.0f;
+
     // Callback para notificar quando o status mudar
     private transient Runnable onStatusChanged;
 
@@ -112,6 +115,7 @@ public class Player implements Serializable {
         this.lastAttackTime = 0;
         this.isAttacking = false;
         this.attackTimer = 0;
+        this.currentAttackCooldown = 1.0f;
 
         long now = System.currentTimeMillis();
         this.lastRegenTime = now;
@@ -282,6 +286,15 @@ public class Player implements Serializable {
     public long getLastMovementSend() { return lastMovementSend; }
     public void setLastMovementSend(long lastMovementSend) { this.lastMovementSend = lastMovementSend; }
 
+    // Cooldown do ataque (valor recebido do servidor)
+    public float getCurrentAttackCooldown() {
+        return currentAttackCooldown;
+    }
+
+    public void setCurrentAttackCooldown(float cooldown) {
+        this.currentAttackCooldown = cooldown;
+    }
+
     // Callback para notificar mudancas de status
     public void setOnStatusChanged(Runnable callback) {
         this.onStatusChanged = callback;
@@ -421,7 +434,9 @@ public class Player implements Serializable {
 
     public boolean canAttack() {
         long now = System.currentTimeMillis();
-        return (now - lastAttackTime) >= 2000;
+        float cooldownSeconds = getCurrentAttackCooldown();
+        long cooldownMillis = (long)(cooldownSeconds * 1000);
+        return (now - lastAttackTime) >= cooldownMillis;
     }
 
     public boolean executeAttack() {
@@ -459,7 +474,6 @@ public class Player implements Serializable {
         combatStats.setWeaponDamageBonus(weaponBonus);
         combatStats.setStrengthBonus(strength / 2);
     }
-
 
     @Override
     public String toString() {
