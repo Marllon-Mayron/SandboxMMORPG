@@ -53,9 +53,9 @@ public class GameServerHandler extends SimpleChannelInboundHandler<Object> {
             } else if (msg instanceof RegisterRequest) {
                 handleRegister(ctx, (RegisterRequest) msg);
 
-            } else if (msg instanceof MovementRequest) {
+            } else if (msg instanceof PlayerStatePacket) {
                 if (currentPlayer != null) {
-                    handleMovement(ctx, (MovementRequest) msg);
+                    handlePlayerState(ctx, (PlayerStatePacket) msg);
                 }
 
             } else if (msg instanceof ChatMessage) {
@@ -111,9 +111,6 @@ public class GameServerHandler extends SimpleChannelInboundHandler<Object> {
         try {
             logger.info("Login - Usuario: {}", request.username);
 
-            // ⭐ DEBUG: Verificar quantos itens existem ANTES do login
-            ItemManager.getInstance().printAllItems();
-
             Player player = DatabaseManager.getInstance().authenticatePlayer(
                     request.username,
                     request.password
@@ -127,34 +124,31 @@ public class GameServerHandler extends SimpleChannelInboundHandler<Object> {
                 LoginResponse response = new LoginResponse(true, "Login bem-sucedido!", player);
                 response.nearbyPlayers = new java.util.HashMap<>();
 
+                // Enviar TODOS os players com HP completo via PlayerStatePacket
                 for (Player p : GameWorld.getInstance().getAllPlayers()) {
                     if (!p.getId().equals(player.getId())) {
-                        response.nearbyPlayers.put(p.getId(), p);
+                        PlayerStatePacket statePacket = new PlayerStatePacket(p);
+                        statePacket.fullSync = true;
+                        sendPacket(ctx, statePacket);
                     }
                 }
 
                 sendPacket(ctx, response);
 
+                // Broadcast do novo jogador com HP completo via PlayerStatePacket
+                PlayerStatePacket newPlayerState = new PlayerStatePacket(player);
+                newPlayerState.fullSync = true;
+                broadcastToAllExcept(newPlayerState, ctx.channel().id().asLongText());
+
                 ChatMessage joinMsg = new ChatMessage(player.getId(), "SISTEMA",
                         player.getUsername() + " entrou no mundo!");
                 broadcastToAll(joinMsg);
 
-                Player movementOnly = new Player();
-                movementOnly.setId(player.getId());
-                movementOnly.setUsername(player.getUsername());
-                movementOnly.setX(player.getX());
-                movementOnly.setY(player.getY());
-                movementOnly.setDirection(player.getDirection());
-                broadcastToAll(new MovementBroadcast(movementOnly));
-
                 sendMapToPlayer(ctx, player);
-
-                // ⭐ ENVIAR TODOS OS ITENS EXISTENTES
                 sendAllExistingItemsToPlayer(ctx, player);
-
                 sendFriendListToPlayer(ctx, player);
 
-                // ⭐ NÃO spawnar nenhum item aqui!
+                sendAllExistingPlayers(ctx, player);
 
             } else {
                 logger.warn("Login Falhou - Usuario: {}", request.username);
@@ -172,7 +166,6 @@ public class GameServerHandler extends SimpleChannelInboundHandler<Object> {
         logger.info("=== SENDING ITEMS TO PLAYER: {} ===", player.getUsername());
         logger.info("Total items in ItemManager: {}", allItems.size());
 
-        // Debug: imprimir todos os itens atuais
         ItemManager.getInstance().printAllItems();
 
         if (allItems.isEmpty()) {
@@ -208,24 +201,6 @@ public class GameServerHandler extends SimpleChannelInboundHandler<Object> {
         }
     }
 
-    private void sendItemsToPlayer(ChannelHandlerContext ctx, Player player) {
-        // Enviar TODOS os itens existentes no mundo
-        Collection<GroundItem> allItems = ItemManager.getInstance().getAllItems();
-
-        if (allItems.isEmpty()) {
-            logger.info("No items to send to player {}", player.getUsername());
-            return;
-        }
-
-        int sentCount = 0;
-        for (GroundItem item : allItems) {
-            sendPacket(ctx, new ItemSpawnPacket(item));
-            sentCount++;
-        }
-
-        logger.info("Sent {} existing items to player {}", sentCount, player.getUsername());
-    }
-
     private void handleRegister(ChannelHandlerContext ctx, RegisterRequest request) {
         try {
             logger.info("Registro - Usuario: {}, Email: {}", request.username, request.email);
@@ -247,78 +222,130 @@ public class GameServerHandler extends SimpleChannelInboundHandler<Object> {
         }
     }
 
-    // ==================== MOVIMENTO ====================
+    // ==================== PLAYER STATE UNIFICADO ====================
 
-    private void handleMovement(ChannelHandlerContext ctx, MovementRequest request) {
+    private void handlePlayerState(ChannelHandlerContext ctx, PlayerStatePacket packet) {
         try {
-            Player player = GameWorld.getInstance().getPlayer(request.playerId);
+            Player player = GameWorld.getInstance().getPlayer(packet.playerId);
             if (player == null) {
-                logger.warn("Movimento de jogador inexistente: {}", request.playerId);
+                logger.warn("Player not found: {}", packet.playerId);
                 return;
             }
 
-            // Validar colisão
-            if (!canMoveTo(request.x, request.y)) {
-                MovementBroadcast correction = new MovementBroadcast(player);
+            // LOG DO QUE O SERVIDOR RECEBEU
+            logger.info("========================================");
+            logger.info("SERVER received PlayerState from {}:", player.getUsername());
+            logger.info("   HP from client: {}/{}", packet.currentHp, packet.getMaxHp());
+            logger.info("   Mana from client: {}/{}", packet.currentMana, packet.getMaxMana());
+            logger.info("   Stamina from client: {}/{}", packet.currentStamina, packet.getMaxStamina());
+            logger.info("   BaseHP from client: {}, Strength: {}", packet.baseHp, packet.strength);
+            logger.info("   Pos from client: ({}, {})", packet.x, packet.y);
+            logger.info("   Server current HP: {}/{}", player.getCurrentHp(), player.getMaxHp());
+            logger.info("========================================");
+
+            // Validar colisao
+            if (ChunkManager.getInstance().isSolid(packet.x, packet.y)) {
+                PlayerStatePacket correction = new PlayerStatePacket(player);
                 sendPacket(ctx, correction);
+                logger.info("   Collision detected, sending correction");
                 return;
             }
 
-            // ATUALIZAR TUDO - Posição e Status
-            player.setX(request.x);
-            player.setY(request.y);
-            player.setDirection(request.direction);
+            // ATUALIZAR POSICAO E DIRECAO
+            player.setX(packet.x);
+            player.setY(packet.y);
+            player.setDirection(packet.direction);
 
-            // Atualizar status (apenas valores válidos)
-            if (request.currentHp > 0 && request.currentHp <= player.getMaxHp()) {
-                player.setCurrentHp(request.currentHp);
+            // ATUALIZAR VALORES BASE
+            if (packet.baseHp > 0) {
+                player.setBaseHp(packet.baseHp);
             }
-            if (request.currentMana >= 0 && request.currentMana <= player.getMaxMana()) {
-                player.setCurrentMana(request.currentMana);
+            if (packet.baseMana > 0) {
+                player.setBaseMana(packet.baseMana);
             }
-            if (request.currentStamina >= 0 && request.currentStamina <= player.getMaxStamina()) {
-                player.setCurrentStamina(request.currentStamina);
-            }
-            if (request.currentGold >= 0) {
-                player.setGold(request.currentGold);
-            }
-            if (request.currentExperience >= 0) {
-                player.setExperience(request.currentExperience);
-            }
-            if (request.currentLevel >= 1) {
-                int oldLevel = player.getLevel();
-                player.setLevel(request.currentLevel);
-                if (oldLevel != request.currentLevel) {
-                    player.recalculateMaxStats();
-                }
+            if (packet.baseStamina > 0) {
+                player.setBaseStamina(packet.baseStamina);
             }
 
-            // Salvar periodicamente (a cada 5 segundos já está no updatePlayerPosition)
-            GameWorld.getInstance().updatePlayerPosition(request.playerId, request.x, request.y, request.direction);
+            // ATUALIZAR STATUS ATUAIS
+            player.setCurrentHp(packet.currentHp);
+            player.setCurrentMana(packet.currentMana);
+            player.setCurrentStamina(packet.currentStamina);
 
-            // ==================== CRIAR BROADCAST APENAS COM MOVIMENTO ====================
-            // IMPORTANTE: Criar um objeto LEVE apenas com dados de movimento
-            // para não sobrescrever os status (HP, Mana, Stamina) dos outros clientes
-            Player movementOnly = new Player();
-            movementOnly.setId(player.getId());
-            movementOnly.setUsername(player.getUsername());
-            movementOnly.setX(player.getX());
-            movementOnly.setY(player.getY());
-            movementOnly.setDirection(player.getDirection());
-            // NÃO copiar HP, Mana, Stamina, Gold, Experience, Level, etc!
+            // ATUALIZAR GOLD E EXPERIENCIA
+            player.setGold(packet.gold);
+            player.setExperience(packet.experience);
 
-            // Broadcast para TODOS os outros jogadores (exceto quem enviou)
-            broadcastToAllExcept(new MovementBroadcast(movementOnly), ctx.channel().id().asLongText());
+            // ATUALIZAR LEVEL
+            if (packet.level != player.getLevel()) {
+                player.setLevel(packet.level);
+            }
+
+            // ATUALIZAR ATRIBUTOS
+            if (packet.strength > 0) {
+                player.setStrength(packet.strength);
+            }
+            if (packet.agility > 0) {
+                player.setAgility(packet.agility);
+            }
+            if (packet.wisdom > 0) {
+                player.setWisdom(packet.wisdom);
+            }
+
+            // VALIDAR SE OS STATUS ATUAIS NAO ULTRAPASSAM O MAX CALCULADO
+            if (player.getCurrentHp() > player.getMaxHp()) {
+                player.setCurrentHp(player.getMaxHp());
+                logger.warn("   Fixed HP overflow for {}: was {}, set to {}",
+                        player.getUsername(), packet.currentHp, player.getMaxHp());
+            }
+            if (player.getCurrentMana() > player.getMaxMana()) {
+                player.setCurrentMana(player.getMaxMana());
+            }
+            if (player.getCurrentStamina() > player.getMaxStamina()) {
+                player.setCurrentStamina(player.getMaxStamina());
+            }
+
+            logger.info("   After update - Server HP: {}/{}, Mana: {}/{}, Stamina: {}/{}",
+                    player.getCurrentHp(), player.getMaxHp(),
+                    player.getCurrentMana(), player.getMaxMana(),
+                    player.getCurrentStamina(), player.getMaxStamina());
+
+            // BROADCAST - Criar pacote com os valores ATUAIS do servidor
+            PlayerStatePacket broadcast = new PlayerStatePacket(player);
+            broadcastToAll(broadcast);
+
+            // SALVAR NO BANCO
+            GameWorld.getInstance().savePlayer(player);
+
+            logger.info("   Broadcast sent to all players and saved to database");
 
         } catch (Exception e) {
-            logger.error("Erro handleMovement: {}", e.getMessage(), e);
+            logger.error("Erro handlePlayerState: {}", e.getMessage(), e);
         }
     }
 
-    private boolean canMoveTo(float x, float y) {
-        return !ChunkManager.getInstance().isSolid(x, y);
-    }
+    private void sendAllExistingPlayers(ChannelHandlerContext ctx, Player newPlayer) {
+        Collection<Player> allPlayers = GameWorld.getInstance().getAllPlayers();
+        int sentCount = 0;
 
+        for (Player existingPlayer : allPlayers) {
+            if (existingPlayer.getId().equals(newPlayer.getId())) {
+                continue; // Pular o proprio jogador
+            }
+
+            PlayerStatePacket statePacket = new PlayerStatePacket(existingPlayer);
+            statePacket.fullSync = true;
+            sendPacket(ctx, statePacket);
+            sentCount++;
+
+            logger.debug("Enviado jogador existente: {} - HP={}/{}",
+                    existingPlayer.getUsername(),
+                    existingPlayer.getCurrentHp(),
+                    existingPlayer.getMaxHp());
+        }
+
+        logger.info("Enviado {} jogadores existentes para {}", sentCount, newPlayer.getUsername());
+    }
     // ==================== CHAT ====================
 
     private void handleChat(ChannelHandlerContext ctx, ChatMessage chatMsg) {
@@ -329,14 +356,12 @@ public class GameServerHandler extends SimpleChannelInboundHandler<Object> {
                 chatMsg.message = chatMsg.message.substring(0, 500);
             }
 
-            // ⭐ COMANDO ADMIN PARA SPAWNAR ITEM
+            // COMANDO ADMIN PARA SPAWNAR ITEM
             if (chatMsg.message.startsWith("/spawnitem ") && currentPlayer != null) {
                 String[] parts = chatMsg.message.split(" ");
                 if (parts.length >= 2) {
                     String itemId = parts[1];
 
-                    // Verificar se é admin (você pode adicionar uma flag de admin)
-                    // Por enquanto, qualquer um pode usar para teste
                     ItemManager.getInstance().spawnItem(itemId,
                             currentPlayer.getX() + 100,
                             currentPlayer.getY(),
@@ -448,7 +473,6 @@ public class GameServerHandler extends SimpleChannelInboundHandler<Object> {
 
     private void sendFriendRequest(ChannelHandlerContext ctx, String targetUsername) {
         try {
-            // Buscar o jogador alvo pelo username
             Player targetPlayer = DatabaseManager.getInstance().getPlayerByUsername(targetUsername);
 
             if (targetPlayer == null) {
@@ -465,7 +489,6 @@ public class GameServerHandler extends SimpleChannelInboundHandler<Object> {
                 return;
             }
 
-            // Verificar se ja sao amigos
             if (DatabaseManager.getInstance().areFriends(currentPlayer.getId(), targetPlayer.getId())) {
                 FriendRequestPacket response = new FriendRequestPacket("ERROR", targetUsername);
                 response.message = "Voce ja e amigo deste jogador!";
@@ -473,7 +496,6 @@ public class GameServerHandler extends SimpleChannelInboundHandler<Object> {
                 return;
             }
 
-            // Verificar se ja existe solicitacao pendente
             if (DatabaseManager.getInstance().hasPendingRequest(currentPlayer.getId(), targetPlayer.getId())) {
                 FriendRequestPacket response = new FriendRequestPacket("ERROR", targetUsername);
                 response.message = "Solicitacao de amizade ja enviada!";
@@ -481,11 +503,9 @@ public class GameServerHandler extends SimpleChannelInboundHandler<Object> {
                 return;
             }
 
-            // Criar solicitacao
             String requestId = DatabaseManager.getInstance().createFriendRequest(currentPlayer.getId(), targetPlayer.getId());
 
             if (requestId != null) {
-                // Notificar o destinatario se estiver online
                 Channel targetChannel = getChannelByPlayerId(targetPlayer.getId());
                 if (targetChannel != null) {
                     FriendRequestPacket notification = new FriendRequestPacket("NEW_REQUEST", currentPlayer.getUsername());
@@ -512,7 +532,6 @@ public class GameServerHandler extends SimpleChannelInboundHandler<Object> {
 
     private void acceptFriendRequest(ChannelHandlerContext ctx, String requestId) {
         try {
-            // Buscar detalhes da solicitacao - use DatabaseManager.FriendRequestDetails
             DatabaseManager.FriendRequestDetails details = DatabaseManager.getInstance().getFriendRequestDetails(requestId);
 
             if (details == null || !details.toPlayerId.equals(currentPlayer.getId())) {
@@ -522,11 +541,9 @@ public class GameServerHandler extends SimpleChannelInboundHandler<Object> {
                 return;
             }
 
-            // Aceitar amizade
             boolean success = DatabaseManager.getInstance().acceptFriendRequest(requestId);
 
             if (success) {
-                // Notificar o solicitante se estiver online
                 Channel requesterChannel = getChannelByPlayerId(details.fromPlayerId);
                 if (requesterChannel != null) {
                     FriendRequestPacket notification = new FriendRequestPacket("ACCEPTED", currentPlayer.getUsername());
@@ -542,7 +559,6 @@ public class GameServerHandler extends SimpleChannelInboundHandler<Object> {
                 response.message = "Solicitacao aceita!";
                 sendPacket(ctx, response);
 
-                // Enviar lista de amigos atualizada para ambos
                 sendFriendListToPlayer(ctx, currentPlayer);
                 if (requesterChannel != null) {
                     Player requester = GameWorld.getInstance().getPlayer(details.fromPlayerId);
@@ -569,8 +585,6 @@ public class GameServerHandler extends SimpleChannelInboundHandler<Object> {
                 response.success = true;
                 response.message = "Solicitacao recusada!";
                 sendPacket(ctx, response);
-
-                // Enviar lista atualizada
                 sendFriendListToPlayer(ctx, currentPlayer);
             }
 
@@ -596,7 +610,6 @@ public class GameServerHandler extends SimpleChannelInboundHandler<Object> {
             boolean success = DatabaseManager.getInstance().removeFriend(currentPlayer.getId(), friend.getId());
 
             if (success) {
-                // Notificar o amigo se estiver online
                 Channel friendChannel = getChannelByPlayerId(friend.getId());
                 if (friendChannel != null) {
                     FriendRequestPacket notification = new FriendRequestPacket("REMOVED", currentPlayer.getUsername());
@@ -609,8 +622,6 @@ public class GameServerHandler extends SimpleChannelInboundHandler<Object> {
                 response.success = true;
                 response.message = "Amigo removido!";
                 sendPacket(ctx, response);
-
-                // Enviar lista atualizada
                 sendFriendListToPlayer(ctx, currentPlayer);
             }
 
@@ -661,7 +672,6 @@ public class GameServerHandler extends SimpleChannelInboundHandler<Object> {
         try {
             if (currentPlayer == null) return;
 
-            // Verificar se sao amigos
             if (!DatabaseManager.getInstance().areFriends(currentPlayer.getId(), packet.toPlayerId)) {
                 PrivateMessagePacket error = new PrivateMessagePacket();
                 error.message = "Voce so pode enviar mensagens para amigos!";
@@ -669,7 +679,6 @@ public class GameServerHandler extends SimpleChannelInboundHandler<Object> {
                 return;
             }
 
-            // Buscar informacoes do destinatario
             Player targetPlayer = DatabaseManager.getInstance().getPlayerById(packet.toPlayerId);
             if (targetPlayer == null) return;
 
@@ -677,10 +686,8 @@ public class GameServerHandler extends SimpleChannelInboundHandler<Object> {
             packet.fromUsername = currentPlayer.getUsername();
             packet.timestamp = System.currentTimeMillis();
 
-            // Salvar no banco
             DatabaseManager.getInstance().savePrivateMessage(packet);
 
-            // Enviar para o destinatario se estiver online
             Channel targetChannel = getChannelByPlayerId(packet.toPlayerId);
             if (targetChannel != null) {
                 targetChannel.writeAndFlush(packet);
@@ -726,7 +733,6 @@ public class GameServerHandler extends SimpleChannelInboundHandler<Object> {
             PrivateMessageHistoryResponse response = new PrivateMessageHistoryResponse(request.friendId, messages);
             sendPacket(ctx, response);
 
-            // Marcar como lidas
             DatabaseManager.getInstance().markMessagesAsRead(currentPlayer.getId(), request.friendId);
 
         } catch (SQLException e) {
@@ -744,29 +750,23 @@ public class GameServerHandler extends SimpleChannelInboundHandler<Object> {
 
         ItemDefinition def = groundItem.getDefinition();
 
-        // Adicionar ao inventário
         boolean added = currentPlayer.getInventory().addItem(def.getId(), 1, def);
 
         if (added) {
-            // Atualizar banco
-            DatabaseManager.getInstance().savePlayerPosition(currentPlayer);
+            GameWorld.getInstance().savePlayer(currentPlayer);
 
-            // Enviar inventário atualizado
             InventoryUpdatePacket invPacket = new InventoryUpdatePacket(currentPlayer.getInventory());
             sendPacket(ctx, invPacket);
 
-            // Enviar resultado
             PickupResultPacket result = new PickupResultPacket(true, def.getName(), 1);
             sendPacket(ctx, result);
 
-            // Broadcast do despawn
             ItemDespawnPacket despawn = new ItemDespawnPacket(packet.instanceId);
             broadcastToAll(despawn);
 
             logger.info("Player {} picked up {} x{}",
                     currentPlayer.getUsername(), def.getName(), 1);
         } else {
-            // Inventário cheio - recolocar o item
             ItemManager.getInstance().respawnItem(groundItem);
 
             PickupResultPacket result = new PickupResultPacket(false, def.getName(), 1);
@@ -782,16 +782,13 @@ public class GameServerHandler extends SimpleChannelInboundHandler<Object> {
 
         int toDrop = Math.min(packet.quantity, stack.getQuantity());
 
-        // Remover do inventário
         currentPlayer.getInventory().removeItem(stack.getItemId(), toDrop);
 
-        // ⭐ CALCULAR POSIÇÃO A 100 PIXELS DE DISTÂNCIA NA DIREÇÃO DO JOGADOR
         float dropX = currentPlayer.getX();
         float dropY = currentPlayer.getY();
 
-        // Direção baseada na orientação do jogador
         String direction = currentPlayer.getDirection();
-        float distance = 100f; // Distância segura
+        float distance = 100f;
 
         switch (direction) {
             case "UP":
@@ -811,9 +808,7 @@ public class GameServerHandler extends SimpleChannelInboundHandler<Object> {
                 break;
         }
 
-        // Verificar se a posição não é sólida
         if (ChunkManager.getInstance().isSolid(dropX, dropY)) {
-            // Se for sólido, tentar posições alternativas
             float[][] alternatives = {
                     {currentPlayer.getX() + 50, currentPlayer.getY()},
                     {currentPlayer.getX() - 50, currentPlayer.getY()},
@@ -830,7 +825,6 @@ public class GameServerHandler extends SimpleChannelInboundHandler<Object> {
             }
         }
 
-        // Spawnar no chão
         ItemDefinition def = ItemManager.getInstance().getItemDefinition(stack.getItemId());
         if (def != null) {
             ItemManager.getInstance().spawnItem(def.getId(), dropX, dropY, 60);
@@ -838,10 +832,8 @@ public class GameServerHandler extends SimpleChannelInboundHandler<Object> {
                     currentPlayer.getUsername(), stack.getItemId(), toDrop, dropX, dropY, direction);
         }
 
-        // Salvar no banco
-        DatabaseManager.getInstance().savePlayerInventory(currentPlayer);
+        GameWorld.getInstance().savePlayer(currentPlayer);
 
-        // Enviar inventário atualizado
         InventoryUpdatePacket invPacket = new InventoryUpdatePacket(currentPlayer.getInventory());
         sendPacket(ctx, invPacket);
     }
@@ -861,10 +853,8 @@ public class GameServerHandler extends SimpleChannelInboundHandler<Object> {
                 if (stack != null && !stack.isEmpty()) {
                     ItemDefinition def = ItemManager.getInstance().getItemDefinition(stack.getItemId());
                     if (def != null && isEquippableCategory(def.getCategory())) {
-                        // Verificar se já tem um item equipado no slot
                         String currentEquipped = currentPlayer.getInventory().getEquipped().get(packet.equipSlot);
                         if (currentEquipped != null && !currentEquipped.isEmpty()) {
-                            // Se já tem item equipado, primeiro desequipa ele para o inventário
                             unequipToInventory(packet.equipSlot);
                         }
                         currentPlayer.getInventory().equipItem(packet.slot, packet.equipSlot);
@@ -879,56 +869,32 @@ public class GameServerHandler extends SimpleChannelInboundHandler<Object> {
                 break;
 
             case "UNEQUIP":
-                logger.info("=== UNEQUIP DEBUG ===");
-                logger.info("Player: {}", currentPlayer.getUsername());
-                logger.info("EquipSlot: {}", packet.equipSlot);
-                logger.info("Current equipped items: {}", currentPlayer.getInventory().getEquipped());
-
                 String equippedItemId = currentPlayer.getInventory().getEquipped().get(packet.equipSlot);
-                logger.info("Equipped item ID: {}", equippedItemId);
 
                 if (equippedItemId != null && !equippedItemId.isEmpty()) {
-                    // Remover do equipamento
                     currentPlayer.getInventory().unequipItem(packet.equipSlot);
-                    logger.info("Removed from equipment slot: {}", packet.equipSlot);
 
-                    // Adicionar de volta ao inventário
                     ItemDefinition def = ItemManager.getInstance().getItemDefinition(equippedItemId);
                     if (def != null) {
-                        boolean added = currentPlayer.getInventory().addItem(equippedItemId, 1, def);
-                        logger.info("Added back to inventory: {} - Success: {}", equippedItemId, added);
-                    } else {
-                        logger.warn("Item definition not found for: {}", equippedItemId);
+                        currentPlayer.getInventory().addItem(equippedItemId, 1, def);
+                        logger.info("Unequipped {} back to inventory", equippedItemId);
                     }
-                } else {
-                    logger.warn("No item equipped in slot: {}", packet.equipSlot);
                 }
-
-                logger.info("After unequip - Inventory slots: {}, Equipped: {}",
-                        currentPlayer.getInventory().getSlots().size(),
-                        currentPlayer.getInventory().getEquipped());
                 break;
         }
 
-        // Salvar no banco
-        DatabaseManager.getInstance().savePlayerInventory(currentPlayer);
+        GameWorld.getInstance().savePlayer(currentPlayer);
 
-        // Enviar inventário atualizado
         InventoryUpdatePacket invPacket = new InventoryUpdatePacket(currentPlayer.getInventory());
         sendPacket(ctx, invPacket);
     }
 
-    /**
-     * Desequipa um item e o coloca de volta no inventário
-     */
     private void unequipToInventory(String equipSlot) {
         String itemId = currentPlayer.getInventory().getEquipped().get(equipSlot);
         if (itemId == null || itemId.isEmpty()) return;
 
-        // Remover do equipamento
         currentPlayer.getInventory().unequipItem(equipSlot);
 
-        // Adicionar de volta ao inventário
         ItemDefinition def = ItemManager.getInstance().getItemDefinition(itemId);
         if (def != null) {
             currentPlayer.getInventory().addItem(itemId, 1, def);
@@ -944,7 +910,6 @@ public class GameServerHandler extends SimpleChannelInboundHandler<Object> {
         CombatManager combatManager = CombatManager.getInstance();
         Collection<Player> allPlayers = GameWorld.getInstance().getAllPlayers();
 
-        // Encontrar alvo mais próximo
         Player target = combatManager.findNearestTarget(currentPlayer, request.attackType, allPlayers);
 
         if (target == null) {
@@ -952,11 +917,9 @@ public class GameServerHandler extends SimpleChannelInboundHandler<Object> {
             return;
         }
 
-        // Processar ataque
         AttackResult result = combatManager.processAttack(currentPlayer, target, request.attackType);
 
         if (result.isSuccess()) {
-            // Broadcast do ataque para todos os jogadores
             AttackBroadcast broadcast = new AttackBroadcast(
                     currentPlayer.getId(),
                     currentPlayer.getUsername(),
@@ -966,7 +929,6 @@ public class GameServerHandler extends SimpleChannelInboundHandler<Object> {
             );
             broadcastToAll(broadcast);
 
-            // Enviar dano específico para o alvo (atualizar HP)
             DamagePacket damagePacket = new DamagePacket(
                     target.getId(),
                     result.getDamage(),
@@ -975,14 +937,16 @@ public class GameServerHandler extends SimpleChannelInboundHandler<Object> {
                     request.attackType
             );
 
-            // Enviar para o alvo
             Channel targetChannel = getChannelByPlayerId(target.getId());
             if (targetChannel != null) {
                 targetChannel.writeAndFlush(damagePacket);
             }
 
-            // Enviar atualização de status para o atacante
             sendPacket(ctx, damagePacket);
+
+            // Enviar atualização de estado completo após o dano
+            PlayerStatePacket stateUpdate = new PlayerStatePacket(currentPlayer);
+            sendPacket(ctx, stateUpdate);
         }
     }
 
@@ -1011,13 +975,5 @@ public class GameServerHandler extends SimpleChannelInboundHandler<Object> {
         }
         channels.remove(ctx.channel());
         logger.info("Conexao fechada: {}", channelId);
-    }
-
-    // Classe interna para detalhes da solicitacao
-    private static class FriendRequestDetails {
-        String requestId;
-        String fromPlayerId;
-        String toPlayerId;
-        String fromUsername;
     }
 }

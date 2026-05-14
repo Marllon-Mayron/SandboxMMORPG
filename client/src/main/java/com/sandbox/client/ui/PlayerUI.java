@@ -42,9 +42,14 @@ public class PlayerUI {
     private SandboxClient game;
 
     private Player currentPlayer;
-    private float currentHealth = 100f;
-    private float currentMana = 100f;
-    private float currentStamina = 100f;
+
+    private int currentHp = 100;
+    private int maxHp = 100;
+    private int currentMana = 50;
+    private int maxMana = 50;
+    private int currentStamina = 100;
+    private int maxStamina = 100;
+
     private int currentGold = 0;
     private float terrainSpeed = 1.0f;
 
@@ -56,10 +61,11 @@ public class PlayerUI {
     private Label goldLabel;
     private Label levelLabel;
     private Label healthLabel;
-    private Label healthPercentLabel;
+    private Label healthValueLabel;
     private Label manaLabel;
-    private Label manaPercentLabel;
-    private Label staminaPercentLabel;
+    private Label manaValueLabel;
+    private Label staminaLabel;
+    private Label staminaValueLabel;
     private Label speedLabel;
     private Label speedValueLabel;
     private float currentSpeedMultiplier = 1.0f;
@@ -100,20 +106,14 @@ public class PlayerUI {
     private Consumer<InventoryWindow.DropAction> onDropItemCallback;
 
     // Dimensões fixas
-    private static final int HUD_WIDTH = 160;
+    private static final int HUD_WIDTH = 200;
     private static final int CHAT_WIDTH = 420;
     private static final int CHAT_HEIGHT = 300;
 
-    // BARRA DE VIDA - VALORES ABSOLUTAMENTE FIXOS
+    // BARRA DE VIDA - VALORES ABSOLUTOS
     private static final int HEALTH_BAR_WIDTH = 220;
     private static final int HEALTH_BAR_HEIGHT = 20;
     private static final int HEALTH_BAR_X = 0;
-
-    // Posições em porcentagem
-    private static final float HUD_X_PERCENT = 0.01f;
-    private static final float HUD_Y_PERCENT = 0.72f;
-    private static final float CHAT_X_PERCENT = 0.01f;
-    private static final float CHAT_Y_PERCENT = 0.0f;
 
     public PlayerUI() {
         this.fontManager = FontManager.getInstance();
@@ -278,18 +278,25 @@ public class PlayerUI {
         infoPanel.add(separator).left().padBottom(5).colspan(2);
         infoPanel.row();
 
-        manaLabel = new Label("Mana:", skin, "default");
-        infoPanel.add(manaLabel).left().padRight(10);
-        manaPercentLabel = new Label("100%", skin, "default");
-        manaPercentLabel.setColor(Color.CYAN);
-        infoPanel.add(manaPercentLabel).right();
+        healthLabel = new Label("HP:", skin, "default");
+        infoPanel.add(healthLabel).left().padRight(10);
+        healthValueLabel = new Label("100/100", skin, "default");
+        healthValueLabel.setColor(Color.RED);
+        infoPanel.add(healthValueLabel).right();
         infoPanel.row();
 
-        Label staminaLabel = new Label("Stamina:", skin, "default");
+        manaLabel = new Label("Mana:", skin, "default");
+        infoPanel.add(manaLabel).left().padRight(10);
+        manaValueLabel = new Label("50/50", skin, "default");
+        manaValueLabel.setColor(Color.CYAN);
+        infoPanel.add(manaValueLabel).right();
+        infoPanel.row();
+
+        staminaLabel = new Label("Stamina:", skin, "default");
         infoPanel.add(staminaLabel).left().padRight(10);
-        staminaPercentLabel = new Label("100%", skin, "default");
-        staminaPercentLabel.setColor(Color.LIME);
-        infoPanel.add(staminaPercentLabel).right();
+        staminaValueLabel = new Label("100/100", skin, "default");
+        staminaValueLabel.setColor(Color.LIME);
+        infoPanel.add(staminaValueLabel).right();
         infoPanel.row();
 
         infoPanel.add(separator).left().padTop(5).padBottom(5).colspan(2);
@@ -306,13 +313,11 @@ public class PlayerUI {
     }
 
     private void createTaskBarAndWindows() {
-        // Criar TaskBar
         taskBar = new TaskBar(skin, stage);
         taskBar.setOnFriendsClick(() -> toggleFriendsWindow());
         taskBar.setOnAttributesClick(() -> toggleAttributes());
         taskBar.setOnInventoryClick(() -> toggleInventory());
 
-        // Criar FriendsWindow
         friendsWindow = new FriendsWindow(skin, stage);
         friendsWindow.setOnSendFriendRequest(username -> {
             if (sendFriendRequestCallback != null) {
@@ -338,7 +343,6 @@ public class PlayerUI {
             openPrivateChatWith(friend);
         });
 
-        // Criar PrivateChatWindow
         privateChatWindow = new PrivateChatWindow(skin, stage);
         privateChatWindow.setOnSendMessage((friendId, message) -> {
             if (sendPrivateMessageCallback != null) {
@@ -354,7 +358,6 @@ public class PlayerUI {
             }
         });
 
-        // Criar InventoryWindow
         inventoryWindow = new InventoryWindow(skin, stage);
         inventoryWindow.setOnMoveItem((fromSlot, toSlot) -> {
             if (onMoveItemCallback != null) {
@@ -482,6 +485,23 @@ public class PlayerUI {
             levelLabel.setText("Level: " + player.getLevel());
             currentGold = player.getGold();
 
+            this.currentHp = player.getCurrentHp();
+            this.maxHp = player.getMaxHp();
+            this.currentMana = player.getCurrentMana();
+            this.maxMana = player.getMaxMana();
+            this.currentStamina = player.getCurrentStamina();
+            this.maxStamina = player.getMaxStamina();
+
+            healthValueLabel.setText(currentHp + "/" + maxHp);
+            manaValueLabel.setText(currentMana + "/" + maxMana);
+            staminaValueLabel.setText(currentStamina + "/" + maxStamina);
+
+            logger.info("📊 UI Updated from Player: {} - HP={}/{}, Mana={}/{}, Stamina={}/{}",
+                    player.getUsername(),
+                    currentHp, maxHp,
+                    currentMana, maxMana,
+                    currentStamina, maxStamina);
+
             if (attributesWindow != null && attributesWindow.isVisible()) {
                 attributesWindow.update(player);
             }
@@ -491,28 +511,41 @@ public class PlayerUI {
             }
         }
 
-        manaPercentLabel.setText(Math.round(currentMana) + "%");
-        staminaPercentLabel.setText(Math.round(currentStamina) + "%");
+        float hpPercent = (float) currentHp / maxHp * 100;
+        float manaPercent = (float) currentMana / maxMana * 100;
+        float staminaPercent = (float) currentStamina / maxStamina * 100;
+
+        // HP Color
+        if (hpPercent < 30f) {
+            healthValueLabel.setColor(Color.RED);
+            healthLabel.setColor(Color.RED);
+        } else if (hpPercent < 70f) {
+            healthValueLabel.setColor(Color.ORANGE);
+            healthLabel.setColor(Color.ORANGE);
+        } else {
+            healthValueLabel.setColor(Color.WHITE);
+            healthLabel.setColor(Color.WHITE);
+        }
 
         // Mana color
-        if (currentMana < 30f) {
-            manaPercentLabel.setColor(Color.RED);
+        if (manaPercent < 30f) {
+            manaValueLabel.setColor(Color.RED);
             manaLabel.setColor(Color.RED);
-        } else if (currentMana < 70f) {
-            manaPercentLabel.setColor(Color.ORANGE);
+        } else if (manaPercent < 70f) {
+            manaValueLabel.setColor(Color.ORANGE);
             manaLabel.setColor(Color.ORANGE);
         } else {
-            manaPercentLabel.setColor(Color.CYAN);
+            manaValueLabel.setColor(Color.CYAN);
             manaLabel.setColor(Color.WHITE);
         }
 
         // Stamina color
-        if (currentStamina < 30f) {
-            staminaPercentLabel.setColor(Color.RED);
-        } else if (currentStamina < 70f) {
-            staminaPercentLabel.setColor(Color.ORANGE);
+        if (staminaPercent < 30f) {
+            staminaValueLabel.setColor(Color.RED);
+        } else if (staminaPercent < 70f) {
+            staminaValueLabel.setColor(Color.ORANGE);
         } else {
-            staminaPercentLabel.setColor(Color.LIME);
+            staminaValueLabel.setColor(Color.LIME);
         }
 
         // Speed
@@ -556,16 +589,56 @@ public class PlayerUI {
         return inventoryWindow != null && inventoryWindow.isVisible();
     }
 
+    public void setHealth(int current, int max) {
+        this.currentHp = current;
+        this.maxHp = max;
+        if (healthValueLabel != null) {
+            healthValueLabel.setText(currentHp + "/" + maxHp);
+        }
+        logger.info("🏥 UI Health updated to: {}/{}", currentHp, maxHp);
+    }
+
+    public void setMana(int current, int max) {
+        this.currentMana = current;
+        this.maxMana = max;
+        if (manaValueLabel != null) {
+            manaValueLabel.setText(currentMana + "/" + maxMana);
+        }
+    }
+
+    public void setStamina(int current, int max) {
+        this.currentStamina = current;
+        this.maxStamina = max;
+        if (staminaValueLabel != null) {
+            staminaValueLabel.setText(currentStamina + "/" + maxStamina);
+        }
+    }
+
     public void setHealth(float percent) {
-        this.currentHealth = Math.max(0, Math.min(100, percent));
+        if (maxHp > 0) {
+            this.currentHp = Math.round(percent / 100f * maxHp);
+            if (healthValueLabel != null) {
+                healthValueLabel.setText(currentHp + "/" + maxHp);
+            }
+        }
     }
 
     public void setMana(float percent) {
-        this.currentMana = Math.max(0, Math.min(100, percent));
+        if (maxMana > 0) {
+            this.currentMana = Math.round(percent / 100f * maxMana);
+            if (manaValueLabel != null) {
+                manaValueLabel.setText(currentMana + "/" + maxMana);
+            }
+        }
     }
 
     public void setStamina(float percent) {
-        this.currentStamina = Math.max(0, Math.min(100, percent));
+        if (maxStamina > 0) {
+            this.currentStamina = Math.round(percent / 100f * maxStamina);
+            if (staminaValueLabel != null) {
+                staminaValueLabel.setText(currentStamina + "/" + maxStamina);
+            }
+        }
     }
 
     public void setGold(int gold) {
@@ -702,10 +775,7 @@ public class PlayerUI {
 
     // ==================== SETTERS DE CALLBACKS ====================
 
-    // Chat
     public void setSendMessageCallback(Consumer<String> callback) { this.sendMessageCallback = callback; }
-
-    // Friend system
     public void setSendFriendRequestCallback(Consumer<String> callback) { this.sendFriendRequestCallback = callback; }
     public void setAcceptFriendRequestCallback(Consumer<String> callback) { this.acceptFriendRequestCallback = callback; }
     public void setRejectFriendRequestCallback(Consumer<String> callback) { this.rejectFriendRequestCallback = callback; }
@@ -713,12 +783,11 @@ public class PlayerUI {
     public void setSendPrivateMessageCallback(BiConsumer<String, String> callback) { this.sendPrivateMessageCallback = callback; }
     public void setRefreshFriendsCallback(Runnable callback) { this.refreshFriendsCallback = callback; }
     public void setOnLoadPrivateChatHistory(Consumer<String> callback) { this.onLoadPrivateChatHistory = callback; }
-
-    // Inventory system
     public void setOnMoveItemCallback(BiConsumer<Integer, Integer> callback) { this.onMoveItemCallback = callback; }
     public void setOnEquipItemCallback(BiConsumer<Integer, String> callback) { this.onEquipItemCallback = callback; }
     public void setOnUnequipItemCallback(Consumer<Integer> callback) { this.onUnequipItemCallback = callback; }
     public void setOnDropItemCallback(Consumer<InventoryWindow.DropAction> callback) { this.onDropItemCallback = callback; }
+
     public void registerItemTexture(String itemId, TextureRegion region, ItemDefinition definition) {
         logger.info("PlayerUI.registerItemTexture - Item: {}, Category: {}", itemId, definition.getCategory());
         if (inventoryWindow != null) {
@@ -727,7 +796,7 @@ public class PlayerUI {
             logger.warn("InventoryWindow is null, cannot register item texture for: {}", itemId);
         }
     }
-    // Speed
+
     public void setSpeedMultiplier(float multiplier) {
         this.currentSpeedMultiplier = multiplier;
     }
@@ -739,8 +808,7 @@ public class PlayerUI {
         return false;
     }
 
-
-    // ==================== BARRA DE VIDA ====================
+    // ==================== BARRA DE VIDA (gráfica) ====================
 
     private void renderHealthBar() {
         float currentWidth = Gdx.graphics.getWidth();
@@ -754,10 +822,11 @@ public class PlayerUI {
 
         shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
 
+        // Fundo
         shapeRenderer.setColor(0.3f, 0.1f, 0.1f, 0.9f);
         shapeRenderer.rect(HEALTH_BAR_X, actualY, HEALTH_BAR_WIDTH, HEALTH_BAR_HEIGHT);
 
-        float healthPercent = currentHealth / 100f;
+        float healthPercent = (maxHp > 0) ? (float) currentHp / maxHp : 0f;
         float fillWidth = HEALTH_BAR_WIDTH * healthPercent;
 
         if (healthPercent > 0.6f) {
@@ -778,7 +847,7 @@ public class PlayerUI {
 
         fontManager.begin();
         fontManager.getBatch().setProjectionMatrix(uiCamera.combined);
-        String healthText = Math.round(currentHealth) + "%";
+        String healthText = currentHp + "/" + maxHp;
         fontManager.draw(FontManager.NORMAL, healthText, HEALTH_BAR_X + HEALTH_BAR_WIDTH + 8, actualY + HEALTH_BAR_HEIGHT - 4, Color.WHITE);
         fontManager.end();
     }
@@ -790,21 +859,6 @@ public class PlayerUI {
         if (stage != null) {
             stage.act(Gdx.graphics.getDeltaTime());
             stage.draw();
-        }
-    }
-
-    private void renderAttackCooldown(float screenWidth, float screenHeight) {
-        if (currentPlayer == null) return;
-
-        long now = System.currentTimeMillis();
-        long elapsed = now - currentPlayer.getLastAttackTime();
-        if (elapsed < 2000) {
-            float percent = 1.0f - (elapsed / 2000.0f);
-
-            shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
-            shapeRenderer.setColor(0.8f, 0.2f, 0.2f, 0.7f);
-            shapeRenderer.rect(screenWidth - 50, screenHeight - 50, 30, 30 * percent);
-            shapeRenderer.end();
         }
     }
 
@@ -823,8 +877,8 @@ public class PlayerUI {
             taskBar.setPosition(width - 310, 10);
         }
 
-        float chatXPos = width * CHAT_X_PERCENT;
-        float chatYPos = height * CHAT_Y_PERCENT;
+        float chatXPos = width * 0.01f;
+        float chatYPos = 0;
 
         if (chatContainer != null) {
             chatContainer.setPosition(chatXPos, chatYPos);

@@ -12,6 +12,9 @@ public class ExperienceSystem {
     private static final float EXPONENT = 1.8f;   // Curva (1.5 = fácil, 2.0 = difícil)
     private static final int MAX_LEVEL = 100;
 
+    private static final int ATTRIBUTE_POINTS_PER_LEVEL = 3;
+    private static final int SKILL_POINTS_PER_LEVEL = 1;
+
     /**
      * Calcula XP necessário para atingir um determinado level
      */
@@ -63,9 +66,6 @@ public class ExperienceSystem {
         return Math.min(1.0f, (float) xpEarnedInLevel / xpNeededForNext);
     }
 
-    /**
-     * Adiciona XP e retorna quantos levels up ocorreram
-     */
     public static AddXpResult addExperience(Player player, int gainedXP) {
         int oldLevel = player.getLevel();
         int newXP = player.getExperience() + gainedXP;
@@ -74,10 +74,23 @@ public class ExperienceSystem {
         int levelsGained = newLevel - oldLevel;
 
         if (levelsGained > 0) {
-            // Aplicar bônus de level up
-            for (int i = 0; i < levelsGained; i++) {
-                applyLevelUpBonus(player);
-            }
+            // Para cada level up, concede pontos de atributo e skill
+            int totalAttributePoints = levelsGained * ATTRIBUTE_POINTS_PER_LEVEL;
+            int totalSkillPoints = levelsGained * SKILL_POINTS_PER_LEVEL;
+
+            player.setAttributePoints(player.getAttributePoints() + totalAttributePoints);
+            player.setSkillPoints(player.getSkillPoints() + totalSkillPoints);
+
+            // CURA COMPLETA AO UPAR
+            player.setCurrentHp(player.getMaxHp());
+            player.setCurrentMana(player.getMaxMana());
+            player.setCurrentStamina(player.getMaxStamina());
+
+            System.out.println(" Level up! " + player.getUsername() +
+                    " gained " + levelsGained + " level(s)! " +
+                    "+" + totalAttributePoints + " attribute points, " +
+                    "+" + totalSkillPoints + " skill points. " +
+                    "HP fully restored to " + player.getMaxHp());
         }
 
         player.setExperience(newXP);
@@ -86,28 +99,6 @@ public class ExperienceSystem {
         return new AddXpResult(gainedXP, oldLevel, newLevel, levelsGained);
     }
 
-    /**
-     * Aplica bônus de level up
-     */
-    private static void applyLevelUpBonus(Player player) {
-        // Atributos máximos aumentam
-        player.setMaxHp(player.getMaxHp() + 10);
-        player.setMaxMana(player.getMaxMana() + 5);
-        player.setMaxStamina(player.getMaxStamina() + 5);
-
-        // Cura completa ao upar
-        player.setCurrentHp(player.getMaxHp());
-        player.setCurrentMana(player.getMaxMana());
-        player.setCurrentStamina(player.getMaxStamina());
-
-        // Pontos para distribuir
-        player.setAttributePoints(player.getAttributePoints() + 3);
-        player.setSkillPoints(player.getSkillPoints() + 1);
-    }
-
-    /**
-     * Calcula XP ganho ao matar um monstro baseado na dificuldade
-     */
     public static int calculateMonsterXP(int monsterLevel, int playerLevel) {
         int baseXP = 50;
         float levelDifference = monsterLevel - playerLevel;
@@ -157,5 +148,12 @@ public class ExperienceSystem {
             int total = getTotalXPToLevel(level);
             System.out.printf("Level %d: %,d XP total%n", level, total);
         }
+        System.out.println("\n=== Attribute Points per Level ===");
+        System.out.println("Each level: +" + ATTRIBUTE_POINTS_PER_LEVEL + " attribute points");
+        System.out.println("Each level: +" + SKILL_POINTS_PER_LEVEL + " skill points");
+        System.out.println("\n=== Formula ===");
+        System.out.println("maxHp = baseHp + (level-1)*10 + strength*5");
+        System.out.println("maxMana = baseMana + (level-1)*5 + wisdom*5");
+        System.out.println("maxStamina = baseStamina + (level-1)*5 + agility*5");
     }
 }

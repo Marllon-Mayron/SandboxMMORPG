@@ -18,13 +18,11 @@ public class KryoRegistry {
     private static final int ID_REGISTER_REQUEST = 12;
     private static final int ID_REGISTER_RESPONSE = 13;
 
-    private static final int ID_MOVEMENT_REQUEST = 20;
-    private static final int ID_MOVEMENT_BROADCAST = 21;
-    private static final int ID_PLAYER_LEFT = 22;
-    private static final int ID_MOVEMENT_CONFIRM = 23;
+    // REMOVIDOS: ID_MOVEMENT_REQUEST, ID_MOVEMENT_BROADCAST, ID_MOVEMENT_CONFIRM
+    // NOVO ID para PlayerStatePacket
+    private static final int ID_PLAYER_STATE = 24;
 
     private static final int ID_CHAT_MESSAGE = 30;
-
     private static final int ID_HANDSHAKE = 40;
     private static final int ID_PING = 41;
 
@@ -40,9 +38,7 @@ public class KryoRegistry {
     private static final int ID_WORLD_TILE = 63;
     private static final int ID_TILE_TAG = 64;
 
-    // Novos IDs para classes do JSON
     private static final int ID_MAP_JSON_CHUNK_DATA = 70;
-
     private static final int ID_HASH_MAP = 80;
     private static final int ID_LINKED_HASH_MAP = 81;
     private static final int ID_ARRAY_LIST = 82;
@@ -52,7 +48,6 @@ public class KryoRegistry {
     private static final int ID_PRIVATE_MESSAGE = 92;
     private static final int ID_FRIEND_STATUS_UPDATE = 93;
 
-    // NOVOS IDs para histórico de mensagens privadas
     private static final int ID_PRIVATE_MESSAGE_HISTORY_REQUEST = 96;
     private static final int ID_PRIVATE_MESSAGE_HISTORY_RESPONSE = 97;
 
@@ -84,11 +79,8 @@ public class KryoRegistry {
         kryo.register(RegisterRequest.class, ID_REGISTER_REQUEST);
         kryo.register(RegisterResponse.class, ID_REGISTER_RESPONSE);
 
-        // Movement
-        kryo.register(MovementRequest.class, ID_MOVEMENT_REQUEST);
-        kryo.register(MovementBroadcast.class, ID_MOVEMENT_BROADCAST);
-        kryo.register(PlayerLeftPacket.class, ID_PLAYER_LEFT);
-        kryo.register(MovementConfirm.class, ID_MOVEMENT_CONFIRM);
+        kryo.register(PlayerStatePacket.class, ID_PLAYER_STATE);
+        kryo.register(PlayerLeftPacket.class, 22);
 
         // Chat
         kryo.register(ChatMessage.class, ID_CHAT_MESSAGE);
@@ -139,6 +131,7 @@ public class KryoRegistry {
         kryo.register(PickupItemPacket.class, ID_PICKUP_ITEM);
         kryo.register(DropItemPacket.class, ID_DROP_ITEM);
         kryo.register(PickupResultPacket.class, ID_PICKUP_RESULT);
+
         // Arrays multidimensionais
         kryo.register(int[][].class, 90);
         kryo.register(int[][][].class, 91);
@@ -188,6 +181,7 @@ public class KryoRegistry {
         // Date/Time
         kryo.register(java.util.Date.class, 150);
         kryo.register(java.sql.Timestamp.class, 151);
+
         //hashmap
         kryo.register(java.util.HashMap.class, 179);
 

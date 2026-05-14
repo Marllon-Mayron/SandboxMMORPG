@@ -24,9 +24,10 @@ public class Player implements Serializable {
     private int currentMana;
     private int currentStamina;
 
-    private int maxHp;
-    private int maxMana;
-    private int maxStamina;
+    // VALORES BASE (persistidos no banco)
+    private int baseHp;
+    private int baseMana;
+    private int baseStamina;
 
     private transient boolean isDashing;
     private transient float dashTimer;
@@ -40,12 +41,12 @@ public class Player implements Serializable {
     private int attributePoints;
     private int skillPoints;
 
-    // Regeneração (persiste)
+    // Regeneracao (persiste)
     private int hpRegenPerSecond = 3;
     private int manaRegenPerSecond = 3;
     private int staminaRegenPerSecond = 5;
 
-    // --- DADOS TEMPORÁRIOS (NÃO PERSISTEM) ---
+    // --- DADOS TEMPORARIOS (NAO PERSISTEM) ---
     private transient long lastRegenTime;
     private transient long lastDashTime;
     private transient long lastMovementSend;
@@ -54,11 +55,14 @@ public class Player implements Serializable {
     private transient long lastSaveTime;
 
     private CombatStats combatStats;
-    private transient long lastAttackTime;  // Para cooldown
+    private transient long lastAttackTime;
     private transient boolean isAttacking;
     private transient float attackTimer;
 
-    // --- VALORES FIXOS DO GAME (não persistem, iguais para todos) ---
+    // Callback para notificar quando o status mudar
+    private transient Runnable onStatusChanged;
+
+    // --- VALORES FIXOS DO GAME ---
     private static final float BASE_SPEED = 400f;
     private static final float SPRINT_MULTIPLIER = 1.4f;
     private static final float SPRINT_STAMINA_COST = 0.001f;
@@ -66,6 +70,14 @@ public class Player implements Serializable {
     private static final int DASH_DISTANCE = 150;
     private static final int DASH_STAMINA_COST = 20;
     private static final float DASH_DURATION = 0.15f;
+
+    // CONSTANTES PARA BONUS POR ATRIBUTO
+    private static final int HP_PER_STRENGTH = 5;
+    private static final int MANA_PER_WISDOM = 5;
+    private static final int STAMINA_PER_AGILITY = 5;
+    private static final int HP_PER_LEVEL = 10;
+    private static final int MANA_PER_LEVEL = 5;
+    private static final int STAMINA_PER_LEVEL = 5;
 
     public Player() {
         this.id = "";
@@ -85,7 +97,13 @@ public class Player implements Serializable {
         this.agility = 5;
         this.wisdom = 5;
 
-        recalculateMaxStats();
+        this.baseHp = 100;
+        this.baseMana = 50;
+        this.baseStamina = 100;
+
+        this.currentHp = getMaxHp();
+        this.currentMana = getMaxMana();
+        this.currentStamina = getMaxStamina();
 
         this.attributePoints = 0;
         this.skillPoints = 0;
@@ -102,7 +120,30 @@ public class Player implements Serializable {
         this.lastSaveTime = now;
     }
 
-    // Getters e Setters padrão...
+    // METODOS DE CALCULO DE MAX (calculados em tempo real)
+    public int getMaxHp() {
+        return baseHp + (level - 1) * HP_PER_LEVEL + strength * HP_PER_STRENGTH;
+    }
+
+    public int getMaxMana() {
+        return baseMana + (level - 1) * MANA_PER_LEVEL + wisdom * MANA_PER_WISDOM;
+    }
+
+    public int getMaxStamina() {
+        return baseStamina + (level - 1) * STAMINA_PER_LEVEL + agility * STAMINA_PER_AGILITY;
+    }
+
+    // GETTERS E SETTERS DOS VALORES BASE
+    public int getBaseHp() { return baseHp; }
+    public void setBaseHp(int baseHp) { this.baseHp = baseHp; }
+
+    public int getBaseMana() { return baseMana; }
+    public void setBaseMana(int baseMana) { this.baseMana = baseMana; }
+
+    public int getBaseStamina() { return baseStamina; }
+    public void setBaseStamina(int baseStamina) { this.baseStamina = baseStamina; }
+
+    // Getters e Setters padrao
     public String getId() { return id; }
     public void setId(String id) { this.id = id; }
 
@@ -128,46 +169,97 @@ public class Player implements Serializable {
     public void setInventory(Inventory inventory) { this.inventory = inventory; }
 
     public int getLevel() { return level; }
-    public void setLevel(int level) { this.level = level; recalculateMaxStats(); }
+    public void setLevel(int level) {
+        this.level = level;
+        validateCurrentStats();
+        notifyStatusChanged();
+    }
 
     public int getExperience() { return experience; }
-    public void setExperience(int experience) { this.experience = experience; }
+    public void setExperience(int experience) {
+        if (this.experience != experience) {
+            this.experience = experience;
+            notifyStatusChanged();
+        }
+    }
 
     public int getGold() { return gold; }
-    public void setGold(int gold) { this.gold = gold; }
+    public void setGold(int gold) {
+        if (this.gold != gold) {
+            this.gold = gold;
+            notifyStatusChanged();
+        }
+    }
 
     public int getCurrentHp() { return currentHp; }
-    public void setCurrentHp(int currentHp) { this.currentHp = Math.min(maxHp, Math.max(0, currentHp)); }
+    public void setCurrentHp(int currentHp) {
+        int newValue = Math.min(getMaxHp(), Math.max(0, currentHp));
+        if (this.currentHp != newValue) {
+            this.currentHp = newValue;
+            notifyStatusChanged();
+        }
+    }
 
     public int getCurrentMana() { return currentMana; }
-    public void setCurrentMana(int currentMana) { this.currentMana = Math.min(maxMana, Math.max(0, currentMana)); }
+    public void setCurrentMana(int currentMana) {
+        int newValue = Math.min(getMaxMana(), Math.max(0, currentMana));
+        if (this.currentMana != newValue) {
+            this.currentMana = newValue;
+            notifyStatusChanged();
+        }
+    }
 
     public int getCurrentStamina() { return currentStamina; }
-    public void setCurrentStamina(int currentStamina) { this.currentStamina = Math.min(maxStamina, Math.max(0, currentStamina)); }
-
-    public int getMaxHp() { return maxHp; }
-    public void setMaxHp(int maxHp) { this.maxHp = maxHp; }
-
-    public int getMaxMana() { return maxMana; }
-    public void setMaxMana(int maxMana) { this.maxMana = maxMana; }
-
-    public int getMaxStamina() { return maxStamina; }
-    public void setMaxStamina(int maxStamina) { this.maxStamina = maxStamina; }
+    public void setCurrentStamina(int currentStamina) {
+        int newValue = Math.min(getMaxStamina(), Math.max(0, currentStamina));
+        if (this.currentStamina != newValue) {
+            this.currentStamina = newValue;
+            notifyStatusChanged();
+        }
+    }
 
     public int getStrength() { return strength; }
-    public void setStrength(int strength) { this.strength = strength; recalculateMaxStats(); }
+    public void setStrength(int strength) {
+        if (this.strength != strength) {
+            this.strength = strength;
+            validateCurrentStats();
+            notifyStatusChanged();
+        }
+    }
 
     public int getAgility() { return agility; }
-    public void setAgility(int agility) { this.agility = agility; recalculateMaxStats(); }
+    public void setAgility(int agility) {
+        if (this.agility != agility) {
+            this.agility = agility;
+            validateCurrentStats();
+            notifyStatusChanged();
+        }
+    }
 
     public int getWisdom() { return wisdom; }
-    public void setWisdom(int wisdom) { this.wisdom = wisdom; recalculateMaxStats(); }
+    public void setWisdom(int wisdom) {
+        if (this.wisdom != wisdom) {
+            this.wisdom = wisdom;
+            validateCurrentStats();
+            notifyStatusChanged();
+        }
+    }
 
     public int getAttributePoints() { return attributePoints; }
-    public void setAttributePoints(int attributePoints) { this.attributePoints = attributePoints; }
+    public void setAttributePoints(int attributePoints) {
+        if (this.attributePoints != attributePoints) {
+            this.attributePoints = attributePoints;
+            notifyStatusChanged();
+        }
+    }
 
     public int getSkillPoints() { return skillPoints; }
-    public void setSkillPoints(int skillPoints) { this.skillPoints = skillPoints; }
+    public void setSkillPoints(int skillPoints) {
+        if (this.skillPoints != skillPoints) {
+            this.skillPoints = skillPoints;
+            notifyStatusChanged();
+        }
+    }
 
     public int getHpRegenPerSecond() { return hpRegenPerSecond; }
     public void setHpRegenPerSecond(int hpRegenPerSecond) { this.hpRegenPerSecond = hpRegenPerSecond; }
@@ -190,7 +282,18 @@ public class Player implements Serializable {
     public long getLastMovementSend() { return lastMovementSend; }
     public void setLastMovementSend(long lastMovementSend) { this.lastMovementSend = lastMovementSend; }
 
-    // --- VALORES FIXOS (getters estáticos) ---
+    // Callback para notificar mudancas de status
+    public void setOnStatusChanged(Runnable callback) {
+        this.onStatusChanged = callback;
+    }
+
+    private void notifyStatusChanged() {
+        if (onStatusChanged != null) {
+            onStatusChanged.run();
+        }
+    }
+
+    // VALORES FIXOS (getters estaticos)
     public static float getBaseSpeed() { return BASE_SPEED; }
     public static float getSprintMultiplier() { return SPRINT_MULTIPLIER; }
     public static float getSprintStaminaCost() { return SPRINT_STAMINA_COST; }
@@ -217,18 +320,18 @@ public class Player implements Serializable {
     public float getAttackTimer() { return attackTimer; }
     public void setAttackTimer(float attackTimer) { this.attackTimer = attackTimer; }
 
-    // --- MÉTODOS DE UTILIDADE ---
-
-    public void recalculateMaxStats() {
-        this.maxHp = 100 + (level - 1) * 10 + strength * 5;
-        this.maxMana = 50 + (level - 1) * 5 + wisdom * 5;
-        this.maxStamina = 100 + (level - 1) * 5 + agility * 5;
+    // METODO PARA VALIDAR QUE CURRENT NAO ULTRAPASSA MAX
+    private void validateCurrentStats() {
+        int maxHp = getMaxHp();
+        int maxMana = getMaxMana();
+        int maxStamina = getMaxStamina();
 
         if (currentHp > maxHp) currentHp = maxHp;
         if (currentMana > maxMana) currentMana = maxMana;
         if (currentStamina > maxStamina) currentStamina = maxStamina;
     }
 
+    // METODOS DE UTILIDADE
     public boolean canDash() {
         long now = System.currentTimeMillis();
         return (now - lastDashTime) >= DASH_COOLDOWN_MS && currentStamina >= DASH_STAMINA_COST;
@@ -239,15 +342,15 @@ public class Player implements Serializable {
 
         lastDashTime = System.currentTimeMillis();
         currentStamina -= DASH_STAMINA_COST;
+        notifyStatusChanged();
         return true;
     }
 
     public boolean consumeStaminaForSprint(float delta) {
-        float cost = SPRINT_STAMINA_COST * delta;  // sem *60
-        System.out.println("Consume stamina - delta: {"+ delta+ "}, cost: { " +cost+ "}, current stamina: {"+currentStamina+"}");
-
+        float cost = SPRINT_STAMINA_COST * delta;
         if (currentStamina >= cost) {
             currentStamina -= cost;
+            notifyStatusChanged();
             return true;
         }
         return false;
@@ -259,24 +362,44 @@ public class Player implements Serializable {
 
         if (elapsed >= 1000) {
             int seconds = (int) (elapsed / 1000);
+            int maxHp = getMaxHp();
+            int maxMana = getMaxMana();
+            int maxStamina = getMaxStamina();
+
+            boolean changed = false;
 
             if (currentHp < maxHp) {
                 currentHp = Math.min(maxHp, currentHp + (hpRegenPerSecond * seconds));
+                changed = true;
             }
             if (currentMana < maxMana) {
                 currentMana = Math.min(maxMana, currentMana + (manaRegenPerSecond * seconds));
+                changed = true;
             }
             if (currentStamina < maxStamina) {
                 currentStamina = Math.min(maxStamina, currentStamina + (staminaRegenPerSecond * seconds));
+                changed = true;
+            }
+
+            if (changed) {
+                notifyStatusChanged();
             }
 
             lastRegenTime = now - (elapsed % 1000);
         }
     }
 
-    public float getHpPercentage() { return (float) currentHp / maxHp; }
-    public float getManaPercentage() { return (float) currentMana / maxMana; }
-    public float getStaminaPercentage() { return (float) currentStamina / maxStamina; }
+    public float getHpPercentage() {
+        return (float) currentHp / getMaxHp();
+    }
+
+    public float getManaPercentage() {
+        return (float) currentMana / getMaxMana();
+    }
+
+    public float getStaminaPercentage() {
+        return (float) currentStamina / getMaxStamina();
+    }
 
     public int getXpForNextLevel() {
         return ExperienceSystem.getRequiredXP(level + 1);
@@ -289,28 +412,27 @@ public class Player implements Serializable {
     public boolean addExperience(int amount) {
         ExperienceSystem.AddXpResult result = ExperienceSystem.addExperience(this, amount);
         if (result.hasLeveledUp()) {
-            recalculateMaxStats();
+            validateCurrentStats();
+            notifyStatusChanged();
             return true;
         }
         return false;
     }
 
-    // Método para verificar se pode atacar (cooldown global 2 segundos)
     public boolean canAttack() {
         long now = System.currentTimeMillis();
-        return (now - lastAttackTime) >= 2000; // 2 segundos cooldown
+        return (now - lastAttackTime) >= 2000;
     }
 
-    // Método para executar ataque
     public boolean executeAttack() {
         if (!canAttack()) return false;
         lastAttackTime = System.currentTimeMillis();
         isAttacking = true;
-        attackTimer = 0.3f; // duração da animação
+        attackTimer = 0.3f;
+        notifyStatusChanged();
         return true;
     }
 
-    // Método para atualizar estado do ataque (chamar no update)
     public void updateAttack(float delta) {
         if (isAttacking) {
             attackTimer -= delta;
@@ -342,6 +464,6 @@ public class Player implements Serializable {
     @Override
     public String toString() {
         return String.format("Player{id='%s', name='%s', level=%d, hp=%d/%d, stamina=%d/%d}",
-                id, username, level, currentHp, maxHp, currentStamina, maxStamina);
+                id, username, level, currentHp, getMaxHp(), currentStamina, getMaxStamina());
     }
 }

@@ -227,7 +227,8 @@ public class GameWorldRenderer implements Screen {
     private void setupCallbacks() {
         logger.info("Setting up callbacks for GameWorldRenderer");
 
-        game.getNetworkClient().setMovementCallback(this::onMovementBroadcast);
+        game.getNetworkClient().setPlayerStateCallback(this::onPlayerState);  // NOVO
+        game.getNetworkClient().setPlayerLeftCallback(this::onPlayerLeft);
         game.getNetworkClient().setChatCallback(this::onChatMessage);
         game.getNetworkClient().setChunkCallback(this::onChunkReceived);
         game.getNetworkClient().setMapLoadCallback(response -> {
@@ -242,7 +243,6 @@ public class GameWorldRenderer implements Screen {
                 });
             }
         });
-        game.getNetworkClient().setPlayerLeftCallback(this::onPlayerLeft);
 
         // Sistema de Amigos
         game.getNetworkClient().setFriendListCallback(this::onFriendListResponse);
@@ -258,7 +258,7 @@ public class GameWorldRenderer implements Screen {
         game.getNetworkClient().setInventoryCallback(this::onInventoryUpdate);
         game.getNetworkClient().setPickupResultCallback(this::onPickupResult);
 
-        // ==================== SISTEMA DE COMBATE ====================
+        // Sistema de Combate
         game.getNetworkClient().setAttackBroadcastCallback(this::onAttackBroadcast);
         game.getNetworkClient().setDamagePacketCallback(this::onDamagePacket);
 
@@ -297,10 +297,21 @@ public class GameWorldRenderer implements Screen {
     public void onDamagePacket(DamagePacket packet) {
         Gdx.app.postRunnable(() -> {
             if (currentPlayer != null && packet.getTargetId().equals(currentPlayer.getId())) {
+                // Eu tomei dano
                 currentPlayer.setCurrentHp(packet.getNewHp());
                 if (playerUI != null) {
                     playerUI.setHealth(currentPlayer.getHpPercentage() * 100);
-                    playerUI.addChatMessage("❤️ You have " + currentPlayer.getCurrentHp() + "/" + currentPlayer.getMaxHp() + " HP");
+                    playerUI.addChatMessage("❤️ You took " + packet.getDamage() + " damage! HP: " +
+                            currentPlayer.getCurrentHp() + "/" + currentPlayer.getMaxHp());
+                }
+                logger.info("I took damage! New HP: {}/{}", currentPlayer.getCurrentHp(), currentPlayer.getMaxHp());
+            } else {
+                // Outro jogador tomou dano
+                Player target = otherPlayers.get(packet.getTargetId());
+                if (target != null) {
+                    target.setCurrentHp(packet.getNewHp());
+                    logger.info("Player {} took damage! New HP: {}/{}",
+                            target.getUsername(), target.getCurrentHp(), target.getMaxHp());
                 }
             }
         });
@@ -308,33 +319,96 @@ public class GameWorldRenderer implements Screen {
 
     // ==================== CALLBACKS EXISTENTES ====================
 
-    public void onMovementBroadcast(MovementBroadcast broadcast) {
+    public void onPlayerState(PlayerStatePacket packet) {
         Gdx.app.postRunnable(() -> {
-            if (broadcast.player != null) {
-                if (currentPlayer != null && broadcast.player.getId().equals(currentPlayer.getId())) {
-                    currentPlayer.setX(broadcast.player.getX());
-                    currentPlayer.setY(broadcast.player.getY());
-                    currentPlayer.setDirection(broadcast.player.getDirection());
-                } else {
-                    Player existing = otherPlayers.get(broadcast.player.getId());
-                    if (existing != null) {
-                        existing.setX(broadcast.player.getX());
-                        existing.setY(broadcast.player.getY());
-                        existing.setDirection(broadcast.player.getDirection());
+            if (packet == null) return;
 
-                        Player interpolated = new Player();
-                        interpolated.setId(existing.getId());
-                        interpolated.setUsername(existing.getUsername());
-                        interpolated.setX(existing.getX());
-                        interpolated.setY(existing.getY());
-                        interpolated.setDirection(existing.getDirection());
-                        interpolatedPlayers.put(broadcast.player.getId(), interpolated);
-                    } else {
-                        otherPlayers.put(broadcast.player.getId(), broadcast.player);
+            boolean isSelf = (currentPlayer != null && packet.playerId.equals(currentPlayer.getId()));
+
+            if (isSelf) {
+                // Atualizar proprio jogador
+                currentPlayer.setX(packet.x);
+                currentPlayer.setY(packet.y);
+                currentPlayer.setDirection(packet.direction);
+
+                if (packet.fullSync) {
+                    currentPlayer.setBaseHp(packet.baseHp);
+                    currentPlayer.setBaseMana(packet.baseMana);
+                    currentPlayer.setBaseStamina(packet.baseStamina);
+                    currentPlayer.setCurrentHp(packet.currentHp);
+                    currentPlayer.setCurrentMana(packet.currentMana);
+                    currentPlayer.setCurrentStamina(packet.currentStamina);
+                    currentPlayer.setStrength(packet.strength);
+                    currentPlayer.setAgility(packet.agility);
+                    currentPlayer.setWisdom(packet.wisdom);
+                    currentPlayer.setLevel(packet.level);
+                    currentPlayer.setGold(packet.gold);
+                    currentPlayer.setExperience(packet.experience);
+
+                    if (playerUI != null) {
+                        playerUI.setHealth(currentPlayer.getCurrentHp(), currentPlayer.getMaxHp());
+                        playerUI.setMana(currentPlayer.getCurrentMana(), currentPlayer.getMaxMana());
+                        playerUI.setStamina(currentPlayer.getCurrentStamina(), currentPlayer.getMaxStamina());
+                        playerUI.setGold(currentPlayer.getGold());
                     }
-                    lastUpdateTime.put(broadcast.player.getId(), System.currentTimeMillis());
+                    logger.info("Updated SELF: HP={}/{}", currentPlayer.getCurrentHp(), currentPlayer.getMaxHp());
+                }
+            } else {
+                // Outro jogador - verificar se ja existe
+                Player existing = otherPlayers.get(packet.playerId);
+
+                if (existing != null) {
+                    // Atualizar jogador existente
+                    existing.setX(packet.x);
+                    existing.setY(packet.y);
+                    existing.setDirection(packet.direction);
+                    existing.setBaseHp(packet.baseHp);
+                    existing.setBaseMana(packet.baseMana);
+                    existing.setBaseStamina(packet.baseStamina);
+                    existing.setCurrentHp(packet.currentHp);
+                    existing.setCurrentMana(packet.currentMana);
+                    existing.setCurrentStamina(packet.currentStamina);
+                    existing.setStrength(packet.strength);
+                    existing.setAgility(packet.agility);
+                    existing.setWisdom(packet.wisdom);
+                    existing.setLevel(packet.level);
+                    existing.setGold(packet.gold);
+                    existing.setExperience(packet.experience);
+
+                    logger.debug("Updated existing player {}: HP={}/{}",
+                            existing.getUsername(), existing.getCurrentHp(), existing.getMaxHp());
+                } else {
+                    // Criar novo jogador
+                    Player newPlayer = new Player();
+                    newPlayer.setId(packet.playerId);
+                    newPlayer.setUsername(packet.username);
+                    newPlayer.setX(packet.x);
+                    newPlayer.setY(packet.y);
+                    newPlayer.setDirection(packet.direction);
+                    newPlayer.setBaseHp(packet.baseHp);
+                    newPlayer.setBaseMana(packet.baseMana);
+                    newPlayer.setBaseStamina(packet.baseStamina);
+                    newPlayer.setCurrentHp(packet.currentHp);
+                    newPlayer.setCurrentMana(packet.currentMana);
+                    newPlayer.setCurrentStamina(packet.currentStamina);
+                    newPlayer.setStrength(packet.strength);
+                    newPlayer.setAgility(packet.agility);
+                    newPlayer.setWisdom(packet.wisdom);
+                    newPlayer.setLevel(packet.level);
+                    newPlayer.setGold(packet.gold);
+                    newPlayer.setExperience(packet.experience);
+
+                    otherPlayers.put(packet.playerId, newPlayer);
+                    logger.info("Added new player {}: HP={}/{}",
+                            newPlayer.getUsername(), newPlayer.getCurrentHp(), newPlayer.getMaxHp());
+
+                    // Adicionar mensagem no chat
+                    if (playerUI != null) {
+                        playerUI.addChatMessage("*** " + packet.username + " entrou no mundo! ***");
+                    }
                 }
             }
+            lastUpdateTime.put(packet.playerId, System.currentTimeMillis());
         });
     }
 
@@ -429,7 +503,6 @@ public class GameWorldRenderer implements Screen {
                 itemRenderer.addItem(packet.item);
                 localGroundItems.put(packet.item.getInstanceId(), packet.item);
 
-                // ⭐ IMPORTANTE: Registrar a definição do item no inventário
                 if (playerUI != null) {
                     String itemId = packet.item.getDefinition().getId();
                     String category = packet.item.getDefinition().getCategory();
@@ -737,7 +810,7 @@ public class GameWorldRenderer implements Screen {
 
         // Atualizar regeneração
         currentPlayer.updateRegeneration(delta);
-        currentPlayer.updateAttack(delta); // Atualizar estado do ataque
+        currentPlayer.updateAttack(delta);
 
         if (playerUI != null) {
             playerUI.setStamina(currentPlayer.getStaminaPercentage() * 100);
@@ -745,7 +818,7 @@ public class GameWorldRenderer implements Screen {
             playerUI.setMana(currentPlayer.getManaPercentage() * 100);
         }
 
-        // ==================== DETECTAR CLIQUE ESQUERDO PARA ATACAR ====================
+        // Detectar clique esquerdo para atacar
         if (Gdx.input.isButtonJustPressed(Input.Buttons.LEFT)) {
             performAttack();
         }
@@ -804,26 +877,17 @@ public class GameWorldRenderer implements Screen {
         }
 
         long now = System.currentTimeMillis();
-        boolean shouldSend = moved;
-        boolean timeForSync = (now - lastStatusSyncTime) >= STATUS_SYNC_INTERVAL_MS;
 
-        if (shouldSend || timeForSync) {
-            if (moved && (now - lastMovementSendTime) < MOVEMENT_SEND_INTERVAL_MS) {
-                if (!timeForSync) {
-                    // Não enviar ainda
-                } else {
-                    sendMovementWithStatus();
-                    lastStatusSyncTime = now;
-                }
-            } else {
-                sendMovementWithStatus();
-                if (moved) {
-                    lastMovementSendTime = now;
-                }
-                if (timeForSync) {
-                    lastStatusSyncTime = now;
-                }
-            }
+        // Enviar a CADA MOVIMENTO (rate limited)
+        if (moved && (now - lastMovementSendTime) >= MOVEMENT_SEND_INTERVAL_MS) {
+            sendPlayerState();
+            lastMovementSendTime = now;
+        }
+
+        // Sincronização periódica de status (a cada 10 segundos)
+        if ((now - lastStatusSyncTime) >= STATUS_SYNC_INTERVAL_MS) {
+            sendPlayerState();
+            lastStatusSyncTime = now;
         }
 
         if (playerUI != null) {
@@ -832,23 +896,11 @@ public class GameWorldRenderer implements Screen {
         }
     }
 
-    private void sendMovementWithStatus() {
+    private void sendPlayerState() {
         if (currentPlayer == null || game.getNetworkClient() == null) return;
 
-        MovementRequest request = new MovementRequest(
-                currentPlayer.getId(),
-                currentPlayer.getX(),
-                currentPlayer.getY(),
-                currentPlayer.getDirection()
-        );
-        request.currentHp = currentPlayer.getCurrentHp();
-        request.currentMana = currentPlayer.getCurrentMana();
-        request.currentStamina = currentPlayer.getCurrentStamina();
-        request.currentGold = currentPlayer.getGold();
-        request.currentExperience = currentPlayer.getExperience();
-        request.currentLevel = currentPlayer.getLevel();
-
-        game.getNetworkClient().sendPacket(request);
+        PlayerStatePacket packet = new PlayerStatePacket(currentPlayer);
+        game.getNetworkClient().sendPlayerState(packet);
     }
 
     private void handleDash(float delta) {
@@ -1011,6 +1063,93 @@ public class GameWorldRenderer implements Screen {
         return 1.0f;
     }
 
+    private void renderHealthBars() {
+        if (otherPlayers.isEmpty()) {
+            return;
+        }
+
+        // Configurar a projecao da camera
+        shapeRenderer.setProjectionMatrix(gameCamera.getCamera().combined);
+
+        for (Player player : otherPlayers.values()) {
+            if (player == null) continue;
+
+            // Calcular posicao do player
+            float renderX = player.getX();
+            float renderY = player.getY();
+
+            // Interpolacao suave
+            Player interpolated = interpolatedPlayers.get(player.getId());
+            Long lastUpdate = lastUpdateTime.get(player.getId());
+            long now = System.currentTimeMillis();
+
+            if (interpolated != null && lastUpdate != null) {
+                long elapsed = Math.min(now - lastUpdate, 100);
+                float alpha = Math.min(1.0f, elapsed / 50.0f);
+                renderX = interpolated.getX() + (player.getX() - interpolated.getX()) * alpha;
+                renderY = interpolated.getY() + (player.getY() - interpolated.getY()) * alpha;
+
+                if (alpha >= 0.99f) {
+                    interpolatedPlayers.remove(player.getId());
+                    lastUpdateTime.remove(player.getId());
+                }
+            }
+
+            // Dimensoes da barra
+            float barWidth = 70;
+            float barHeight = 8;
+            float barX = renderX - barWidth / 2;
+            float barY = renderY + PLAYER_SIZE / 2 + 10;
+
+            // Calcular percentual de vida
+            int currentHp = player.getCurrentHp();
+            int maxHp = player.getMaxHp();
+            float healthPercent = (maxHp > 0) ? (float) currentHp / maxHp : 0f;
+
+            // Desenhar a barra - INICIAR O SHAPE RENDERER
+            shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
+
+            // Fundo (cinza escuro)
+            shapeRenderer.setColor(0.2f, 0.2f, 0.2f, 0.8f);
+            shapeRenderer.rect(barX, barY, barWidth, barHeight);
+
+            // Preenchimento (cor baseada na vida)
+            float fillWidth = barWidth * healthPercent;
+            if (fillWidth > 0) {
+                if (healthPercent > 0.6f) {
+                    shapeRenderer.setColor(0.2f, 0.8f, 0.2f, 0.9f); // Verde
+                } else if (healthPercent > 0.3f) {
+                    shapeRenderer.setColor(0.9f, 0.7f, 0.2f, 0.9f); // Amarelo
+                } else {
+                    shapeRenderer.setColor(0.9f, 0.2f, 0.2f, 0.9f); // Vermelho
+                }
+                shapeRenderer.rect(barX + 1, barY + 1, fillWidth - 2, barHeight - 2);
+            }
+
+            shapeRenderer.end();
+
+            // Desenhar a borda (em LINHA, separado)
+            shapeRenderer.begin(ShapeRenderer.ShapeType.Line);
+            shapeRenderer.setColor(1f, 1f, 1f, 0.9f);
+            shapeRenderer.rect(barX, barY, barWidth, barHeight);
+            shapeRenderer.end();
+
+            // Desenhar texto de vida (opcional)
+            if (font != null) {
+                batch.begin();
+                String hpText = currentHp + "/" + maxHp;
+                float textX = renderX - (hpText.length() * 4);
+                float textY = renderY + PLAYER_SIZE / 2 + 22;
+                font.setColor(1f, 1f, 1f, 0.8f);
+                font.draw(batch, hpText, textX, textY);
+                batch.end();
+            }
+        }
+    }
+
+    /**
+     * Renderiza os players (quadrados)
+     */
     private void renderPlayers() {
         long now = System.currentTimeMillis();
 
@@ -1039,10 +1178,11 @@ public class GameWorldRenderer implements Screen {
             float x = renderX - PLAYER_SIZE/2;
             float y = renderY - PLAYER_SIZE/2;
 
+            // Sombra
             shapeRenderer.setColor(0, 0, 0, 0.5f);
             shapeRenderer.rect(x - 2, y - 2, PLAYER_SIZE + 4, PLAYER_SIZE + 4);
 
-            // Cor diferente se estiver atacando
+            // Corpo
             if (player.isAttacking()) {
                 shapeRenderer.setColor(0.9f, 0.3f, 0.2f, 1);
             } else {
@@ -1054,10 +1194,10 @@ public class GameWorldRenderer implements Screen {
         if (currentPlayer != null) {
             float x = currentPlayer.getX() - PLAYER_SIZE/2;
             float y = currentPlayer.getY() - PLAYER_SIZE/2;
+
             shapeRenderer.setColor(0, 0, 0, 0.5f);
             shapeRenderer.rect(x - 2, y - 2, PLAYER_SIZE + 4, PLAYER_SIZE + 4);
 
-            // Cor diferente se estiver atacando
             if (currentPlayer.isAttacking()) {
                 shapeRenderer.setColor(0.95f, 0.4f, 0.3f, 1);
             } else {
@@ -1086,30 +1226,18 @@ public class GameWorldRenderer implements Screen {
                 renderY = interpolated.getY() + (player.getY() - interpolated.getY()) * alpha;
             }
 
+            // Nome do jogador (acima da barra de vida)
             font.setColor(1f, 1f, 1f, 1f);
             font.draw(batch, player.getUsername(),
-                    renderX - (player.getUsername().length() * 5),
-                    renderY + PLAYER_SIZE/2 + 25);
-
-            // Mostrar HP
-            String hpText = player.getCurrentHp() + "/" + player.getMaxHp();
-            font.setColor(0.8f, 0.2f, 0.2f, 1f);
-            font.draw(batch, hpText,
-                    renderX - (hpText.length() * 4),
-                    renderY + PLAYER_SIZE/2 + 12);
+                    renderX - (player.getUsername().length() * 4),
+                    renderY + PLAYER_SIZE/2 + 35);
         }
 
         if (currentPlayer != null) {
             font.setColor(1f, 0.9f, 0.2f, 1f);
             font.draw(batch, currentPlayer.getUsername(),
-                    currentPlayer.getX() - (currentPlayer.getUsername().length() * 5),
-                    currentPlayer.getY() + PLAYER_SIZE/2 + 25);
-
-            String hpText = currentPlayer.getCurrentHp() + "/" + currentPlayer.getMaxHp();
-            font.setColor(0.8f, 0.2f, 0.2f, 1f);
-            font.draw(batch, hpText,
-                    currentPlayer.getX() - (hpText.length() * 4),
-                    currentPlayer.getY() + PLAYER_SIZE/2 + 12);
+                    currentPlayer.getX() - (currentPlayer.getUsername().length() * 4),
+                    currentPlayer.getY() + PLAYER_SIZE/2 + 35);
         }
     }
 
@@ -1511,7 +1639,18 @@ public class GameWorldRenderer implements Screen {
 
     public void setCurrentPlayer(Player player) {
         this.currentPlayer = player;
+        logger.info("=== SET CURRENT PLAYER ===");
         logger.info("Current player: {} at ({}, {})", player.getUsername(), player.getX(), player.getY());
+        logger.info("HP from Player object: {}/{}", player.getCurrentHp(), player.getMaxHp());
+        logger.info("==========================");
+
+        currentPlayer.setOnStatusChanged(() -> {
+            // Enviar atualizacao para o servidor quando qualquer status mudar
+            Gdx.app.postRunnable(() -> {
+                sendPlayerState();
+                logger.debug("Status changed for {}, sending update", currentPlayer.getUsername());
+            });
+        });
 
         chatDisplay.append("*** Welcome to Sandbox Experiment! ***\n");
         chatDisplay.append("*** Use WASD to move ***\n");
@@ -1526,19 +1665,9 @@ public class GameWorldRenderer implements Screen {
             playerUI.update(currentPlayer, 1.0f);
             playerUI.updateChatHistory(chatDisplay.toString());
 
-            if (player.getMaxHp() > 0) {
-                float healthPercent = (float) player.getCurrentHp() / player.getMaxHp() * 100;
-                playerUI.setHealth(healthPercent);
-            }
-            if (player.getMaxMana() > 0) {
-                float manaPercent = (float) player.getCurrentMana() / player.getMaxMana() * 100;
-                playerUI.setMana(manaPercent);
-            }
-            if (player.getMaxStamina() > 0) {
-                float staminaPercent = (float) player.getCurrentStamina() / player.getMaxStamina() * 100;
-                playerUI.setStamina(staminaPercent);
-            }
-
+            playerUI.setHealth(player.getCurrentHp(), player.getMaxHp());
+            playerUI.setMana(player.getCurrentMana(), player.getMaxMana());
+            playerUI.setStamina(player.getCurrentStamina(), player.getMaxStamina());
             playerUI.setGold(player.getGold());
             playerUI.updateInventory(player.getInventory(), player.getGold());
         }
@@ -1548,7 +1677,6 @@ public class GameWorldRenderer implements Screen {
             gameCamera.resetPosition();
         }
 
-        // Inicializar stats de combate
         currentPlayer.updateCombatStatsFromEquipment();
     }
 
@@ -1580,7 +1708,7 @@ public class GameWorldRenderer implements Screen {
             gameCamera.update(delta);
         }
 
-        // ==================== RENDERIZAÇÃO COM BATCH ====================
+        // ==================== RENDERIZAÇÃO COM BATCH (TEXTURAS E TEXTOS) ====================
         batch.setProjectionMatrix(gameCamera.getCamera().combined);
         batch.begin();
 
@@ -1590,18 +1718,73 @@ public class GameWorldRenderer implements Screen {
             itemRenderer.render(batch, gameCamera);
         }
 
-        renderFloatingNames();
+        renderFloatingNames(); // Nomes dos jogadores
 
         batch.end();
-        // ==================== FIM DA RENDERIZAÇÃO COM BATCH ====================
+        // ==================== FIM DO BATCH ====================
 
-        // Renderizar players (ShapeRenderer)
-        renderPlayers();
+        // ==================== RENDERIZAÇÃO COM SHAPERENDERER ====================
 
-        // Renderizar cooldown de ataque (ShapeRenderer)
+        // Barras de vida (ShapeRenderer.Filled)
+        renderHealthBars();
+
+        // Players (os quadrados)
+        shapeRenderer.setProjectionMatrix(gameCamera.getCamera().combined);
+        shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
+
+        // Desenhar outros players
+        for (Player player : otherPlayers.values()) {
+            float renderX = player.getX();
+            float renderY = player.getY();
+
+            Player interpolated = interpolatedPlayers.get(player.getId());
+            Long lastUpdate = lastUpdateTime.get(player.getId());
+
+            if (interpolated != null && lastUpdate != null) {
+                long elapsed = Math.min(System.currentTimeMillis() - lastUpdate, 100);
+                float alpha = Math.min(1.0f, elapsed / 50.0f);
+                renderX = interpolated.getX() + (player.getX() - interpolated.getX()) * alpha;
+                renderY = interpolated.getY() + (player.getY() - interpolated.getY()) * alpha;
+            }
+
+            float px = renderX - PLAYER_SIZE/2;
+            float py = renderY - PLAYER_SIZE/2;
+
+            // Sombra
+            shapeRenderer.setColor(0, 0, 0, 0.5f);
+            shapeRenderer.rect(px - 2, py - 2, PLAYER_SIZE + 4, PLAYER_SIZE + 4);
+
+            // Corpo (vermelho se estiver atacando)
+            if (player.isAttacking()) {
+                shapeRenderer.setColor(0.9f, 0.3f, 0.2f, 1);
+            } else {
+                shapeRenderer.setColor(0.5f, 0.7f, 0.3f, 1);
+            }
+            shapeRenderer.rect(px, py, PLAYER_SIZE, PLAYER_SIZE);
+        }
+
+        // Desenhar próprio player
+        if (currentPlayer != null) {
+            float px = currentPlayer.getX() - PLAYER_SIZE/2;
+            float py = currentPlayer.getY() - PLAYER_SIZE/2;
+
+            shapeRenderer.setColor(0, 0, 0, 0.5f);
+            shapeRenderer.rect(px - 2, py - 2, PLAYER_SIZE + 4, PLAYER_SIZE + 4);
+
+            if (currentPlayer.isAttacking()) {
+                shapeRenderer.setColor(0.95f, 0.4f, 0.3f, 1);
+            } else {
+                shapeRenderer.setColor(0.2f, 0.6f, 0.9f, 1);
+            }
+            shapeRenderer.rect(px, py, PLAYER_SIZE, PLAYER_SIZE);
+        }
+
+        shapeRenderer.end();
+
+        // ==================== COOLDOWN DE ATAQUE ====================
         renderAttackCooldown();
 
-        // UI (Stage)
+        // ==================== UI ====================
         if (playerUI != null && Gdx.input.getInputProcessor() != playerUI.getStage()) {
             Gdx.input.setInputProcessor(createInputProcessor());
         }
@@ -1613,7 +1796,6 @@ public class GameWorldRenderer implements Screen {
         if (itemRenderer != null) {
             itemRenderer.update(delta);
         }
-
     }
 
     @Override

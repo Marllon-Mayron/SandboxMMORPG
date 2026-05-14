@@ -4,6 +4,7 @@ import com.common.sandbox.model.*;
 import com.common.sandbox.network.packets.AttackBroadcast;
 import com.common.sandbox.network.packets.ChatMessage;
 import com.common.sandbox.network.packets.DamagePacket;
+import com.common.sandbox.network.packets.PlayerStatePacket;
 import io.netty.channel.Channel;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -92,7 +93,8 @@ public class CombatManager {
         attacker.executeAttack();
 
         // Salvar no banco (assíncrono)
-        DatabaseManager.getInstance().savePlayerPositionAsync(target);
+        DatabaseManager.getInstance().savePlayerAsync(target);
+        DatabaseManager.getInstance().savePlayerAsync(attacker);
 
         logger.info("⚔️ ATTACK: {} -> {} | Damage: {}{} | Target HP: {}/{} | Range: {:.1f}",
                 attacker.getUsername(), target.getUsername(), damage,
@@ -188,18 +190,18 @@ public class CombatManager {
         dead.setCurrentStamina(dead.getMaxStamina());
         dead.setLastAttackTime(0);
 
-        DatabaseManager.getInstance().savePlayerPositionAsync(dead);
+        DatabaseManager.getInstance().savePlayerAsync(dead);
 
         ChatMessage deathMsg = new ChatMessage(dead.getId(), "SISTEMA",
                 dead.getUsername() + " was killed by " + killer.getUsername() + "!");
         GameServerHandler.broadcastToAll(deathMsg);
 
-        Player movementOnly = new Player();
-        movementOnly.setId(dead.getId());
-        movementOnly.setUsername(dead.getUsername());
-        movementOnly.setX(dead.getX());
-        movementOnly.setY(dead.getY());
-        movementOnly.setDirection(dead.getDirection());
-        GameServerHandler.broadcastToAll(new com.common.sandbox.network.packets.MovementBroadcast(movementOnly));
+        // ✅ CORRIGIDO: Usar PlayerStatePacket em vez de MovementBroadcast
+        PlayerStatePacket deathState = new PlayerStatePacket(dead);
+        deathState.fullSync = true;  // Sincronização completa
+        GameServerHandler.broadcastToAll(deathState);
+
+        logger.info("📊 Broadcast death state for {}: HP={}/{}, Pos=({},{})",
+                dead.getUsername(), dead.getCurrentHp(), dead.getMaxHp(), dead.getX(), dead.getY());
     }
 }

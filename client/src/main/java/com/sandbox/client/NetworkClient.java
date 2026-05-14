@@ -36,7 +36,7 @@ public class NetworkClient {
 
     private Consumer<LoginResponse> loginCallback;
     private Consumer<RegisterResponse> registerCallback;
-    private Consumer<MovementBroadcast> movementCallback;
+    private Consumer<PlayerStatePacket> playerStateCallback;
     private Consumer<ChatMessage> chatCallback;
     private Consumer<ChunkUpdatePacket> chunkUpdateCallback;
     private Consumer<MapSaveResponse> mapSaveCallback;
@@ -176,9 +176,8 @@ public class NetworkClient {
         sendPacket(request);
     }
 
-    public void sendMovement(String playerId, float x, float y, String direction) {
-        MovementRequest request = new MovementRequest(playerId, x, y, direction);
-        sendPacket(request);
+    public void sendPlayerState(PlayerStatePacket packet) {
+        sendPacket(packet);
     }
 
     public void sendChat(String playerId, String playerName, String message) {
@@ -224,7 +223,7 @@ public class NetworkClient {
     // Callback setters
     public void setLoginCallback(Consumer<LoginResponse> callback) { this.loginCallback = callback; }
     public void setRegisterCallback(Consumer<RegisterResponse> callback) { this.registerCallback = callback; }
-    public void setMovementCallback(Consumer<MovementBroadcast> callback) { this.movementCallback = callback; }
+    public void setPlayerStateCallback(Consumer<PlayerStatePacket> callback) { this.playerStateCallback = callback; }
     public void setPlayerLeftCallback(Consumer<PlayerLeftPacket> callback) { this.playerLeftCallback = callback; }
     public void setChatCallback(Consumer<ChatMessage> callback) { this.chatCallback = callback; }
     public void setChunkUpdateCallback(Consumer<ChunkUpdatePacket> callback) { this.chunkUpdateCallback = callback; }
@@ -262,8 +261,8 @@ public class NetworkClient {
                     loginCallback.accept((LoginResponse) msg);
                 } else if (msg instanceof RegisterResponse && registerCallback != null) {
                     registerCallback.accept((RegisterResponse) msg);
-                } else if (msg instanceof MovementBroadcast && movementCallback != null) {
-                    movementCallback.accept((MovementBroadcast) msg);
+                } else if (msg instanceof PlayerStatePacket && playerStateCallback != null) {
+                    playerStateCallback.accept((PlayerStatePacket) msg);
                 } else if (msg instanceof PlayerLeftPacket && playerLeftCallback != null) {
                     playerLeftCallback.accept((PlayerLeftPacket) msg);
                 } else if (msg instanceof ChatMessage && chatCallback != null) {
