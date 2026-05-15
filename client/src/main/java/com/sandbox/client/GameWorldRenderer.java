@@ -824,14 +824,12 @@ public class GameWorldRenderer implements Screen {
     private void performAttack() {
         if (currentPlayer == null) return;
 
-        // Verificar cooldown (agora usa o valor recebido do servidor)
-        if (!currentPlayer.canAttack()) {
-            float remainingSeconds = getRemainingCooldown();
-            if (playerUI != null && remainingSeconds > 0) {
-                playerUI.addChatMessage(String.format("⚔️ Arma recarregando... %.1fs", remainingSeconds));
-            }
+        // Rate limit para evitar spam de pacotes (apenas 100ms entre envios)
+        long now = System.currentTimeMillis();
+        if (now - lastAttackTime < 100) {
             return;
         }
+        lastAttackTime = now;
 
         // Verificar se clicou no chat
         if (playerUI != null && playerUI.isPointOverChat(Gdx.input.getX(), Gdx.input.getY())) {
@@ -849,29 +847,26 @@ public class GameWorldRenderer implements Screen {
         AttackDefinition attackDef;
 
         if (weaponId != null && !weaponId.isEmpty()) {
-            // Buscar definição da arma equipada no cache local
             ItemDefinition weaponDef = getItemDefinition(weaponId);
             if (weaponDef != null) {
-                // Criar AttackDefinition baseado nas propriedades da arma
                 attackDef = createAttackDefinitionFromWeapon(weaponDef);
             } else {
                 attackDef = AttackDefinition.createMeleeSword();
             }
         } else {
-            // Sem arma - ataque padrão (soco)
             attackDef = AttackDefinition.createMeleeSword();
             attackDef.setName("Soco");
             attackDef.setDamageMultiplier(0.5f);
         }
 
-        // Mostrar hitbox localmente (apenas para feedback visual)
+        // Mostrar hitbox localmente (apenas feedback visual)
         if (attackHitboxRenderer != null) {
             attackHitboxRenderer.showHitbox(attackDef,
                     currentPlayer.getX(), currentPlayer.getY(),
                     mouseWorldX, mouseWorldY);
         }
 
-        // Enviar para o servidor (o servidor vai aplicar o cooldown real)
+        // Enviar para o servidor (o servidor vai validar o cooldown)
         AttackInfo attackInfo = new AttackInfo(
                 currentPlayer.getId(),
                 currentPlayer.getUsername(),
@@ -883,10 +878,7 @@ public class GameWorldRenderer implements Screen {
         );
         game.getNetworkClient().sendPacket(attackInfo);
 
-        // Aplicar cooldown LOCALMENTE para feedback imediato
-        // O servidor vai confirmar/sincronizar depois via PlayerStatePacket
-        currentPlayer.setLastAttackTime(System.currentTimeMillis());
-
+        // Feedback visual imediato (não bloqueia, apenas informa)
         if (playerUI != null) {
             playerUI.addChatMessage("⚔️ " + attackDef.getName() + "!");
         }
@@ -1929,7 +1921,6 @@ public class GameWorldRenderer implements Screen {
 
         if (projectileAnimRenderer != null) {
             projectileAnimRenderer.update(delta);
-
         }
 
         if (currentPlayer != null) {
@@ -1937,34 +1928,26 @@ public class GameWorldRenderer implements Screen {
             gameCamera.update(delta);
         }
 
-        // ==================== RENDERIZAÇÃO COM BATCH (TEXTURAS) ====================
+        // ==================== RENDERIZAÇÃO COM BATCH (TEXTURAS - CAMADA DE FUNDO) ====================
         batch.setProjectionMatrix(gameCamera.getCamera().combined);
         batch.begin();
 
-        renderChunks();
+        renderChunks();  // Chão do mapa
 
         if (itemRenderer != null) {
-            itemRenderer.render(batch, gameCamera);
+            itemRenderer.render(batch, gameCamera);  // Itens no chão
         }
 
-        if (projectileAnimRenderer != null) {
-            projectileAnimRenderer.render(batch, gameCamera);
-        }
-
-
-
-        renderFloatingNames();
+        renderFloatingNames();  // Nomes dos players
 
         if (attackHitboxRenderer != null) {
-            attackHitboxRenderer.renderInfo(font, batch, gameCamera);
+            attackHitboxRenderer.renderInfo(font, batch, gameCamera);  // Texto debug da hitbox
         }
 
         batch.end();
-        // ==================== FIM DO BATCH ====================
+        // ==================== FIM DO BATCH (CAMADA DE FUNDO) ====================
 
-        // ==================== RENDERIZAÇÃO COM SHAPERENDERER ====================
-        // TODOS OS SHAPES DEVEM ESTAR DENTRO DE UM ÚNICO begin/end
-
+        // ==================== RENDERIZAÇÃO COM SHAPERENDERER (PLAYERS E HITBOX) ====================
         shapeRenderer.setProjectionMatrix(gameCamera.getCamera().combined);
         shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
 
@@ -2021,10 +2004,10 @@ public class GameWorldRenderer implements Screen {
             shapeRenderer.rect(px, py, PLAYER_SIZE, PLAYER_SIZE);
         }
 
-        // Desenhar hitbox (AINDA DENTRO DO shapeRenderer.begin)
+        // Desenhar hitbox (DENTRO DO shapeRenderer)
         renderAttackHitbox();
 
-        shapeRenderer.end();  // FIM do primeiro shapeRenderer (Filled)
+        shapeRenderer.end();
 
         // ==================== SEGUNDO SHAPERENDERER PARA LINHAS/EFEITOS ====================
         shapeRenderer.begin(ShapeRenderer.ShapeType.Line);
@@ -2032,7 +2015,7 @@ public class GameWorldRenderer implements Screen {
         // Desenhar bordas das barras de vida (linhas)
         renderHealthBars();
 
-        // Desenhar efeitos de ataque (flechas, espadas, etc.) - AGORA COMO LINE
+        // Desenhar efeitos de ataque (flechas, espadas, etc.)
         if (attackEffectManager != null) {
             attackEffectManager.renderLines(shapeRenderer);
         }
@@ -2042,8 +2025,7 @@ public class GameWorldRenderer implements Screen {
         }
         shapeRenderer.end();
 
-        // ==================== TERCEIRO SHAPERENDERER PARA PREENCHIMENTO DOS EFETIOS ====================
-        // Efeitos que precisam de filled (círculos, etc.)
+        // ==================== TERCEIRO SHAPERENDERER PARA PREENCHIMENTO DOS EFEITOS ====================
         shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
 
         if (attackEffectManager != null) {
@@ -2051,6 +2033,16 @@ public class GameWorldRenderer implements Screen {
         }
 
         shapeRenderer.end();
+
+        // ==================== RENDERIZAÇÃO DOS PROJÉTEIS (CAMADA SUPERIOR) ====================
+        // PROJÉTEIS DEVEM SER RENDERIZADOS POR ÚLTIMO, EM CIMA DE TUDO
+        batch.begin();
+
+        if (projectileAnimRenderer != null) {
+            projectileAnimRenderer.render(batch, gameCamera);
+        }
+
+        batch.end();
 
         // ==================== COOLDOWN DE ATAQUE ====================
         renderAttackCooldown();

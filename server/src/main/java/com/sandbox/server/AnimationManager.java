@@ -27,16 +27,38 @@ public class AnimationManager {
     }
 
     private void loadProjectileAnimations() {
-        // Arrow - 4 frames de animação
+        // Animação da flecha (projétil)
         ProjectileAnimation arrowAnim = new ProjectileAnimation(
                 "arrow",
                 "animations/combat/projectiles/arrow.png",
-                32, 32,   // largura x altura do frame (original)
-                2,        // 4 frames na animação
+                32, 32,   // largura x altura do frame
+                4,        // 4 frames na animação
                 0.1f      // 0.1 segundos por frame
         );
         projectileAnimations.put("arrow", arrowAnim);
         logger.info("Loaded projectile animation: arrow ({} frames)", arrowAnim.getTotalFrames());
+
+        // Animações para ataques corpo a corpo (melee)
+        // Slash - para espada e machado
+        ProjectileAnimation slashAnim = new ProjectileAnimation(
+                "slash",
+                "animations/combat/projectiles/slash.png",
+                32, 32,
+                3,
+                0.01f
+        );
+        projectileAnimations.put("slash", slashAnim);
+        logger.info("Loaded melee animation: slash ({} frames)", slashAnim.getTotalFrames());
+
+
+        ProjectileAnimation stabAnim = new ProjectileAnimation(
+                "stab",
+                "animations/combat/projectiles/slash.png", // usa mesma imagem
+                32, 32, 3, 0.07f
+        );
+        projectileAnimations.put("stab", stabAnim);
+        logger.info("Loaded melee animation: stab ({} frames)", stabAnim.getTotalFrames());
+
     }
 
     public ProjectileAnimation getAnimation(String id) {

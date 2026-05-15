@@ -58,7 +58,8 @@ public class ItemManager {
         sword.setDamage(10);
         sword.setAttackId("melee_sword");
         sword.setAttackAnimation("sword_slash");
-        sword.setAttackCooldown(1.0f);  // Cooldown de 1 segundo
+        sword.setAttackCooldown(1.0f);
+        sword.setProjectileAnimationId("slash");
         sword.setRanged(false);
         itemDefinitions.put(sword.getId(), sword);
         logger.info("Loaded weapon: {} (Melee, Damage: {}, Cooldown: {}s)",

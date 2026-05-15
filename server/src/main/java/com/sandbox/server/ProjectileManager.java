@@ -145,7 +145,7 @@ public class ProjectileManager {
                                 float speed, float range, boolean isRanged) {
 
         // Buscar animação do item
-        String animationId = "arrow"; // default
+        String animationId = "arrow"; // default para ranged
 
         String weaponId = attacker.getInventory() != null ?
                 attacker.getInventory().getEquipped().get("weapon") : null;
@@ -154,6 +154,11 @@ public class ProjectileManager {
             if (def != null && def.getProjectileAnimationId() != null) {
                 animationId = def.getProjectileAnimationId();
             }
+        }
+
+        // Para ataques melee, usar animação de slash
+        if (!isRanged) {
+            animationId = "slash"; // força usar slash para melee
         }
 
         float angle = (float) Math.atan2(targetY - attacker.getY(), targetX - attacker.getX());

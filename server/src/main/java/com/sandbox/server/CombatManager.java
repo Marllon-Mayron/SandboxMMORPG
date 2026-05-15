@@ -16,7 +16,6 @@ import java.util.List;
 public class CombatManager {
     private static final Logger logger = LoggerFactory.getLogger(CombatManager.class);
     private static CombatManager instance;
-    private static final long GLOBAL_ATTACK_COOLDOWN_MS = 0;//2000;
 
     private CombatManager() {}
 

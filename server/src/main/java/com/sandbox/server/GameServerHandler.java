@@ -916,16 +916,25 @@ public class GameServerHandler extends SimpleChannelInboundHandler<Object> {
 
         // Verificar cooldown
         if (!currentPlayer.canAttack()) {
+            // Enviar mensagem de erro para o cliente
+            ChatMessage cooldownMsg = new ChatMessage("SISTEMA", "SISTEMA",
+                    "Arma recarregando! Aguarde " +
+                            String.format("%.1f", getRemainingCooldown(currentPlayer)) + "s");
+            sendPacket(ctx, cooldownMsg);
             return;
         }
 
         AttackDefinition attackDef = getAttackDefinition(attackInfo.attackId);
         if (attackDef == null) {
+            logger.warn("Unknown attack definition: {}", attackInfo.attackId);
             return;
         }
 
         // Verificar stamina
         if (attackDef.getStaminaCost() > 0 && currentPlayer.getCurrentStamina() < attackDef.getStaminaCost()) {
+            ChatMessage staminaMsg = new ChatMessage("SISTEMA", "SISTEMA",
+                    "Stamina insuficiente! Necessário: " + (int)attackDef.getStaminaCost());
+            sendPacket(ctx, staminaMsg);
             return;
         }
 
@@ -946,7 +955,13 @@ public class GameServerHandler extends SimpleChannelInboundHandler<Object> {
         }
         damage = Math.max(1, damage);
 
-        // Iniciar cooldown
+        // Log do ataque
+        logger.info("⚔️ {} attacking with {} | Damage: {}{} | Stamina: {}/{}",
+                currentPlayer.getUsername(), attackDef.getName(), damage,
+                wasCritical ? " (CRITICAL!)" : "",
+                currentPlayer.getCurrentStamina(), currentPlayer.getMaxStamina());
+
+        // Iniciar cooldown (seta lastAttackTime)
         currentPlayer.executeAttack();
 
         // UNIFICADO: SEMPRE PROJÉTIL
@@ -974,7 +989,22 @@ public class GameServerHandler extends SimpleChannelInboundHandler<Object> {
         effect.attackDef = attackDef;
         GameServerHandler.broadcastToAll(effect);
 
+        // Sincronizar estado do jogador com o cliente (cooldown, stamina, etc.)
+        PlayerStatePacket stateUpdate = new PlayerStatePacket(currentPlayer);
+        stateUpdate.currentAttackCooldown = currentPlayer.getCurrentAttackCooldown();
+        sendPacket(ctx, stateUpdate);
+
+        // Salvar no banco
         GameWorld.getInstance().savePlayer(currentPlayer);
+    }
+
+    private float getRemainingCooldown(Player player) {
+        long now = System.currentTimeMillis();
+        long elapsed = now - player.getLastAttackTime();
+        float cooldownSecs = player.getCurrentAttackCooldown();
+        long cooldownMillis = (long)(cooldownSecs * 1000);
+        float remaining = (cooldownMillis - elapsed) / 1000f;
+        return Math.max(0, remaining);
     }
 
     private void updateCombatStatsFromEquipment(Player player) {

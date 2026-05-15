@@ -79,7 +79,7 @@ public class AttackDefinition implements Serializable {
         def.setHeight(32f);
         def.setDamageMultiplier(1.2f);
         def.setCooldownSeconds(1.0f);
-        def.setStaminaCost(5f);
+        def.setStaminaCost(50f);
         def.setMaxTargets(3);
         def.setKnockbackPower(30f);
         def.setRanged(false);
