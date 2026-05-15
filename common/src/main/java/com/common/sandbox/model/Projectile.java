@@ -1,6 +1,7 @@
 package com.common.sandbox.model;
 
 import java.io.Serializable;
+import java.util.Collection;
 import java.util.UUID;
 
 public class Projectile implements Serializable {
@@ -18,7 +19,7 @@ public class Projectile implements Serializable {
     private float targetY;
     private float directionX;
     private float directionY;
-    private float speed; // pixels por segundo
+    private float speed;
     private float maxDistance;
     private float distanceTraveled;
     private float damage;
@@ -69,7 +70,6 @@ public class Projectile implements Serializable {
         float newX = currentX + directionX * moveDistance;
         float newY = currentY + directionY * moveDistance;
 
-        // Verificar distância percorrida
         float stepDistance = (float) Math.hypot(newX - currentX, newY - currentY);
         distanceTraveled += stepDistance;
 
@@ -85,7 +85,7 @@ public class Projectile implements Serializable {
         return true;
     }
 
-    // ==================== GETTERS ====================
+    // GETTERS
     public String getId() { return id; }
     public String getOwnerId() { return ownerId; }
     public String getOwnerName() { return ownerName; }
@@ -106,7 +106,7 @@ public class Projectile implements Serializable {
     public long getSpawnTime() { return spawnTime; }
     public boolean isActive() { return active; }
 
-    // ==================== SETTERS ====================
+    // SETTERS
     public void setCurrentX(float currentX) { this.currentX = currentX; }
     public void setCurrentY(float currentY) { this.currentY = currentY; }
     public void setDistanceTraveled(float distanceTraveled) { this.distanceTraveled = distanceTraveled; }

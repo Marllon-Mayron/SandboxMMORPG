@@ -1699,16 +1699,6 @@ public class GameWorldRenderer implements Screen {
                         return true;
                     }
                 }
-                if (keycode == Input.Keys.F3) {
-                    if (attackHitboxRenderer != null) {
-                        attackHitboxRenderer.setDebugMode(!attackHitboxRenderer.isDebugMode());
-                        if (playerUI != null) {
-                            playerUI.addChatMessage("🔍 Hitbox Debug: " +
-                                    (attackHitboxRenderer.isDebugMode() ? "ON ✓" : "OFF ✗"));
-                        }
-                    }
-                    return true;
-                }
 
                 if (chatFocused && playerUI != null && playerUI.getStage() != null) {
                     return playerUI.getStage().keyDown(keycode);

@@ -913,26 +913,18 @@ public class GameServerHandler extends SimpleChannelInboundHandler<Object> {
     private void handleAttack(ChannelHandlerContext ctx, AttackInfo attackInfo) {
         if (currentPlayer == null) return;
 
-        // Verificar cooldown baseado na arma equipada
+        // Verificar cooldown
         if (!currentPlayer.canAttack()) {
-            logger.debug("{} cannot attack yet (weapon cooldown)", currentPlayer.getUsername());
             return;
         }
 
-        // Carregar definição do ataque
         AttackDefinition attackDef = getAttackDefinition(attackInfo.attackId);
         if (attackDef == null) {
-            logger.warn("Unknown attack: {}", attackInfo.attackId);
             return;
         }
 
-        // Verificar recursos (stamina)
+        // Verificar stamina
         if (attackDef.getStaminaCost() > 0 && currentPlayer.getCurrentStamina() < attackDef.getStaminaCost()) {
-            if (ctx.channel().isActive()) {
-                ChatMessage error = new ChatMessage("SISTEMA", "SISTEMA",
-                        "Stamina insuficiente! Necessário: " + (int)attackDef.getStaminaCost());
-                ctx.writeAndFlush(error);
-            }
             return;
         }
 
@@ -953,52 +945,34 @@ public class GameServerHandler extends SimpleChannelInboundHandler<Object> {
         }
         damage = Math.max(1, damage);
 
-        // INICIAR COOLDOWN - Isso define o lastAttackTime
+        // Iniciar cooldown
         currentPlayer.executeAttack();
 
-        // Log para debug
-        float cooldownSecs = currentPlayer.getCurrentAttackCooldown();
-        logger.info("⚔️ {} attacking with {} | Cooldown: {:.1f}s | Damage: {}",
-                currentPlayer.getUsername(), attackDef.getName(), cooldownSecs, damage);
+        // UNIFICADO: SEMPRE PROJÉTIL
+        float projectileSpeed = attackDef.isRanged() ? attackDef.getProjectileSpeed() : 3000f;
+        float projectileRange = attackDef.getRange();
+        String projectileType = attackDef.isRanged() ?
+                (attackDef.getProjectileId() != null ? attackDef.getProjectileId() : "arrow") :
+                "melee_slash";
 
-        if (attackDef.isRanged()) {
-            // Criar projétil
-            ProjectileManager.getInstance().spawnProjectile(
-                    currentPlayer, attackDef,
-                    attackInfo.targetX, attackInfo.targetY,
-                    damage, wasCritical
-            );
+        ProjectileManager.getInstance().spawnProjectile(
+                currentPlayer, projectileType,
+                attackInfo.targetX, attackInfo.targetY,
+                damage, wasCritical,
+                projectileSpeed, projectileRange, attackDef.isRanged()
+        );
 
-            // Broadcast do efeito de disparo
-            AttackBroadcast shootEffect = new AttackBroadcast();
-            shootEffect.attackerId = currentPlayer.getId();
-            shootEffect.attackerName = currentPlayer.getUsername();
-            shootEffect.attackerX = currentPlayer.getX();
-            shootEffect.attackerY = currentPlayer.getY();
-            shootEffect.targetX = attackInfo.targetX;
-            shootEffect.targetY = attackInfo.targetY;
-            shootEffect.attackDef = attackDef;
-            GameServerHandler.broadcastToAll(shootEffect);
+        // Broadcast do efeito visual
+        AttackBroadcast effect = new AttackBroadcast();
+        effect.attackerId = currentPlayer.getId();
+        effect.attackerName = currentPlayer.getUsername();
+        effect.attackerX = currentPlayer.getX();
+        effect.attackerY = currentPlayer.getY();
+        effect.targetX = attackInfo.targetX;
+        effect.targetY = attackInfo.targetY;
+        effect.attackDef = attackDef;
+        GameServerHandler.broadcastToAll(effect);
 
-        } else {
-            // Ataque corpo a corpo (instantâneo)
-            Collection<Player> allPlayers = GameWorld.getInstance().getAllPlayers();
-            List<AttackResult> results = CombatManager.getInstance().processAreaAttack(
-                    currentPlayer, attackDef, attackInfo.targetX, attackInfo.targetY, allPlayers
-            );
-
-            if (!results.isEmpty()) {
-                AttackBroadcast broadcast = new AttackBroadcast(
-                        currentPlayer.getId(), currentPlayer.getUsername(),
-                        currentPlayer.getX(), currentPlayer.getY(),
-                        attackInfo.targetX, attackInfo.targetY,
-                        attackDef, results
-                );
-                GameServerHandler.broadcastToAll(broadcast);
-            }
-        }
-
-        // Salvar estado
         GameWorld.getInstance().savePlayer(currentPlayer);
     }
 
@@ -1035,116 +1009,6 @@ public class GameServerHandler extends SimpleChannelInboundHandler<Object> {
                 weaponBonus,
                 player.getStrength() / 2,
                 player.getCombatStats().getBaseDamage() + weaponBonus + (player.getStrength() / 2));
-    }
-
-    private void handleAttackInfo(ChannelHandlerContext ctx, AttackInfo attackInfo) {
-        if (currentPlayer == null) return;
-
-        // Carregar definição do ataque baseado no ID
-        AttackDefinition attackDef = getAttackDefinition(attackInfo.attackId);
-        if (attackDef == null) {
-            logger.warn("Unknown attack: {}", attackInfo.attackId);
-            return;
-        }
-
-        // Verificar cooldown
-        if (!currentPlayer.canAttack()) {
-            logger.debug("{} cannot attack yet (cooldown)", currentPlayer.getUsername());
-            return;
-        }
-
-        // Verificar recursos
-        if (attackDef.getManaCost() > 0 && currentPlayer.getCurrentMana() < attackDef.getManaCost()) {
-            if (ctx.channel().isActive()) {
-                ChatMessage error = new ChatMessage("SISTEMA", "SISTEMA",
-                        "Mana insuficiente! Necessário: " + (int)attackDef.getManaCost());
-                ctx.writeAndFlush(error);
-            }
-            return;
-        }
-
-        if (attackDef.getStaminaCost() > 0 && currentPlayer.getCurrentStamina() < attackDef.getStaminaCost()) {
-            if (ctx.channel().isActive()) {
-                ChatMessage error = new ChatMessage("SISTEMA", "SISTEMA",
-                        "Stamina insuficiente! Necessário: " + (int)attackDef.getStaminaCost());
-                ctx.writeAndFlush(error);
-            }
-            return;
-        }
-
-        // Consumir recursos
-        if (attackDef.getManaCost() > 0) {
-            currentPlayer.setCurrentMana(currentPlayer.getCurrentMana() - (int) attackDef.getManaCost());
-        }
-        if (attackDef.getStaminaCost() > 0) {
-            currentPlayer.setCurrentStamina(currentPlayer.getCurrentStamina() - (int) attackDef.getStaminaCost());
-        }
-
-        // Encontrar alvos na hitbox
-        Collection<Player> allPlayers = GameWorld.getInstance().getAllPlayers();
-        List<Player> targets = HitboxDetector.getPlayersInHitbox(currentPlayer, attackDef,
-                attackInfo.targetX, attackInfo.targetY,
-                allPlayers);
-
-        // Processar ataques
-        List<AttackResult> results = new ArrayList<>();
-        for (Player target : targets) {
-            AttackResult result = CombatManager.getInstance().processAttack(currentPlayer, target, attackDef);
-            if (result.isSuccess()) {
-                results.add(result);
-            }
-        }
-
-        // Iniciar cooldown
-        currentPlayer.executeAttack();
-
-        // Salvar estado
-        GameWorld.getInstance().savePlayer(currentPlayer);
-        for (AttackResult result : results) {
-            Player target = GameWorld.getInstance().getPlayer(result.getTargetId());
-            if (target != null) {
-                GameWorld.getInstance().savePlayer(target);
-            }
-        }
-
-        // Broadcast do ataque
-        if (!results.isEmpty()) {
-            AttackBroadcast broadcast = new AttackBroadcast(
-                    currentPlayer.getId(),
-                    currentPlayer.getUsername(),
-                    currentPlayer.getX(),
-                    currentPlayer.getY(),
-                    attackInfo.targetX,
-                    attackInfo.targetY,
-                    attackDef,
-                    results
-            );
-            broadcastToAll(broadcast);
-
-            // Enviar dano individual para cada alvo
-            for (AttackResult result : results) {
-                DamagePacket damagePacket = new DamagePacket(
-                        result.getTargetId(),
-                        result.getDamage(),
-                        result.isWasCritical(),
-                        result.getTargetRemainingHp(),
-                        AttackType.MELEE_SWORD
-                );
-
-                Channel targetChannel = getChannelByPlayerId(result.getTargetId());
-                if (targetChannel != null) {
-                    targetChannel.writeAndFlush(damagePacket);
-                }
-            }
-        }
-
-        // Atualizar estado do atacante
-        PlayerStatePacket stateUpdate = new PlayerStatePacket(currentPlayer);
-        sendPacket(ctx, stateUpdate);
-
-        logger.info("⚔️ {} attacked at ({}, {}) with {} - Hit {} targets",
-                currentPlayer.getUsername(), attackInfo.targetX, attackInfo.targetY,
-                attackDef.getName(), results.size());
     }
 
     private AttackDefinition getAttackDefinition(String attackId) {

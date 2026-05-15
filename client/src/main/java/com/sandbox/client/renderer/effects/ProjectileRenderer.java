@@ -62,7 +62,7 @@ public class ProjectileRenderer {
             this.directionX = packet.directionX;
             this.directionY = packet.directionY;
             this.maxDistance = packet.maxDistance;
-            this.distanceTraveled = packet.distanceTraveled;  // ← AGORA EXISTE
+            this.distanceTraveled = packet.distanceTraveled;
 
             float totalDistance = (float) Math.hypot(targetX - startX, targetY - startY);
             this.progress = totalDistance > 0 ? distanceTraveled / totalDistance : 0;
@@ -71,7 +71,7 @@ public class ProjectileRenderer {
         void updateFromPacket(ProjectileStatePacket packet) {
             this.x = packet.currentX;
             this.y = packet.currentY;
-            this.distanceTraveled = packet.distanceTraveled;  // ← AGORA EXISTE
+            this.distanceTraveled = packet.distanceTraveled;
 
             float totalDistance = (float) Math.hypot(targetX - startX, targetY - startY);
             this.progress = totalDistance > 0 ? distanceTraveled / totalDistance : 0;
@@ -96,6 +96,9 @@ public class ProjectileRenderer {
                     break;
                 case "bullet":
                     renderBullet(shapeRenderer, alpha);
+                    break;
+                case "melee_slash":
+                    renderMeleeSlash(shapeRenderer, alpha);
                     break;
                 default:
                     renderDefault(shapeRenderer, alpha);
@@ -130,7 +133,6 @@ public class ProjectileRenderer {
             shapeRenderer.setColor(1f, 0.9f, 0.2f, alpha * 0.8f);
             shapeRenderer.circle(x, y, size - 3);
 
-            // Rastro
             shapeRenderer.setColor(1f, 0.4f, 0.1f, alpha * 0.5f);
             shapeRenderer.circle(x - directionX * 8, y - directionY * 8, size - 4);
         }
@@ -138,6 +140,30 @@ public class ProjectileRenderer {
         private void renderBullet(ShapeRenderer shapeRenderer, float alpha) {
             shapeRenderer.setColor(0.9f, 0.9f, 0.2f, alpha);
             shapeRenderer.rect(x - 3, y - 2, 6, 4);
+        }
+
+        private void renderMeleeSlash(ShapeRenderer shapeRenderer, float alpha) {
+            float angle = (float) Math.atan2(directionY, directionX);
+            float length = 40 * (1 - progress);
+
+            shapeRenderer.setColor(0.9f, 0.7f, 0.3f, alpha);
+
+            // Desenhar um arco de corte
+            for (int i = 0; i <= 8; i++) {
+                float t = i / 8f;
+                float offset = (float) Math.sin(t * Math.PI) * 15 * (1 - progress);
+                float perpX = (float) Math.cos(angle + Math.PI/2) * offset;
+                float perpY = (float) Math.sin(angle + Math.PI/2) * offset;
+
+                float arcX = x + (float) Math.cos(angle) * (t * length) + perpX;
+                float arcY = y + (float) Math.sin(angle) * (t * length) + perpY;
+
+                shapeRenderer.circle(arcX, arcY, 4);
+            }
+
+            // Ponto principal
+            shapeRenderer.setColor(1f, 0.9f, 0.5f, alpha);
+            shapeRenderer.circle(x, y, 8);
         }
 
         private void renderDefault(ShapeRenderer shapeRenderer, float alpha) {

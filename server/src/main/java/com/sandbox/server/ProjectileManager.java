@@ -1,6 +1,5 @@
 package com.sandbox.server;
 
-import com.common.sandbox.model.AttackDefinition;
 import com.common.sandbox.model.Player;
 import com.common.sandbox.model.Projectile;
 import com.common.sandbox.network.packets.AttackBroadcast;
@@ -23,7 +22,7 @@ public class ProjectileManager {
 
     private final Map<String, Projectile> activeProjectiles;
     private final ScheduledExecutorService scheduler;
-    private static final float PROJECTILE_CHECK_INTERVAL = 1.0f / 30.0f; // 30 FPS para projéteis
+    private static final float PROJECTILE_CHECK_INTERVAL = 1.0f / 30.0f;
 
     private ProjectileManager() {
         this.activeProjectiles = new ConcurrentHashMap<>();
@@ -58,26 +57,21 @@ public class ProjectileManager {
                 continue;
             }
 
-            // Atualizar posição
             projectile.update(delta);
 
-            // Verificar colisão com jogadores
             Player hitPlayer = checkCollision(projectile, allPlayers);
 
             if (hitPlayer != null) {
-                // Acertou alguém!
                 processHit(projectile, hitPlayer);
                 removeProjectile(projectile.getId());
                 continue;
             }
 
-            // Verificar se atingiu distância máxima
             if (projectile.getDistanceTraveled() >= projectile.getMaxDistance()) {
                 removeProjectile(projectile.getId());
                 continue;
             }
 
-            // Broadcast da posição atualizada para todos
             broadcastProjectileState(projectile);
         }
     }
@@ -85,18 +79,19 @@ public class ProjectileManager {
     private Player checkCollision(Projectile projectile, Collection<Player> players) {
         float projX = projectile.getCurrentX();
         float projY = projectile.getCurrentY();
-        float collisionRadius = 32f; // Raio de colisão do projétil
+        float collisionRadius = 32f;
 
         for (Player player : players) {
-            if (player.getId().equals(projectile.getOwnerId())) continue; // Não acerta o atirador
+            if (player.getId().equals(projectile.getOwnerId())) continue;
             if (player.getCurrentHp() <= 0) continue;
 
             float dx = projX - player.getX();
             float dy = projY - player.getY();
             float distance = (float) Math.sqrt(dx * dx + dy * dy);
 
-            // Raio do jogador é 24 (metade de PLAYER_SIZE/2)
-            if (distance < collisionRadius + 24) {
+            float radius = "melee_slash".equals(projectile.getProjectileType()) ? 48f : collisionRadius;
+
+            if (distance < radius + 24) {
                 return player;
             }
         }
@@ -112,20 +107,21 @@ public class ProjectileManager {
 
         boolean targetDied = newHp <= 0;
 
-        logger.info("🏹 PROJECTILE HIT: {} -> {} | Damage: {}{} | Target HP: {}/{}",
+        logger.info("PROJECTILE HIT: {} -> {} | Damage: {}{} | Target HP: {}/{} | Type: {}",
                 projectile.getOwnerName(), target.getUsername(), damage,
                 wasCritical ? " (CRITICAL!)" : "",
-                newHp, target.getMaxHp());
+                newHp, target.getMaxHp(),
+                projectile.getProjectileType());
 
         if (targetDied) {
-            CombatManager.getInstance().handlePlayerDeath(target,
-                    GameWorld.getInstance().getPlayer(projectile.getOwnerId()));
+            Player attacker = GameWorld.getInstance().getPlayer(projectile.getOwnerId());
+            if (attacker != null) {
+                CombatManager.getInstance().handlePlayerDeath(target, attacker);
+            }
         }
 
-        // Salvar estado do alvo
         DatabaseManager.getInstance().savePlayerAsync(target);
 
-        // Enviar pacote de dano para o alvo
         DamagePacket damagePacket = new DamagePacket(
                 target.getId(), damage, wasCritical, newHp, null);
 
@@ -134,7 +130,6 @@ public class ProjectileManager {
             targetChannel.writeAndFlush(damagePacket);
         }
 
-        // Broadcast do impacto
         AttackBroadcast impact = new AttackBroadcast();
         impact.attackerId = projectile.getOwnerId();
         impact.attackerName = projectile.getOwnerName();
@@ -143,36 +138,44 @@ public class ProjectileManager {
         GameServerHandler.broadcastToAll(impact);
     }
 
-    public void spawnProjectile(Player attacker, AttackDefinition attackDef,
+    public void spawnProjectile(Player attacker, String projectileType,
                                 float targetX, float targetY,
-                                int damage, boolean wasCritical) {
-        float projectileSpeed = attackDef.getProjectileSpeed();
-        if (projectileSpeed <= 0) projectileSpeed = 600f;
+                                int damage, boolean wasCritical,
+                                float speed, float range, boolean isRanged) {
 
-        float maxDistance = attackDef.getRange();
-        if (maxDistance <= 0) maxDistance = 400f;
-
-        // Calcular offset para o projétil não nascer dentro do jogador
         float angle = (float) Math.atan2(targetY - attacker.getY(), targetX - attacker.getX());
-        float offsetX = (float) Math.cos(angle) * 40;
-        float offsetY = (float) Math.sin(angle) * 40;
+        float offsetDistance = isRanged ? 40f : 20f;
+        float offsetX = (float) Math.cos(angle) * offsetDistance;
+        float offsetY = (float) Math.sin(angle) * offsetDistance;
         float startX = attacker.getX() + offsetX;
         float startY = attacker.getY() + offsetY;
 
+        float finalTargetX = targetX;
+        float finalTargetY = targetY;
+
+        if (!isRanged) {
+            float dx = targetX - startX;
+            float dy = targetY - startY;
+            float distance = (float) Math.sqrt(dx * dx + dy * dy);
+            if (distance > range && range > 0) {
+                float ratio = range / distance;
+                finalTargetX = startX + dx * ratio;
+                finalTargetY = startY + dy * ratio;
+            }
+        }
+
         Projectile projectile = new Projectile(
                 attacker.getId(), attacker.getUsername(),
-                attackDef.getProjectileId() != null ? attackDef.getProjectileId() : "arrow",
-                startX, startY, targetX, targetY,
-                projectileSpeed, maxDistance, damage, wasCritical
+                projectileType,
+                startX, startY, finalTargetX, finalTargetY,
+                speed, range, damage, wasCritical
         );
 
         activeProjectiles.put(projectile.getId(), projectile);
-
-        // Broadcast do novo projétil para todos
         broadcastProjectileState(projectile);
 
-        logger.info("🎯 Projectile spawned: {} by {} | Target: ({}, {}) | Max distance: {}",
-                projectile.getProjectileType(), attacker.getUsername(), targetX, targetY, maxDistance);
+        logger.info("Projectile spawned: {} by {} | Speed: {} | Range: {} | Ranged: {}",
+                projectileType, attacker.getUsername(), speed, range, isRanged);
     }
 
     private void broadcastProjectileState(Projectile projectile) {
@@ -183,7 +186,6 @@ public class ProjectileManager {
     private void removeProjectile(String id) {
         Projectile removed = activeProjectiles.remove(id);
         if (removed != null) {
-            // Broadcast que o projétil sumiu
             ProjectileStatePacket despawnPacket = new ProjectileStatePacket(removed);
             despawnPacket.active = false;
             GameServerHandler.broadcastToAll(despawnPacket);

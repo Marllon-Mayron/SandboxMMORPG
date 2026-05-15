@@ -179,7 +179,6 @@ public class CombatManager {
                 dead.getUsername() + " was killed by " + killer.getUsername() + "!");
         GameServerHandler.broadcastToAll(deathMsg);
 
-        // ✅ CORRIGIDO: Usar PlayerStatePacket em vez de MovementBroadcast
         PlayerStatePacket deathState = new PlayerStatePacket(dead);
         deathState.fullSync = true;  // Sincronização completa
         GameServerHandler.broadcastToAll(deathState);
@@ -188,104 +187,4 @@ public class CombatManager {
                 dead.getUsername(), dead.getCurrentHp(), dead.getMaxHp(), dead.getX(), dead.getY());
     }
 
-    public List<AttackResult> processAreaAttack(Player attacker, AttackDefinition attackDef,
-                                                float targetX, float targetY,
-                                                Collection<Player> allPlayers) {
-        List<AttackResult> results = new ArrayList<>();
-
-        logger.info("=== PROCESS AREA ATTACK ===");
-        logger.info("Attacker: {}", attacker.getUsername());
-        logger.info("Attack: {}", attackDef.getName());
-        logger.info("Target pos: ({}, {})", targetX, targetY);
-        logger.info("Total players in world: {}", allPlayers.size());
-
-        // Verificar cooldown
-        if (!attacker.canAttack()) {
-            logger.warn("Attacker {} is on cooldown", attacker.getUsername());
-            return results;
-        }
-
-        // Verificar recursos (mana/stamina)
-        if (attackDef.getStaminaCost() > 0 && attacker.getCurrentStamina() < attackDef.getStaminaCost()) {
-            logger.warn("Attacker {} has insufficient stamina: {}/{}",
-                    attacker.getUsername(), attacker.getCurrentStamina(), attackDef.getStaminaCost());
-            return results;
-        }
-
-        // Consumir recursos
-        if (attackDef.getStaminaCost() > 0) {
-            attacker.setCurrentStamina(attacker.getCurrentStamina() - (int) attackDef.getStaminaCost());
-            logger.info("Consumed {} stamina, remaining: {}", attackDef.getStaminaCost(), attacker.getCurrentStamina());
-        }
-
-        // Detectar alvos na hitbox
-        List<Player> targets = HitboxDetector.getPlayersInHitbox(attacker, attackDef,
-                targetX, targetY, allPlayers);
-
-        logger.info("Targets found in hitbox: {}", targets.size());
-        for (Player t : targets) {
-            logger.info("  - Target: {} at ({}, {})", t.getUsername(), t.getX(), t.getY());
-        }
-
-        // Atualizar stats do atacante
-        updateCombatStatsFromEquipment(attacker);
-
-        // Aplicar dano a cada alvo
-        for (Player target : targets) {
-            AttackResult result = applyDamageToTarget(attacker, target, attackDef);
-            results.add(result);
-            logger.info("Damage applied to {}: {} damage", target.getUsername(), result.getDamage());
-        }
-
-        // Iniciar cooldown do ataque
-        attacker.executeAttack();
-        logger.info("Attack completed, cooldown started");
-
-        return results;
-    }
-
-    private AttackResult applyDamageToTarget(Player attacker, Player target, AttackDefinition attackDef) {
-        CombatStats stats = attacker.getCombatStats();
-
-        // Calcular dano base
-        int damage = stats.getBaseDamage() + stats.getWeaponDamageBonus() + stats.getStrengthBonus();
-        damage = (int) (damage * attackDef.getDamageMultiplier());
-
-        // Chance de crítico
-        boolean wasCritical = (int)(Math.random() * 100) < stats.getCriticalChance();
-        if (wasCritical) {
-            damage = damage * stats.getCriticalDamage() / 100;
-        }
-
-        damage = Math.max(1, damage);
-
-        // Aplicar dano
-        int newHp = Math.max(0, target.getCurrentHp() - damage);
-        target.setCurrentHp(newHp);
-
-        boolean targetDied = newHp <= 0;
-
-        // Knockback na direção do ataque
-        float angle = (float) Math.atan2(target.getY() - attacker.getY(),
-                target.getX() - attacker.getX());
-        float knockbackX = (float) Math.cos(angle) * attackDef.getKnockbackPower();
-        float knockbackY = (float) Math.sin(angle) * attackDef.getKnockbackPower();
-
-        if (!targetDied && !ChunkManager.getInstance().isSolid(target.getX() + knockbackX,
-                target.getY() + knockbackY)) {
-            target.setX(target.getX() + knockbackX);
-            target.setY(target.getY() + knockbackY);
-        }
-
-        if (targetDied) {
-            handlePlayerDeath(target, attacker);
-        }
-
-        DatabaseManager.getInstance().savePlayerAsync(target);
-
-        return new AttackResult(true, damage, wasCritical, targetDied,
-                target.getId(), target.getUsername(), newHp,
-                AttackType.MELEE_SWORD, knockbackX, knockbackY,
-                target.getX(), target.getY());
-    }
 }
