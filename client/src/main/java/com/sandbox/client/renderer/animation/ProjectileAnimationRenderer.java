@@ -17,9 +17,10 @@ import java.util.concurrent.ConcurrentHashMap;
 
 public class ProjectileAnimationRenderer {
     private static final Logger logger = LoggerFactory.getLogger(ProjectileAnimationRenderer.class);
+    private static final int PROJECTILE_RENDER_SCALE = 4;
 
     private final Map<String, Texture> textures;
-    private final Map<String, TextureRegion[][]> animationFrames;
+    private final Map<String, TextureRegion[]> animationFrames;
     private final Map<String, ProjectileAnimation> animations;
     private final Map<String, ClientAnimatedProjectile> activeProjectiles;
 
@@ -73,14 +74,22 @@ public class ProjectileAnimationRenderer {
             textures.put(anim.getId(), texture);
             animations.put(anim.getId(), anim);
 
-            int cols = texture.getWidth() / anim.getFrameWidth();
-            int rows = texture.getHeight() / anim.getFrameHeight();
-            TextureRegion[][] frames = TextureRegion.split(texture, anim.getFrameWidth(), anim.getFrameHeight());
+            // Dividir o sprite sheet em frames (apenas a primeira linha)
+            TextureRegion[][] temp = TextureRegion.split(texture, anim.getFrameWidth(), anim.getFrameHeight());
+            TextureRegion[] frames = temp[0];
+
+            if (frames.length > anim.getTotalFrames()) {
+                TextureRegion[] limited = new TextureRegion[anim.getTotalFrames()];
+                System.arraycopy(frames, 0, limited, 0, anim.getTotalFrames());
+                frames = limited;
+            }
+
             animationFrames.put(anim.getId(), frames);
 
-            logger.info("Loaded animation: {} | {}x{} frames | {}x{}px | {} frames/dir | {:.2f}s/frame",
-                    anim.getId(), cols, rows, anim.getFrameWidth(), anim.getFrameHeight(),
-                    anim.getFramesPerDirection(), anim.getFrameDuration());
+            logger.info("Loaded animation: {} | {} frames | {}x{}px | {:.2f}s/frame | Will scale to {}x{}",
+                    anim.getId(), frames.length, anim.getFrameWidth(), anim.getFrameHeight(),
+                    anim.getFrameDuration(), anim.getFrameWidth() * PROJECTILE_RENDER_SCALE,
+                    anim.getFrameHeight() * PROJECTILE_RENDER_SCALE);
 
         } catch (Exception e) {
             logger.error("Failed to load animation texture: {}", anim.getId(), e);
@@ -119,8 +128,8 @@ public class ProjectileAnimationRenderer {
         private String id;
         private String animationId;
         private float x, y;
-        private int direction;  // ← CAMPO ADICIONADO
-        private float currentFrame;
+        private float angle;
+        private int currentFrame;
         private float animationTimer;
         private boolean active = true;
 
@@ -129,18 +138,15 @@ public class ProjectileAnimationRenderer {
             this.animationId = packet.animationId;
             this.x = packet.currentX;
             this.y = packet.currentY;
-            this.direction = packet.direction;  // ← CORRIGIDO
+            this.angle = packet.angle;
             this.currentFrame = 0;
             this.animationTimer = 0;
-
-            // Log para debug
-            System.out.println("Projectile created: " + id + " direction=" + direction);
         }
 
         void updateFromPacket(ProjectileStatePacket packet) {
             this.x = packet.currentX;
             this.y = packet.currentY;
-            this.direction = packet.direction;  // ← CORRIGIDO
+            this.angle = packet.angle;
         }
 
         void update(float delta) {
@@ -152,7 +158,7 @@ public class ProjectileAnimationRenderer {
                 if (animationTimer >= anim.getFrameDuration()) {
                     animationTimer = 0;
                     currentFrame++;
-                    if (currentFrame >= anim.getFramesPerDirection()) {
+                    if (currentFrame >= anim.getTotalFrames()) {
                         currentFrame = 0;
                     }
                 }
@@ -163,24 +169,20 @@ public class ProjectileAnimationRenderer {
             ProjectileAnimation anim = animations.get(animationId);
             if (anim == null) return;
 
-            TextureRegion[][] frames = animationFrames.get(animationId);
-            if (frames == null) return;
+            TextureRegion[] frames = animationFrames.get(animationId);
+            if (frames == null || frames.length == 0) return;
 
-            // Usar a direção que veio do servidor
-            int row = direction;
-            int col = (int) currentFrame;
+            TextureRegion frame = frames[currentFrame];
 
-            if (row < frames.length && col < frames[0].length) {
-                TextureRegion frame = frames[row][col];
-                float drawX = x - anim.getFrameWidth() / 2;
-                float drawY = y - anim.getFrameHeight() / 2;
-                batch.draw(frame, drawX, drawY, anim.getFrameWidth(), anim.getFrameHeight());
-            } else {
-                // Log se a direção for inválida
-                if (row >= frames.length) {
-                    System.out.println("Invalid direction: row=" + row + " max=" + frames.length);
-                }
-            }
+            int renderWidth = anim.getFrameWidth() * PROJECTILE_RENDER_SCALE;
+            int renderHeight = anim.getFrameHeight() * PROJECTILE_RENDER_SCALE;
+
+            float drawX = x - renderWidth / 2;
+            float drawY = y - renderHeight / 2;
+
+            // Desenhar com rotação baseada no ângulo
+            batch.draw(frame, drawX, drawY, renderWidth / 2, renderHeight / 2,
+                    renderWidth, renderHeight, 1f, 1f, angle);
         }
 
         boolean isActive() { return active; }

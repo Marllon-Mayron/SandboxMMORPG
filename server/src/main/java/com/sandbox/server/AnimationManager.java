@@ -27,24 +27,16 @@ public class AnimationManager {
     }
 
     private void loadProjectileAnimations() {
-        // Arrow - 8 direções, 2 frames cada
+        // Arrow - 4 frames de animação
         ProjectileAnimation arrowAnim = new ProjectileAnimation(
                 "arrow",
                 "animations/combat/projectiles/arrow.png",
-                32, 32,   // largura x altura
-                2,        // 2 frames por direção
+                32, 32,   // largura x altura do frame (original)
+                2,        // 4 frames na animação
                 0.1f      // 0.1 segundos por frame
         );
         projectileAnimations.put("arrow", arrowAnim);
-        logger.info("Loaded projectile animation: arrow");
-
-        // TODO: Adicionar outras animações quando tiver os sprites
-        // Exemplo para fireball:
-        // ProjectileAnimation fireballAnim = new ProjectileAnimation(
-        //     "fireball", "animations/combat/projectiles/fireball.png",
-        //     64, 64, 3, 0.1f
-        // );
-        // projectileAnimations.put("fireball", fireballAnim);
+        logger.info("Loaded projectile animation: arrow ({} frames)", arrowAnim.getTotalFrames());
     }
 
     public ProjectileAnimation getAnimation(String id) {

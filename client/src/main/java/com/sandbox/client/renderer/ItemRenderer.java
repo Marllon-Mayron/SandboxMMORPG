@@ -20,6 +20,9 @@ public class ItemRenderer {
     private final Map<String, TextureRegion[][]> regions = new ConcurrentHashMap<>();
     private final Map<String, GroundItem> groundItems = new ConcurrentHashMap<>();
 
+    private static final int ITEM_RENDER_SCALE = 2;  // Fator de escala (2x = 64x64)
+    private static final int ITEM_SPRITE_SIZE = 32;
+
     private float animationTime = 0;
 
     public void addItem(GroundItem item) {
@@ -96,15 +99,13 @@ public class ItemRenderer {
     }
 
     public void render(SpriteBatch batch, GameCamera camera) {
-        if (groundItems.isEmpty()) {
-            return;
-        }
+        if (groundItems.isEmpty()) return;
 
         for (GroundItem item : groundItems.values()) {
             float x = item.getX();
             float y = item.getY();
 
-            if (camera.isInView(x, y, 32, 32)) {
+            if (camera.isInView(x, y, ITEM_SPRITE_SIZE * ITEM_RENDER_SCALE, ITEM_SPRITE_SIZE * ITEM_RENDER_SCALE)) {
                 TextureRegion[][] regs = regions.get(item.getDefinition().getSpritesheet());
                 if (regs != null) {
                     int tx = item.getDefinition().getTileX();
@@ -112,13 +113,14 @@ public class ItemRenderer {
                     if (tx >= 0 && tx < regs[0].length && ty >= 0 && ty < regs.length) {
                         TextureRegion region = regs[ty][tx];
                         float floatY = y + (float) Math.sin(animationTime * 3) * 4;
-                        batch.draw(region, x - 16, floatY - 16, 32, 32);
-                    } else {
-                        logger.warn("Invalid tile coordinates: tx={}, ty={} for spritesheet {}",
-                                tx, ty, item.getDefinition().getSpritesheet());
+
+                        // Tamanho renderizado (dobrado)
+                        int renderSize = ITEM_SPRITE_SIZE * ITEM_RENDER_SCALE; // 64
+                        float drawX = x - renderSize / 2;
+                        float drawY = floatY - renderSize / 2;
+
+                        batch.draw(region, drawX, drawY, renderSize, renderSize);
                     }
-                } else {
-                    logger.debug("No spritesheet regions for: {}", item.getDefinition().getSpritesheet());
                 }
             }
         }

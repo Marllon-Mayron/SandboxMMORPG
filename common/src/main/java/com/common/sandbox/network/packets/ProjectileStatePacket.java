@@ -24,7 +24,7 @@ public class ProjectileStatePacket extends Packet {
     public boolean wasCritical;
     public long spawnTime;
     public boolean active;
-    public int direction; // Direção fixa calculada no início
+    public float angle;
 
     public ProjectileStatePacket() {}
 
@@ -49,6 +49,6 @@ public class ProjectileStatePacket extends Packet {
         this.wasCritical = projectile.isWasCritical();
         this.spawnTime = projectile.getSpawnTime();
         this.active = projectile.isActive();
-        this.direction = projectile.getDirection(); // Direção fixa
+        this.angle = projectile.getAngle();
     }
 }

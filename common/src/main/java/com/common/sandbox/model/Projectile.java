@@ -26,7 +26,7 @@ public class Projectile implements Serializable {
     private boolean wasCritical;
     private long spawnTime;
     private boolean active;
-    private int direction; // Direção calculada UMA VEZ
+    private float angle;
 
     public Projectile() {}
 
@@ -52,7 +52,7 @@ public class Projectile implements Serializable {
         this.spawnTime = System.currentTimeMillis();
         this.active = true;
 
-        // Calcular direção UMA VEZ no construtor
+        // Calcular direção normalizada (para movimento)
         float dx = targetX - startX;
         float dy = targetY - startY;
         float len = (float) Math.sqrt(dx * dx + dy * dy);
@@ -64,52 +64,30 @@ public class Projectile implements Serializable {
             this.directionY = 1;
         }
 
-        // Calcular direção do sprite baseado no ângulo
-        this.direction = calculateDirection(this.directionX, this.directionY);
+        // Calcular ângulo para rotação
+        this.angle = calculateAngle(startX, startY, targetX, targetY);
+
+        // Log para debug
+        System.out.println("=== PROJECTILE ANGLE ===");
+        System.out.println("Direction: (" + directionX + ", " + directionY + ")");
+        System.out.println("Angle: " + this.angle);
+        System.out.println("========================");
     }
 
-    private int calculateDirection(float dirX, float dirY) {
-        float len = (float) Math.sqrt(dirX * dirX + dirY * dirY);
-        if (len < 0.001f) return 0;
+    private float calculateAngle(float startX, float startY, float targetX, float targetY) {
+        float dx = targetX - startX;
+        float dy = targetY - startY;
 
-        float normX = dirX / len;
-        float normY = dirY / len;
+        // Ângulo do movimento (0° = direita, 90° = cima no sistema matemático)
+        float movementAngle = (float) Math.toDegrees(Math.atan2(dy, dx));
 
-        // Sentido horário:
-        // 0: Direita, 1: Direita-Baixo, 2: Baixo, 3: Esquerda-Baixo,
-        // 4: Esquerda, 5: Esquerda-Cima, 6: Cima, 7: Direita-Cima
+        float finalAngle = movementAngle + 45;
 
-        // Para diagonais, comparar magnitude
-        float absX = Math.abs(normX);
-        float absY = Math.abs(normY);
+        // Normalizar para 0-360
+        if (finalAngle < 0) finalAngle += 360;
+        if (finalAngle >= 360) finalAngle -= 360;
 
-        if (absX > absY) {
-            // Horizontal dominante
-            if (normX > 0) {
-                // Direita
-                if (normY > 0.3f) return 7;   // Direita-Baixo
-                if (normY < -0.3f) return 1;  // Direita-Cima
-                return 0;                      // Direita
-            } else {
-                // Esquerda
-                if (normY > 0.3f) return 5;   // Esquerda-Baixo
-                if (normY < -0.3f) return 3;  // Esquerda-Cima
-                return 4;                      // Esquerda
-            }
-        } else {
-            // Vertical dominante
-            if (normY > 0) {
-                // Baixo (Y positivo no jogo)
-                if (normX > 0.3f) return 7;   // Direita-Baixo
-                if (normX < -0.3f) return 5;  // Esquerda-Baixo
-                return 2;                      // Baixo
-            } else {
-                // Cima (Y negativo no jogo)
-                if (normX > 0.3f) return 1;   // Direita-Cima
-                if (normX < -0.3f) return 3;  // Esquerda-Cima
-                return 6;                      // Cima
-            }
-        }
+        return finalAngle;
     }
 
     public boolean update(float delta) {
@@ -154,7 +132,7 @@ public class Projectile implements Serializable {
     public boolean isWasCritical() { return wasCritical; }
     public long getSpawnTime() { return spawnTime; }
     public boolean isActive() { return active; }
-    public int getDirection() { return direction; }
+    public float getAngle() { return angle; }
 
     // Setters
     public void setCurrentX(float currentX) { this.currentX = currentX; }

@@ -9,22 +9,22 @@ public class ProjectileAnimation implements Serializable {
     private String spritesheetPath;
     private int frameWidth;
     private int frameHeight;
-    private int framesPerDirection;
+    private int totalFrames;
     private float frameDuration;
-    private int totalDirections; // 8 para 8 direções
+    private int totalDirections;
 
     public ProjectileAnimation() {}
 
     public ProjectileAnimation(String id, String spritesheetPath,
                                int frameWidth, int frameHeight,
-                               int framesPerDirection, float frameDuration) {
+                               int totalFrames, float frameDuration) {
         this.id = id;
         this.spritesheetPath = spritesheetPath;
         this.frameWidth = frameWidth;
         this.frameHeight = frameHeight;
-        this.framesPerDirection = framesPerDirection;
+        this.totalFrames = totalFrames;
         this.frameDuration = frameDuration;
-        this.totalDirections = 8;
+        this.totalDirections = 1;
     }
 
     // Getters e Setters
@@ -40,8 +40,8 @@ public class ProjectileAnimation implements Serializable {
     public int getFrameHeight() { return frameHeight; }
     public void setFrameHeight(int frameHeight) { this.frameHeight = frameHeight; }
 
-    public int getFramesPerDirection() { return framesPerDirection; }
-    public void setFramesPerDirection(int framesPerDirection) { this.framesPerDirection = framesPerDirection; }
+    public int getTotalFrames() { return totalFrames; }
+    public void setTotalFrames(int totalFrames) { this.totalFrames = totalFrames; }
 
     public float getFrameDuration() { return frameDuration; }
     public void setFrameDuration(float frameDuration) { this.frameDuration = frameDuration; }
