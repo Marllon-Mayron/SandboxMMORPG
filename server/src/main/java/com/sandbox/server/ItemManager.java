@@ -47,7 +47,7 @@ public class ItemManager {
     private void loadItemDefinitions() {
         // ==================== ESPADAS ====================
 
-        // Espada Simples (cooldown 1.0s)
+        // Espada Simples
         ItemDefinition sword = new ItemDefinition();
         sword.setId("simple_sword");
         sword.setName("Espada Simples");
@@ -60,12 +60,11 @@ public class ItemManager {
         sword.setAttackAnimation("sword_slash");
         sword.setAttackCooldown(1.0f);
         sword.setProjectileAnimationId("slash");
+        sword.setHitboxDuration(0.5f);
         sword.setRanged(false);
         itemDefinitions.put(sword.getId(), sword);
-        logger.info("Loaded weapon: {} (Melee, Damage: {}, Cooldown: {}s)",
-                sword.getName(), sword.getDamage(), sword.getAttackCooldown());
 
-        // Espada de Ferro (cooldown 1.25s - mais lenta, mais dano)
+        // Espada de Ferro
         ItemDefinition ironSword = new ItemDefinition();
         ironSword.setId("iron_sword");
         ironSword.setName("Espada de Ferro");
@@ -76,15 +75,13 @@ public class ItemManager {
         ironSword.setDamage(18);
         ironSword.setAttackId("melee_sword");
         ironSword.setAttackAnimation("sword_slash");
-        ironSword.setAttackCooldown(1.25f);  // Cooldown de 1.25 segundos
+        ironSword.setAttackCooldown(1.25f);
+        ironSword.setProjectileAnimationId("slash");
+        ironSword.setHitboxDuration(0.4f);
         ironSword.setRanged(false);
         itemDefinitions.put(ironSword.getId(), ironSword);
-        logger.info("Loaded weapon: {} (Melee, Damage: {}, Cooldown: {}s)",
-                ironSword.getName(), ironSword.getDamage(), ironSword.getAttackCooldown());
 
-        // ==================== ADAGAS ====================
-
-        // Adaga (cooldown 0.67s - muito rápida, menos dano)
+        // Adaga
         ItemDefinition dagger = new ItemDefinition();
         dagger.setId("dagger");
         dagger.setName("Adaga");
@@ -95,15 +92,13 @@ public class ItemManager {
         dagger.setDamage(6);
         dagger.setAttackId("melee_dagger");
         dagger.setAttackAnimation("dagger_stab");
-        dagger.setAttackCooldown(0.67f);  // Cooldown de 0.67 segundos
+        dagger.setAttackCooldown(0.67f);
+        dagger.setProjectileAnimationId("stab");
+        dagger.setHitboxDuration(0.2f);
         dagger.setRanged(false);
         itemDefinitions.put(dagger.getId(), dagger);
-        logger.info("Loaded weapon: {} (Melee Fast, Damage: {}, Cooldown: {}s)",
-                dagger.getName(), dagger.getDamage(), dagger.getAttackCooldown());
 
-        // ==================== MACHADOS ====================
-
-        // Machado Simples (cooldown 1.43s - muito lento, muito dano)
+        // Machado Simples
         ItemDefinition axe = new ItemDefinition();
         axe.setId("simple_axe");
         axe.setName("Machado Simples");
@@ -114,15 +109,15 @@ public class ItemManager {
         axe.setDamage(14);
         axe.setAttackId("melee_axe");
         axe.setAttackAnimation("sword_slash");
-        axe.setAttackCooldown(1.43f);  // Cooldown de 1.43 segundos
+        axe.setAttackCooldown(1.43f);
+        axe.setProjectileAnimationId("slash");
+        axe.setHitboxDuration(0.45f);
         axe.setRanged(false);
         itemDefinitions.put(axe.getId(), axe);
-        logger.info("Loaded weapon: {} (Melee Heavy, Damage: {}, Cooldown: {}s)",
-                axe.getName(), axe.getDamage(), axe.getAttackCooldown());
 
         // ==================== ARCOS ====================
 
-        // Arco Simples (cooldown 1.25s)
+        // Arco Simples
         ItemDefinition simpleBow = new ItemDefinition();
         simpleBow.setId("simple_bow");
         simpleBow.setName("Arco Simples");
@@ -133,17 +128,16 @@ public class ItemManager {
         simpleBow.setDamage(8);
         simpleBow.setAttackId("ranged_bow");
         simpleBow.setAttackAnimation("bow_shoot");
-        simpleBow.setAttackCooldown(1.25f);  // Cooldown de 1.25 segundos
+        simpleBow.setAttackCooldown(1.25f);
         simpleBow.setRanged(true);
         simpleBow.setProjectileId("arrow");
         simpleBow.setProjectileSpeed(600f);
         simpleBow.setProjectileRange(400f);
         simpleBow.setProjectileAnimationId("arrow");
+        simpleBow.setHitboxDuration(0.15f);
         itemDefinitions.put(simpleBow.getId(), simpleBow);
-        logger.info("Loaded weapon: {} (Ranged, Damage: {}, Cooldown: {}s, ProjectileSpeed: {})",
-                simpleBow.getName(), simpleBow.getDamage(), simpleBow.getAttackCooldown(), simpleBow.getProjectileSpeed());
 
-        // Arco Longo (cooldown 1.67s - mais lento, mais dano)
+        // Arco Longo
         ItemDefinition longBow = new ItemDefinition();
         longBow.setId("long_bow");
         longBow.setName("Arco Longo");
@@ -154,16 +148,16 @@ public class ItemManager {
         longBow.setDamage(15);
         longBow.setAttackId("ranged_bow");
         longBow.setAttackAnimation("bow_shoot");
-        longBow.setAttackCooldown(1.67f);  // Cooldown de 1.67 segundos
+        longBow.setAttackCooldown(1.67f);
         longBow.setRanged(true);
         longBow.setProjectileId("arrow");
         longBow.setProjectileSpeed(900f);
         longBow.setProjectileRange(550f);
+        longBow.setProjectileAnimationId("arrow");
+        longBow.setHitboxDuration(0.2f);
         itemDefinitions.put(longBow.getId(), longBow);
-        logger.info("Loaded weapon: {} (Ranged, Damage: {}, Cooldown: {}s, ProjectileSpeed: {})",
-                longBow.getName(), longBow.getDamage(), longBow.getAttackCooldown(), longBow.getProjectileSpeed());
 
-        // Arco Rápido (cooldown 0.77s - rápido, menos dano)
+        // Arco Rápido
         ItemDefinition quickBow = new ItemDefinition();
         quickBow.setId("quick_bow");
         quickBow.setName("Arco Rápido");
@@ -174,18 +168,17 @@ public class ItemManager {
         quickBow.setDamage(6);
         quickBow.setAttackId("ranged_bow");
         quickBow.setAttackAnimation("bow_shoot");
-        quickBow.setAttackCooldown(0.77f);  // Cooldown de 0.77 segundos
+        quickBow.setAttackCooldown(0.77f);
         quickBow.setRanged(true);
         quickBow.setProjectileId("arrow");
         quickBow.setProjectileSpeed(450f);
         quickBow.setProjectileRange(300f);
+        quickBow.setProjectileAnimationId("arrow");
+        quickBow.setHitboxDuration(0.12f);
         itemDefinitions.put(quickBow.getId(), quickBow);
-        logger.info("Loaded weapon: {} (Ranged Fast, Damage: {}, Cooldown: {}s, ProjectileSpeed: {})",
-                quickBow.getName(), quickBow.getDamage(), quickBow.getAttackCooldown(), quickBow.getProjectileSpeed());
 
         // ==================== ITENS CONSUMÍVEIS ====================
 
-        // Maçã
         ItemDefinition apple = new ItemDefinition();
         apple.setId("apple");
         apple.setName("Maçã");
@@ -195,9 +188,7 @@ public class ItemManager {
         apple.setTileY(0);
         apple.setHealAmount(25);
         itemDefinitions.put(apple.getId(), apple);
-        logger.info("Loaded consumable: {} (Heal: {})", apple.getName(), apple.getHealAmount());
 
-        // Poção de Vida
         ItemDefinition healthPotion = new ItemDefinition();
         healthPotion.setId("health_potion");
         healthPotion.setName("Poção de Vida");
@@ -207,7 +198,44 @@ public class ItemManager {
         healthPotion.setTileY(1);
         healthPotion.setHealAmount(50);
         itemDefinitions.put(healthPotion.getId(), healthPotion);
-        logger.info("Loaded consumable: {} (Heal: {})", healthPotion.getName(), healthPotion.getHealAmount());
+
+        // LOG MELHORADO: Percorrer todos os itens e printar informações completas
+        printAllItemDefinitions();
+    }
+
+    private void printAllItemDefinitions() {
+        logger.info("========================================");
+        logger.info("        ITEM DEFINITIONS LOADED         ");
+        logger.info("========================================");
+
+        for (ItemDefinition def : itemDefinitions.values()) {
+            StringBuilder sb = new StringBuilder();
+            sb.append(String.format("📦 %s (ID: %s)", def.getName(), def.getId()));
+            sb.append(String.format(" | Category: %s", def.getCategory()));
+
+            if ("weapon".equals(def.getCategory())) {
+                sb.append(String.format(" | Damage: %d", def.getDamage()));
+                sb.append(String.format(" | Cooldown: %.2fs", def.getAttackCooldown()));
+                sb.append(String.format(" | Hitbox: %.2fs", def.getHitboxDuration()));
+                if (def.isRanged()) {
+                    sb.append(String.format(" | Ranged: ✓ | Speed: %.0f | Range: %.0f",
+                            def.getProjectileSpeed(), def.getProjectileRange()));
+                    sb.append(String.format(" | Anim: %s", def.getProjectileAnimationId()));
+                } else {
+                    sb.append(String.format(" | Melee: ✓ | Anim: %s", def.getProjectileAnimationId()));
+                }
+            } else if ("consumable".equals(def.getCategory())) {
+                sb.append(String.format(" | Heal: %d", def.getHealAmount()));
+            }
+
+            sb.append(String.format(" | Sprite: (%d,%d) %s", def.getTileX(), def.getTileY(), def.getSpritesheet()));
+
+            logger.info(sb.toString());
+        }
+
+        logger.info("========================================");
+        logger.info("Total items loaded: {}", itemDefinitions.size());
+        logger.info("========================================");
     }
 
     public void spawnWorldItems() {

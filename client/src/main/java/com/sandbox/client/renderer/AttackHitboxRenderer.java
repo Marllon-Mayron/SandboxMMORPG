@@ -15,7 +15,6 @@ import com.sandbox.client.camera.GameCamera;
 public class AttackHitboxRenderer {
 
     private boolean debugMode = true;
-    private static final float HITBOX_DISPLAY_DURATION = 0.25f;
 
     // Hitbox atual - sempre inicializados
     private Rectangle currentRect;
@@ -38,17 +37,18 @@ public class AttackHitboxRenderer {
      * Mostra a hitbox do ataque baseado na definição
      */
     public void showHitbox(AttackDefinition attack, float attackerX, float attackerY,
-                           float targetX, float targetY) {
+                           float targetX, float targetY, float duration) {
         System.out.println("=== SHOWING HITBOX ===");
         System.out.println("Attack: " + attack.getName());
         System.out.println("Hitbox Type: " + attack.getHitboxType().getName());
         System.out.println("Attacker: (" + attackerX + ", " + attackerY + ")");
         System.out.println("Target: (" + targetX + ", " + targetY + ")");
+        System.out.println("Duration: " + duration + "s");
 
         this.currentAttack = attack;
         this.attackerPos.set(attackerX, attackerY);
         this.targetPos.set(targetX, targetY);
-        this.hitboxTimer = HITBOX_DISPLAY_DURATION;
+        this.hitboxTimer = duration;
 
         // Calcular ângulo da direção (do jogador para o mouse)
         float dx = targetX - attackerX;
@@ -68,33 +68,30 @@ public class AttackHitboxRenderer {
             float centerX = attackerX + (dx / distance) * actualDistance;
             float centerY = attackerY + (dy / distance) * actualDistance;
 
-            // Garantir que o círculo existe antes de usar
             if (currentCircle == null) {
                 currentCircle = new Circle();
             }
             currentCircle.set(centerX, centerY, attack.getRadius());
-            currentRect = null; // Limpar retângulo
+            currentRect = null;
 
             System.out.println("Circle hitbox - Center: (" + centerX + ", " + centerY +
                     "), Radius: " + attack.getRadius());
 
         } else {
-            // Hitbox retangular: na frente do jogador, alinhada com a direção
+            // Hitbox retangular
             float halfWidth = attack.getWidth() / 2;
             float halfHeight = attack.getHeight() / 2;
 
-            // Calcular centro do retângulo na direção do mouse, a meio range
             float centerDist = attack.getRange() / 2;
             float centerX = attackerX + (dx / distance) * centerDist;
             float centerY = attackerY + (dy / distance) * centerDist;
 
-            // Garantir que o retângulo existe antes de usar
             if (currentRect == null) {
                 currentRect = new Rectangle();
             }
             currentRect.set(centerX - halfWidth, centerY - halfHeight,
                     attack.getWidth(), attack.getHeight());
-            currentCircle = null; // Limpar círculo
+            currentCircle = null;
 
             System.out.println("Rectangle hitbox - Center: (" + centerX + ", " + centerY +
                     "), Size: " + attack.getWidth() + "x" + attack.getHeight());
@@ -113,39 +110,30 @@ public class AttackHitboxRenderer {
     public void render(ShapeRenderer shapeRenderer) {
         if (!debugMode || hitboxTimer <= 0) return;
 
-        float alpha = Math.min(1.0f, hitboxTimer / HITBOX_DISPLAY_DURATION);
+        float alpha = Math.min(1.0f, hitboxTimer / 0.5f); // Usar 0.5s como referência máxima
 
-        // Aumentar espessura da linha
         Gdx.gl.glLineWidth(3f);
 
-        // Desenhar círculo se existir
         if (currentCircle != null) {
             // Hitbox CIRCULAR
-            // Preenchimento vermelho semi-transparente
             shapeRenderer.setColor(1f, 0f, 0f, alpha * 0.3f);
             shapeRenderer.circle(currentCircle.x, currentCircle.y, currentCircle.radius);
 
-            // Borda amarela grossa
             shapeRenderer.setColor(1f, 1f, 0f, alpha);
             shapeRenderer.circle(currentCircle.x, currentCircle.y, currentCircle.radius);
 
-            // Círculo interno laranja
             shapeRenderer.setColor(1f, 0.5f, 0f, alpha);
             shapeRenderer.circle(currentCircle.x, currentCircle.y, currentCircle.radius - 5);
         }
 
-        // Desenhar retângulo se existir
         if (currentRect != null) {
             // Hitbox RETANGULAR
-            // Preenchimento vermelho semi-transparente
             shapeRenderer.setColor(1f, 0f, 0f, alpha * 0.3f);
             shapeRenderer.rect(currentRect.x, currentRect.y, currentRect.width, currentRect.height);
 
-            // Borda amarela grossa
             shapeRenderer.setColor(1f, 1f, 0f, alpha);
             shapeRenderer.rect(currentRect.x, currentRect.y, currentRect.width, currentRect.height);
 
-            // Linha indicando a direção dentro do retângulo
             float centerX = currentRect.x + currentRect.width / 2;
             float centerY = currentRect.y + currentRect.height / 2;
             float lineEndX = centerX + (float) Math.cos(directionAngle) * currentRect.width / 1.5f;
@@ -155,19 +143,16 @@ public class AttackHitboxRenderer {
             shapeRenderer.line(centerX, centerY, lineEndX, lineEndY);
         }
 
-        // Linha do jogador até o alvo (sempre desenhar)
         if (attackerPos != null && targetPos != null) {
             Gdx.gl.glLineWidth(2f);
             shapeRenderer.setColor(0f, 1f, 0f, alpha);
             shapeRenderer.line(attackerPos.x, attackerPos.y, targetPos.x, targetPos.y);
 
-            // Pontos no jogador e no alvo
             shapeRenderer.setColor(0f, 1f, 0f, alpha);
             shapeRenderer.circle(attackerPos.x, attackerPos.y, 5);
             shapeRenderer.circle(targetPos.x, targetPos.y, 5);
         }
 
-        // Restaurar espessura padrão
         Gdx.gl.glLineWidth(1f);
     }
 
@@ -194,23 +179,6 @@ public class AttackHitboxRenderer {
         font.draw(batch, info, attackerPos.x - 100, attackerPos.y + 60);
         font.draw(batch, hitboxInfo, attackerPos.x - 100, attackerPos.y + 40);
         font.setColor(Color.WHITE);
-    }
-
-    /**
-     * Método para teste (compatibilidade com F4)
-     */
-    public void testHitbox(float x, float y, String direction) {
-        AttackDefinition testAttack = AttackDefinition.createMeleeSword();
-        float targetX = x;
-        float targetY = y;
-        switch (direction) {
-            case "UP": targetY = y + 80; break;
-            case "DOWN": targetY = y - 80; break;
-            case "LEFT": targetX = x - 80; break;
-            case "RIGHT": targetX = x + 80; break;
-            default: targetY = y + 80; break;
-        }
-        showHitbox(testAttack, x, y, targetX, targetY);
     }
 
     public void setDebugMode(boolean enabled) {

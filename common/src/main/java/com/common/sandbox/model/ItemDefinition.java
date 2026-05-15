@@ -23,7 +23,7 @@ public class ItemDefinition implements Serializable {
     private String attackId;           // ID do ataque que este item usa
     private String attackAnimation;    // Nome da animação
     private float attackSpeed = 1.0f;  // Velocidade de ataque (ataques por segundo)
-    private float attackCooldown = 1.0f; // NOVO: Cooldown em segundos (calculado ou definido manualmente)
+    private float attackCooldown = 1.0f; //  Cooldown em segundos (calculado ou definido manualmente)
     private boolean isRanged = false;  // Se é arma de longo alcance
 
     // Para armas de longo alcance (projéteis)
@@ -32,7 +32,7 @@ public class ItemDefinition implements Serializable {
     private float projectileRange = 400f; // Alcance máximo do projétil
 
     private String projectileAnimationId; // ID da animação do projétil ("arrow", "fireball", etc.)
-
+    private float hitboxDuration = 0.25f; // Duração da hitbox em segundos
     // Estatísticas adicionais
     private int strengthBonus = 0;
     private int agilityBonus = 0;
@@ -123,4 +123,8 @@ public class ItemDefinition implements Serializable {
 
     public String getProjectileAnimationId() { return projectileAnimationId; }
     public void setProjectileAnimationId(String projectileAnimationId) { this.projectileAnimationId = projectileAnimationId; }
+
+    public float getHitboxDuration() { return hitboxDuration; }
+    public void setHitboxDuration(float hitboxDuration) { this.hitboxDuration = hitboxDuration; }
+
 }

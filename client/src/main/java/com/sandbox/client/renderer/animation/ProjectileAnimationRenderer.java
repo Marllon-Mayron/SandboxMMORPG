@@ -74,7 +74,6 @@ public class ProjectileAnimationRenderer {
             textures.put(anim.getId(), texture);
             animations.put(anim.getId(), anim);
 
-            // Dividir o sprite sheet em frames (apenas a primeira linha)
             TextureRegion[][] temp = TextureRegion.split(texture, anim.getFrameWidth(), anim.getFrameHeight());
             TextureRegion[] frames = temp[0];
 
@@ -86,10 +85,9 @@ public class ProjectileAnimationRenderer {
 
             animationFrames.put(anim.getId(), frames);
 
-            logger.info("Loaded animation: {} | {} frames | {}x{}px | {:.2f}s/frame | Will scale to {}x{}",
+            logger.info("Loaded animation: {} | {} frames | {}x{}px | {:.2f}s/frame | Total duration: {:.2f}s",
                     anim.getId(), frames.length, anim.getFrameWidth(), anim.getFrameHeight(),
-                    anim.getFrameDuration(), anim.getFrameWidth() * PROJECTILE_RENDER_SCALE,
-                    anim.getFrameHeight() * PROJECTILE_RENDER_SCALE);
+                    anim.getFrameDuration(), frames.length * anim.getFrameDuration());
 
         } catch (Exception e) {
             logger.error("Failed to load animation texture: {}", anim.getId(), e);
@@ -99,6 +97,7 @@ public class ProjectileAnimationRenderer {
     public void onProjectileState(ProjectileStatePacket packet) {
         if (!packet.active) {
             activeProjectiles.remove(packet.projectileId);
+            logger.debug("Projectile removed: {}", packet.projectileId);
             return;
         }
 
@@ -106,6 +105,7 @@ public class ProjectileAnimationRenderer {
         if (proj == null) {
             proj = new ClientAnimatedProjectile(packet);
             activeProjectiles.put(packet.projectileId, proj);
+            logger.debug("Projectile added: {} | animation: {}", packet.projectileId, packet.animationId);
         } else {
             proj.updateFromPacket(packet);
         }
@@ -115,7 +115,13 @@ public class ProjectileAnimationRenderer {
         for (ClientAnimatedProjectile proj : activeProjectiles.values()) {
             proj.update(delta);
         }
-        activeProjectiles.values().removeIf(proj -> !proj.isActive());
+        activeProjectiles.values().removeIf(proj -> {
+            boolean inactive = !proj.isActive();
+            if (inactive) {
+                logger.debug("Removing inactive projectile: {}", proj.id);
+            }
+            return inactive;
+        });
     }
 
     public void render(SpriteBatch batch, GameCamera camera) {
@@ -131,6 +137,8 @@ public class ProjectileAnimationRenderer {
         private float angle;
         private int currentFrame;
         private float animationTimer;
+        private boolean isRanged;
+        private boolean animationCompleted = false;  // ← NOVO CAMPO
         private boolean active = true;
 
         ClientAnimatedProjectile(ProjectileStatePacket packet) {
@@ -141,6 +149,8 @@ public class ProjectileAnimationRenderer {
             this.angle = packet.angle;
             this.currentFrame = 0;
             this.animationTimer = 0;
+            this.isRanged = "arrow".equals(packet.projectileType);
+            this.animationCompleted = false;
         }
 
         void updateFromPacket(ProjectileStatePacket packet) {
@@ -151,28 +161,44 @@ public class ProjectileAnimationRenderer {
 
         void update(float delta) {
             if (!active) return;
+            if (animationCompleted) return;  // ← Se já completou, não faz nada
 
             ProjectileAnimation anim = animations.get(animationId);
             if (anim != null) {
                 animationTimer += delta;
+
                 if (animationTimer >= anim.getFrameDuration()) {
                     animationTimer = 0;
                     currentFrame++;
+
                     if (currentFrame >= anim.getTotalFrames()) {
-                        currentFrame = 0;
+                        if (isRanged) {
+                            currentFrame = 0;      // Loop para ranged
+                        } else {
+                            animationCompleted = true;  // Marca como completo
+                            currentFrame = anim.getTotalFrames() - 1; // Mantém no último frame
+                            // OU active = false; se quiser sumir completamente
+                        }
                     }
                 }
             }
         }
 
         void render(SpriteBatch batch, GameCamera camera) {
+            if (!active) return;
+            if (animationCompleted && !isRanged) return;  // ← Melee completo: NÃO DESENHA
+
             ProjectileAnimation anim = animations.get(animationId);
             if (anim == null) return;
 
             TextureRegion[] frames = animationFrames.get(animationId);
             if (frames == null || frames.length == 0) return;
 
-            TextureRegion frame = frames[currentFrame];
+            // Para melee, se completou, não desenha
+            if (!isRanged && animationCompleted) return;
+
+            int frameIndex = currentFrame < frames.length ? currentFrame : frames.length - 1;
+            TextureRegion frame = frames[frameIndex];
 
             int renderWidth = anim.getFrameWidth() * PROJECTILE_RENDER_SCALE;
             int renderHeight = anim.getFrameHeight() * PROJECTILE_RENDER_SCALE;
@@ -180,7 +206,6 @@ public class ProjectileAnimationRenderer {
             float drawX = x - renderWidth / 2;
             float drawY = y - renderHeight / 2;
 
-            // Desenhar com rotação baseada no ângulo
             batch.draw(frame, drawX, drawY, renderWidth / 2, renderHeight / 2,
                     renderWidth, renderHeight, 1f, 1f, angle);
         }

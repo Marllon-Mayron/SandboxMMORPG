@@ -31,34 +31,35 @@ public class AnimationManager {
         ProjectileAnimation arrowAnim = new ProjectileAnimation(
                 "arrow",
                 "animations/combat/projectiles/arrow.png",
-                32, 32,   // largura x altura do frame
-                4,        // 4 frames na animação
-                0.1f      // 0.1 segundos por frame
+                32, 32,
+                2,
+                0.08f
         );
         projectileAnimations.put("arrow", arrowAnim);
-        logger.info("Loaded projectile animation: arrow ({} frames)", arrowAnim.getTotalFrames());
+        logger.info("Loaded projectile animation: arrow ({} frames, {} s/frame)",
+                arrowAnim.getTotalFrames(), arrowAnim.getFrameDuration());
 
         // Animações para ataques corpo a corpo (melee)
-        // Slash - para espada e machado
         ProjectileAnimation slashAnim = new ProjectileAnimation(
                 "slash",
                 "animations/combat/projectiles/slash.png",
                 32, 32,
                 3,
-                0.01f
+                0.05f
         );
         projectileAnimations.put("slash", slashAnim);
-        logger.info("Loaded melee animation: slash ({} frames)", slashAnim.getTotalFrames());
-
+        logger.info("Loaded melee animation: slash ({} frames, {} s/frame, total {} s)",
+                slashAnim.getTotalFrames(),
+                slashAnim.getFrameDuration(),
+                slashAnim.getTotalFrames() * slashAnim.getFrameDuration());
 
         ProjectileAnimation stabAnim = new ProjectileAnimation(
                 "stab",
-                "animations/combat/projectiles/slash.png", // usa mesma imagem
-                32, 32, 3, 0.07f
+                "animations/combat/projectiles/slash.png",
+                32, 32,
+                2,        // 2 frames
+                0.25f     // 0.25 segundos por frame
         );
-        projectileAnimations.put("stab", stabAnim);
-        logger.info("Loaded melee animation: stab ({} frames)", stabAnim.getTotalFrames());
-
     }
 
     public ProjectileAnimation getAnimation(String id) {

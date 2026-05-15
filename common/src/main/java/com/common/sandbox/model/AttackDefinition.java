@@ -22,9 +22,9 @@ public class AttackDefinition implements Serializable {
     private int maxTargets;
     private float knockbackPower;
 
-    // NOVOS CAMPOS
     private String attackAnimation;    // "sword_slash", "bow_shoot", etc.
     private float projectileSpeed;
+    private float hitboxDuration = 0.25f;
 
     public AttackDefinition() {}
 
@@ -62,11 +62,12 @@ public class AttackDefinition implements Serializable {
     public float getKnockbackPower() { return knockbackPower; }
     public void setKnockbackPower(float knockbackPower) { this.knockbackPower = knockbackPower; }
 
-    // NOVOS GETTERS/SETTERS
     public String getAttackAnimation() { return attackAnimation; }
     public void setAttackAnimation(String attackAnimation) { this.attackAnimation = attackAnimation; }
     public float getProjectileSpeed() { return projectileSpeed; }
     public void setProjectileSpeed(float projectileSpeed) { this.projectileSpeed = projectileSpeed; }
+    public float getHitboxDuration() { return hitboxDuration; }
+    public void setHitboxDuration(float hitboxDuration) { this.hitboxDuration = hitboxDuration; }
 
     // Factory methods
     public static AttackDefinition createMeleeSword() {
@@ -79,10 +80,11 @@ public class AttackDefinition implements Serializable {
         def.setHeight(32f);
         def.setDamageMultiplier(1.2f);
         def.setCooldownSeconds(1.0f);
-        def.setStaminaCost(50f);
+        def.setStaminaCost(1f);
         def.setMaxTargets(3);
         def.setKnockbackPower(30f);
         def.setRanged(false);
+        def.setHitboxDuration(0.3f);
         def.setAttackAnimation("sword_slash");
         return def;
     }

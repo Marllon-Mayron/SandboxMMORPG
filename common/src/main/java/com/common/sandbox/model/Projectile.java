@@ -93,15 +93,20 @@ public class Projectile implements Serializable {
     public boolean update(float delta) {
         if (!active) return false;
 
+        boolean isMelee = "melee_slash".equals(projectileType) || "stab".equals(projectileType);
+
+        if (isMelee) {
+            return true;
+        }
+
+        // Para projéteis normais
         float moveDistance = speed * delta;
         float newX = currentX + directionX * moveDistance;
         float newY = currentY + directionY * moveDistance;
 
-        float stepDistance = (float) Math.hypot(newX - currentX, newY - currentY);
-        distanceTraveled += stepDistance;
-
         currentX = newX;
         currentY = newY;
+        distanceTraveled += moveDistance;
 
         if (distanceTraveled >= maxDistance) {
             active = false;

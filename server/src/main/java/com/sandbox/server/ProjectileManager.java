@@ -3,6 +3,7 @@ package com.sandbox.server;
 import com.common.sandbox.model.ItemDefinition;
 import com.common.sandbox.model.Player;
 import com.common.sandbox.model.Projectile;
+import com.common.sandbox.model.ProjectileAnimation;
 import com.common.sandbox.network.packets.AttackBroadcast;
 import com.common.sandbox.network.packets.DamagePacket;
 import com.common.sandbox.network.packets.ProjectileStatePacket;
@@ -68,7 +69,11 @@ public class ProjectileManager {
                 continue;
             }
 
-            if (projectile.getDistanceTraveled() >= projectile.getMaxDistance()) {
+            // PARA MELEE, NÃO REMOVER POR DISTÂNCIA
+            boolean isMelee = "melee_slash".equals(projectile.getProjectileType()) ||
+                    "stab".equals(projectile.getProjectileType());
+
+            if (!isMelee && projectile.getDistanceTraveled() >= projectile.getMaxDistance()) {
                 removeProjectile(projectile.getId());
                 continue;
             }
@@ -145,7 +150,7 @@ public class ProjectileManager {
                                 float speed, float range, boolean isRanged) {
 
         // Buscar animação do item
-        String animationId = "arrow"; // default para ranged
+        String animationId = "arrow";
 
         String weaponId = attacker.getInventory() != null ?
                 attacker.getInventory().getEquipped().get("weapon") : null;
@@ -156,9 +161,8 @@ public class ProjectileManager {
             }
         }
 
-        // Para ataques melee, usar animação de slash
         if (!isRanged) {
-            animationId = "slash"; // força usar slash para melee
+            animationId = "slash";
         }
 
         float angle = (float) Math.atan2(targetY - attacker.getY(), targetX - attacker.getX());
@@ -172,14 +176,9 @@ public class ProjectileManager {
         float finalTargetY = targetY;
 
         if (!isRanged) {
-            float dx = targetX - startX;
-            float dy = targetY - startY;
-            float distance = (float) Math.sqrt(dx * dx + dy * dy);
-            if (distance > range && range > 0) {
-                float ratio = range / distance;
-                finalTargetX = startX + dx * ratio;
-                finalTargetY = startY + dy * ratio;
-            }
+            // Para melee, o projétil fica na posição inicial
+            finalTargetX = startX;
+            finalTargetY = startY;
         }
 
         Projectile projectile = new Projectile(
@@ -192,8 +191,29 @@ public class ProjectileManager {
         activeProjectiles.put(projectile.getId(), projectile);
         broadcastProjectileState(projectile);
 
-        logger.info("Projectile spawned: {} by {} | Speed: {} | Range: {} | Ranged: {}",
-                projectileType, attacker.getUsername(), speed, range, isRanged);
+        // Para ataques melee, programar remoção após duração da animação
+        if (!isRanged) {
+            ProjectileAnimation anim = AnimationManager.getInstance().getAnimation(animationId);
+            if (anim != null) {
+                float totalDuration = anim.getTotalFrames() * anim.getFrameDuration();
+                totalDuration += 0.1f;
+
+                scheduler.schedule(() -> {
+                    Projectile p = activeProjectiles.get(projectile.getId());
+                    if (p != null && p.isActive()) {
+                        p.setActive(false);
+                    }
+                }, (long)(totalDuration * 1000), TimeUnit.MILLISECONDS);
+
+                // CORRIGIR O LOG
+                logger.info("Melee projectile will live for {} seconds (frames: {} x {} s/frame = {} s)",
+                        totalDuration, anim.getTotalFrames(), anim.getFrameDuration(),
+                        anim.getTotalFrames() * anim.getFrameDuration());
+            }
+        }
+
+        logger.info("Projectile spawned: {} by {} | Speed: {} | Range: {} | Ranged: {} | Anim: {}",
+                projectileType, attacker.getUsername(), speed, range, isRanged, animationId);
     }
 
     private void broadcastProjectileState(Projectile projectile) {

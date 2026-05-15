@@ -63,7 +63,6 @@ public class KryoRegistry {
     private static final int ID_DROP_ITEM = 174;
     private static final int ID_PICKUP_RESULT = 175;
 
-    private static final int ID_ATTACK_REQUEST = 180;
     private static final int ID_ATTACK_BROADCAST = 181;
     private static final int ID_DAMAGE_PACKET = 182;
     private static final int ID_ATTACK_TYPE = 183;
@@ -190,7 +189,6 @@ public class KryoRegistry {
         //hashmap
         kryo.register(java.util.HashMap.class, 179);
 
-        kryo.register(AttackRequest.class, ID_ATTACK_REQUEST);
         kryo.register(AttackBroadcast.class, ID_ATTACK_BROADCAST);
         kryo.register(DamagePacket.class, ID_DAMAGE_PACKET);
         kryo.register(AttackType.class, ID_ATTACK_TYPE);

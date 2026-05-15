@@ -24,7 +24,6 @@ import com.sandbox.client.renderer.CombatEffectsRenderer;
 import com.sandbox.client.renderer.ItemRenderer;
 import com.sandbox.client.renderer.animation.ProjectileAnimationRenderer;
 import com.sandbox.client.renderer.effects.AttackEffectManager;
-import com.sandbox.client.renderer.effects.ProjectileRenderer;
 import com.sandbox.client.ui.PlayerUI;
 import com.sandbox.client.camera.GameCamera;
 import org.slf4j.Logger;
@@ -92,7 +91,6 @@ public class GameWorldRenderer implements Screen {
     private long lastAttackTime = 0;
     private AttackHitboxRenderer attackHitboxRenderer;
     private AttackEffectManager attackEffectManager;
-    private ProjectileRenderer projectileRenderer;
     private ProjectileAnimationRenderer projectileAnimRenderer;
 
     public GameWorldRenderer(SandboxClient game, boolean adminMode, Map<String, Player> nearbyPlayers) {
@@ -144,7 +142,6 @@ public class GameWorldRenderer implements Screen {
         itemRenderer = new ItemRenderer();
         attackHitboxRenderer = new AttackHitboxRenderer();
         attackEffectManager = new AttackEffectManager();
-        projectileRenderer = new ProjectileRenderer();
         projectileAnimRenderer = new ProjectileAnimationRenderer();
 
         if (initialNearbyPlayers != null && !initialNearbyPlayers.isEmpty()) {
@@ -284,16 +281,11 @@ public class GameWorldRenderer implements Screen {
 
     public void onAttackBroadcast(AttackBroadcast broadcast) {
         Gdx.app.postRunnable(() -> {
-            // Mostrar hitbox do ataque
-            if (attackEffectManager != null) {
-                attackEffectManager.addAttackEffect(broadcast);
-            }
-
-            if (attackHitboxRenderer != null && broadcast != null && broadcast.attackDef != null) {
+            // SEMPRE mostrar hitbox em debug mode, independente de acertar ou não
+            if (attackHitboxRenderer != null && broadcast.attackDef != null) {
                 float targetX = broadcast.targetX;
                 float targetY = broadcast.targetY;
 
-                // Se não veio target, calcular baseado na direção do primeiro resultado
                 if (targetX == 0 && targetY == 0 && broadcast.results != null && !broadcast.results.isEmpty()) {
                     AttackResult firstResult = broadcast.results.get(0);
                     float angle = (float) Math.atan2(firstResult.getKnockbackY(), firstResult.getKnockbackX());
@@ -301,20 +293,30 @@ public class GameWorldRenderer implements Screen {
                     targetY = broadcast.attackerY + (float) Math.sin(angle) * 50;
                 }
 
+                // Usar hitboxDuration do attackDef (3 segundos para teste)
+                float hitboxDuration = broadcast.attackDef.getHitboxDuration();
+                if (hitboxDuration <= 0) hitboxDuration = 0.5f;
+
                 attackHitboxRenderer.showHitbox(
                         broadcast.attackDef,
                         broadcast.attackerX,
                         broadcast.attackerY,
                         targetX,
-                        targetY
+                        targetY,
+                        hitboxDuration
                 );
             }
 
-            // Feedback se for o atacante
-            if (currentPlayer != null && broadcast != null &&
-                    broadcast.attackerId != null &&
-                    broadcast.attackerId.equals(currentPlayer.getId())) {
+            // Mostrar efeitos visuais apenas se acertou
+            if (broadcast.results != null && !broadcast.results.isEmpty() && broadcast.results.get(0).isSuccess()) {
+                if (attackEffectManager != null) {
+                    attackEffectManager.addAttackEffect(broadcast);
+                }
+            }
 
+            // Feedback do dano...
+            if (currentPlayer != null && broadcast != null && broadcast.attackerId != null &&
+                    broadcast.attackerId.equals(currentPlayer.getId())) {
                 if (playerUI != null && broadcast.results != null && !broadcast.results.isEmpty()) {
                     AttackResult result = broadcast.results.get(0);
                     if (result.isSuccess()) {
@@ -325,7 +327,6 @@ public class GameWorldRenderer implements Screen {
                 }
             }
 
-            // Feedback se for o alvo (procurar em todos os resultados)
             if (currentPlayer != null && broadcast != null && broadcast.results != null) {
                 for (AttackResult result : broadcast.results) {
                     if (result.getTargetId() != null && result.getTargetId().equals(currentPlayer.getId())) {
@@ -824,7 +825,7 @@ public class GameWorldRenderer implements Screen {
     private void performAttack() {
         if (currentPlayer == null) return;
 
-        // Rate limit para evitar spam de pacotes (apenas 100ms entre envios)
+        // Rate limit para evitar spam de pacotes
         long now = System.currentTimeMillis();
         if (now - lastAttackTime < 100) {
             return;
@@ -859,14 +860,8 @@ public class GameWorldRenderer implements Screen {
             attackDef.setDamageMultiplier(0.5f);
         }
 
-        // Mostrar hitbox localmente (apenas feedback visual)
-        if (attackHitboxRenderer != null) {
-            attackHitboxRenderer.showHitbox(attackDef,
-                    currentPlayer.getX(), currentPlayer.getY(),
-                    mouseWorldX, mouseWorldY);
-        }
 
-        // Enviar para o servidor (o servidor vai validar o cooldown)
+        // Enviar para o servidor
         AttackInfo attackInfo = new AttackInfo(
                 currentPlayer.getId(),
                 currentPlayer.getUsername(),
@@ -878,7 +873,7 @@ public class GameWorldRenderer implements Screen {
         );
         game.getNetworkClient().sendPacket(attackInfo);
 
-        // Feedback visual imediato (não bloqueia, apenas informa)
+        // Feedback visual imediato
         if (playerUI != null) {
             playerUI.addChatMessage("⚔️ " + attackDef.getName() + "!");
         }
@@ -2020,9 +2015,6 @@ public class GameWorldRenderer implements Screen {
             attackEffectManager.renderLines(shapeRenderer);
         }
 
-        if (projectileRenderer != null) {
-            projectileRenderer.renderFilled(shapeRenderer);
-        }
         shapeRenderer.end();
 
         // ==================== TERCEIRO SHAPERENDERER PARA PREENCHIMENTO DOS EFEITOS ====================
