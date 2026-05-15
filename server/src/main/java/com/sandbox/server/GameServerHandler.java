@@ -150,8 +150,9 @@ public class GameServerHandler extends SimpleChannelInboundHandler<Object> {
                 sendMapToPlayer(ctx, player);
                 sendAllExistingItemsToPlayer(ctx, player);
                 sendFriendListToPlayer(ctx, player);
-
                 sendAllExistingPlayers(ctx, player);
+                AnimationSyncPacket animSync = new AnimationSyncPacket(AnimationManager.getInstance().getAllProjectileAnimations());
+                sendPacket(ctx, animSync);
 
             } else {
                 logger.warn("Login Falhou - Usuario: {}", request.username);

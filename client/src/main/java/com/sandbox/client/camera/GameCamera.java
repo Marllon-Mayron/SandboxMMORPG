@@ -5,13 +5,6 @@ import com.badlogic.gdx.math.MathUtils;
 import com.badlogic.gdx.math.Vector2;
 import com.badlogic.gdx.math.Vector3;
 
-/**
- * Camera de seguimento suave para o jogador.
- * Implementa interpolacao linear (lerp) para movimento fluido da camera.
- *
- * @author Sandbox Team
- * @version 1.0
- */
 public class GameCamera {
 
     private final OrthographicCamera camera;

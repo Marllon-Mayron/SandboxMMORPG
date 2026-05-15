@@ -8,6 +8,7 @@ public class ProjectileStatePacket extends Packet {
     public String ownerId;
     public String ownerName;
     public String projectileType;
+    public String animationId;
     public float startX;
     public float startY;
     public float currentX;
@@ -18,11 +19,12 @@ public class ProjectileStatePacket extends Packet {
     public float directionY;
     public float speed;
     public float maxDistance;
-    public float distanceTraveled;  // ← ADICIONAR ESTE CAMPO
+    public float distanceTraveled;
     public float damage;
     public boolean wasCritical;
     public long spawnTime;
     public boolean active;
+    public int direction; // Direção fixa calculada no início
 
     public ProjectileStatePacket() {}
 
@@ -31,6 +33,7 @@ public class ProjectileStatePacket extends Packet {
         this.ownerId = projectile.getOwnerId();
         this.ownerName = projectile.getOwnerName();
         this.projectileType = projectile.getProjectileType();
+        this.animationId = projectile.getAnimationId();
         this.startX = projectile.getStartX();
         this.startY = projectile.getStartY();
         this.currentX = projectile.getCurrentX();
@@ -41,10 +44,11 @@ public class ProjectileStatePacket extends Packet {
         this.directionY = projectile.getDirectionY();
         this.speed = projectile.getSpeed();
         this.maxDistance = projectile.getMaxDistance();
-        this.distanceTraveled = projectile.getDistanceTraveled();  // ← ADICIONAR
+        this.distanceTraveled = projectile.getDistanceTraveled();
         this.damage = projectile.getDamage();
         this.wasCritical = projectile.isWasCritical();
         this.spawnTime = projectile.getSpawnTime();
         this.active = projectile.isActive();
+        this.direction = projectile.getDirection(); // Direção fixa
     }
 }

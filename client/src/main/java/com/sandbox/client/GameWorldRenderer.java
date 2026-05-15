@@ -22,6 +22,7 @@ import com.sandbox.client.input.PlayerInputManager;
 import com.sandbox.client.renderer.AttackHitboxRenderer;
 import com.sandbox.client.renderer.CombatEffectsRenderer;
 import com.sandbox.client.renderer.ItemRenderer;
+import com.sandbox.client.renderer.animation.ProjectileAnimationRenderer;
 import com.sandbox.client.renderer.effects.AttackEffectManager;
 import com.sandbox.client.renderer.effects.ProjectileRenderer;
 import com.sandbox.client.ui.PlayerUI;
@@ -92,6 +93,7 @@ public class GameWorldRenderer implements Screen {
     private AttackHitboxRenderer attackHitboxRenderer;
     private AttackEffectManager attackEffectManager;
     private ProjectileRenderer projectileRenderer;
+    private ProjectileAnimationRenderer projectileAnimRenderer;
 
     public GameWorldRenderer(SandboxClient game, boolean adminMode, Map<String, Player> nearbyPlayers) {
         this.game = game;
@@ -143,6 +145,7 @@ public class GameWorldRenderer implements Screen {
         attackHitboxRenderer = new AttackHitboxRenderer();
         attackEffectManager = new AttackEffectManager();
         projectileRenderer = new ProjectileRenderer();
+        projectileAnimRenderer = new ProjectileAnimationRenderer();
 
         if (initialNearbyPlayers != null && !initialNearbyPlayers.isEmpty()) {
             logger.info("Adding {} initial nearby players to world", initialNearbyPlayers.size());
@@ -272,6 +275,8 @@ public class GameWorldRenderer implements Screen {
         game.getNetworkClient().setDamagePacketCallback(this::onDamagePacket);
         game.getNetworkClient().setProjectileStateCallback(this::onProjectileState);
 
+        //Sistema de Animações
+        game.getNetworkClient().setAnimationSyncCallback(this::onAnimationSync);
         logger.info("Callbacks configured");
     }
 
@@ -627,8 +632,18 @@ public class GameWorldRenderer implements Screen {
 
     public void onProjectileState(ProjectileStatePacket packet) {
         Gdx.app.postRunnable(() -> {
-            if (projectileRenderer != null) {
-                projectileRenderer.onProjectileState(packet);
+            if (projectileAnimRenderer != null) {
+                projectileAnimRenderer.onProjectileState(packet);
+            }
+        });
+    }
+
+    public void onAnimationSync(AnimationSyncPacket packet) {
+        Gdx.app.postRunnable(() -> {
+            if (projectileAnimRenderer != null) {
+                logger.info("Received AnimationSync with {} animations",
+                        packet.projectileAnimations != null ? packet.projectileAnimations.size() : 0);
+                projectileAnimRenderer.onAnimationSync(packet);
             }
         });
     }
@@ -1912,8 +1927,9 @@ public class GameWorldRenderer implements Screen {
             attackEffectManager.update(delta);
         }
 
-        if (projectileRenderer != null) {
-            projectileRenderer.update(delta);
+        if (projectileAnimRenderer != null) {
+            projectileAnimRenderer.update(delta);
+
         }
 
         if (currentPlayer != null) {
@@ -1930,6 +1946,12 @@ public class GameWorldRenderer implements Screen {
         if (itemRenderer != null) {
             itemRenderer.render(batch, gameCamera);
         }
+
+        if (projectileAnimRenderer != null) {
+            projectileAnimRenderer.render(batch, gameCamera);
+        }
+
+
 
         renderFloatingNames();
 

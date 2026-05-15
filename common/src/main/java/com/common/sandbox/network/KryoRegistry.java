@@ -70,6 +70,8 @@ public class KryoRegistry {
     private static final int ID_ATTACK_RESULT = 184;
     private static final int ID_COMBAT_STATS = 185;
     private static final int ID_PROJECTILE_STATE = 190;
+
+    private static final int ID_ANIMATION_SYNC = 200;
     private static boolean registered = false;
 
     public static synchronized void registerClasses(Kryo kryo) {
@@ -195,6 +197,8 @@ public class KryoRegistry {
         kryo.register(AttackResult.class, ID_ATTACK_RESULT);
         kryo.register(CombatStats.class, ID_COMBAT_STATS);
 
+        kryo.register(AnimationSyncPacket.class, ID_ANIMATION_SYNC);
+        kryo.register(ProjectileAnimation.class, 201);
         // IMPORTANTE: Permitir registro automático para classes não listadas
         kryo.setRegistrationRequired(false);
 

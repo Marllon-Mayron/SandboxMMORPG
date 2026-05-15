@@ -56,6 +56,7 @@ public class NetworkClient {
     private Consumer<AttackBroadcast> attackBroadcastCallback;
     private Consumer<DamagePacket> damagePacketCallback;
     private Consumer<ProjectileStatePacket> projectileStateCallback;
+    private Consumer<AnimationSyncPacket> animationSyncCallback;
 
     public NetworkClient(String host, int port) {
         this.host = host;
@@ -254,6 +255,9 @@ public class NetworkClient {
     public void setProjectileStateCallback(Consumer<ProjectileStatePacket> callback) {
         this.projectileStateCallback = callback;
     }
+    public void setAnimationSyncCallback(Consumer<AnimationSyncPacket> callback) {
+        this.animationSyncCallback = callback;
+    }
     private class ClientHandler extends SimpleChannelInboundHandler<Object> {
         @Override
         protected void channelRead0(ChannelHandlerContext ctx, Object msg) {
@@ -315,6 +319,8 @@ public class NetworkClient {
                     damagePacketCallback.accept((DamagePacket) msg);
                 } else if (msg instanceof ProjectileStatePacket && projectileStateCallback != null) {
                     projectileStateCallback.accept((ProjectileStatePacket) msg);
+                } else if (msg instanceof AnimationSyncPacket && animationSyncCallback != null) {
+                    animationSyncCallback.accept((AnimationSyncPacket) msg);
                 } else {
                     logger.warn("Unhandled packet type: {}", msg.getClass().getSimpleName());
                 }

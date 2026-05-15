@@ -31,6 +31,8 @@ public class ItemDefinition implements Serializable {
     private float projectileSpeed = 600f; // Velocidade do projétil (pixels/segundo)
     private float projectileRange = 400f; // Alcance máximo do projétil
 
+    private String projectileAnimationId; // ID da animação do projétil ("arrow", "fireball", etc.)
+
     // Estatísticas adicionais
     private int strengthBonus = 0;
     private int agilityBonus = 0;
@@ -118,4 +120,7 @@ public class ItemDefinition implements Serializable {
 
     public int getWisdomBonus() { return wisdomBonus; }
     public void setWisdomBonus(int wisdomBonus) { this.wisdomBonus = wisdomBonus; }
+
+    public String getProjectileAnimationId() { return projectileAnimationId; }
+    public void setProjectileAnimationId(String projectileAnimationId) { this.projectileAnimationId = projectileAnimationId; }
 }

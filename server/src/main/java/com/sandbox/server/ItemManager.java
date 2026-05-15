@@ -137,6 +137,7 @@ public class ItemManager {
         simpleBow.setProjectileId("arrow");
         simpleBow.setProjectileSpeed(600f);
         simpleBow.setProjectileRange(400f);
+        simpleBow.setProjectileAnimationId("arrow");
         itemDefinitions.put(simpleBow.getId(), simpleBow);
         logger.info("Loaded weapon: {} (Ranged, Damage: {}, Cooldown: {}s, ProjectileSpeed: {})",
                 simpleBow.getName(), simpleBow.getDamage(), simpleBow.getAttackCooldown(), simpleBow.getProjectileSpeed());

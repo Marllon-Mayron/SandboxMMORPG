@@ -1,5 +1,6 @@
 package com.sandbox.server;
 
+import com.common.sandbox.model.ItemDefinition;
 import com.common.sandbox.model.Player;
 import com.common.sandbox.model.Projectile;
 import com.common.sandbox.network.packets.AttackBroadcast;
@@ -143,6 +144,18 @@ public class ProjectileManager {
                                 int damage, boolean wasCritical,
                                 float speed, float range, boolean isRanged) {
 
+        // Buscar animação do item
+        String animationId = "arrow"; // default
+
+        String weaponId = attacker.getInventory() != null ?
+                attacker.getInventory().getEquipped().get("weapon") : null;
+        if (weaponId != null && !weaponId.isEmpty()) {
+            ItemDefinition def = ItemManager.getInstance().getItemDefinition(weaponId);
+            if (def != null && def.getProjectileAnimationId() != null) {
+                animationId = def.getProjectileAnimationId();
+            }
+        }
+
         float angle = (float) Math.atan2(targetY - attacker.getY(), targetX - attacker.getX());
         float offsetDistance = isRanged ? 40f : 20f;
         float offsetX = (float) Math.cos(angle) * offsetDistance;
@@ -166,7 +179,7 @@ public class ProjectileManager {
 
         Projectile projectile = new Projectile(
                 attacker.getId(), attacker.getUsername(),
-                projectileType,
+                projectileType, animationId,
                 startX, startY, finalTargetX, finalTargetY,
                 speed, range, damage, wasCritical
         );

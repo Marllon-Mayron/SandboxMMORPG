@@ -1,6 +1,5 @@
 package com.common.sandbox.network.packets;
 
-import com.common.sandbox.model.AttackDefinition;
 import com.common.sandbox.network.Packet;
 import java.io.Serializable;
 
