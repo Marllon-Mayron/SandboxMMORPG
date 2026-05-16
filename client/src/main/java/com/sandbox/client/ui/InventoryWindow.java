@@ -28,16 +28,17 @@ import java.util.concurrent.ConcurrentHashMap;
 public class InventoryWindow {
     private static final Logger logger = LoggerFactory.getLogger(InventoryWindow.class);
 
-    private static final int SLOT_SIZE = 64;
-    private static final int SLOT_PADDING = 2;
-    private static final int INVENTORY_COLUMNS = 5;
-    private static final int WINDOW_WIDTH = 680;
-    private static final int WINDOW_HEIGHT = 580;
+    private static final int SLOT_SIZE = 88;
+    private static final int SLOT_PADDING = 4;
+    private static final int INVENTORY_COLUMNS = 6;
+    private static final int WINDOW_WIDTH = 900;
+    private static final int WINDOW_HEIGHT = 650;
 
     private final Window window;
     private final Skin skin;
     private final Stage stage;
     private final DragAndDrop dragAndDrop;
+    private final ItemTooltip itemTooltip;
 
     private final Map<Integer, InventorySlot> inventorySlots;
     private final Map<String, EquipmentSlot> equipmentSlots;
@@ -47,12 +48,16 @@ public class InventoryWindow {
     private Table inventoryTable;
     private Table equipmentTable;
     private Label goldLabel;
+    private Label weightLabel;
+    private Label statsLabel;
 
     private Inventory currentInventory;
     private boolean visible;
 
     private TextureRegion defaultIcon;
     private TextureRegion emptySlotIcon;
+    private TextureRegion panelBackground;
+    private TextureRegion titleDecoration;
 
     private Callbacks callbacks;
 
@@ -65,8 +70,10 @@ public class InventoryWindow {
         this.itemDefinitions = new ConcurrentHashMap<>();
         this.dragAndDrop = new DragAndDrop();
         this.callbacks = new Callbacks();
+        this.itemTooltip = new ItemTooltip(skin, stage);
 
         initializeIcons();
+        createCustomSkin();
         this.window = createWindow();
         setupDragAndDrop();
     }
@@ -74,14 +81,22 @@ public class InventoryWindow {
     private void initializeIcons() {
         this.defaultIcon = createDefaultIcon();
         this.emptySlotIcon = createEmptySlotIcon();
+        this.panelBackground = createPanelBackground();
+        this.titleDecoration = createTitleDecoration();
     }
 
     private TextureRegion createDefaultIcon() {
         Pixmap pixmap = new Pixmap(SLOT_SIZE, SLOT_SIZE, Pixmap.Format.RGBA8888);
-        pixmap.setColor(0.2f, 0.2f, 0.25f, 0.9f);
-        pixmap.fill();
+        for (int y = 0; y < SLOT_SIZE; y++) {
+            float ratio = (float) y / SLOT_SIZE;
+            int r = (int)(30 + ratio * 20);
+            int g = (int)(25 + ratio * 15);
+            int b = (int)(40 + ratio * 25);
+            pixmap.setColor(r/255f, g/255f, b/255f, 0.95f);
+            pixmap.drawLine(0, y, SLOT_SIZE - 1, y);
+        }
 
-        pixmap.setColor(0.5f, 0.5f, 0.6f, 1f);
+        pixmap.setColor(0.85f, 0.65f, 0.25f, 1f);
         for (int i = 0; i < SLOT_SIZE; i++) {
             pixmap.drawPixel(i, 0);
             pixmap.drawPixel(i, SLOT_SIZE - 1);
@@ -89,28 +104,45 @@ public class InventoryWindow {
             pixmap.drawPixel(SLOT_SIZE - 1, i);
         }
 
-        pixmap.setColor(0.7f, 0.7f, 0.8f, 1f);
+        pixmap.setColor(0.6f, 0.45f, 0.15f, 1f);
+        for (int i = 1; i < SLOT_SIZE - 1; i++) {
+            pixmap.drawPixel(i, 1);
+            pixmap.drawPixel(i, SLOT_SIZE - 2);
+            pixmap.drawPixel(1, i);
+            pixmap.drawPixel(SLOT_SIZE - 2, i);
+        }
+
+        pixmap.setColor(0.7f, 0.6f, 0.4f, 1f);
         int centerX = SLOT_SIZE / 2;
         int centerY = SLOT_SIZE / 2;
-        for (int i = -8; i <= 8; i++) {
-            pixmap.drawPixel(centerX + i, centerY + 4);
-        }
-        for (int i = -6; i <= 6; i++) {
-            pixmap.drawPixel(centerX + i, centerY + 2);
+        for (int i = -12; i <= 12; i++) {
             pixmap.drawPixel(centerX + i, centerY + 6);
+        }
+        for (int i = -8; i <= 8; i++) {
+            pixmap.drawPixel(centerX + i, centerY + 8);
+            pixmap.drawPixel(centerX + i, centerY + 10);
+        }
+        pixmap.setColor(0.9f, 0.8f, 0.5f, 1f);
+        for (int i = -4; i <= 4; i++) {
+            pixmap.drawPixel(centerX + i, centerY + 9);
         }
 
         Texture texture = new Texture(pixmap);
         pixmap.dispose();
+        texture.setFilter(Texture.TextureFilter.Nearest, Texture.TextureFilter.Nearest);
         return new TextureRegion(texture);
     }
 
     private TextureRegion createEmptySlotIcon() {
         Pixmap pixmap = new Pixmap(SLOT_SIZE, SLOT_SIZE, Pixmap.Format.RGBA8888);
-        pixmap.setColor(0.08f, 0.08f, 0.12f, 0.6f);
-        pixmap.fill();
+        for (int y = 0; y < SLOT_SIZE; y++) {
+            float ratio = (float) y / SLOT_SIZE;
+            int a = (int)(40 + ratio * 30);
+            pixmap.setColor(0.08f, 0.08f, 0.12f, a/255f);
+            pixmap.drawLine(0, y, SLOT_SIZE - 1, y);
+        }
 
-        pixmap.setColor(0.2f, 0.2f, 0.3f, 0.8f);
+        pixmap.setColor(0.25f, 0.25f, 0.35f, 0.8f);
         for (int i = 0; i < SLOT_SIZE; i++) {
             pixmap.drawPixel(i, 0);
             pixmap.drawPixel(i, SLOT_SIZE - 1);
@@ -120,7 +152,42 @@ public class InventoryWindow {
 
         Texture texture = new Texture(pixmap);
         pixmap.dispose();
+        texture.setFilter(Texture.TextureFilter.Nearest, Texture.TextureFilter.Nearest);
         return new TextureRegion(texture);
+    }
+
+    private TextureRegion createPanelBackground() {
+        Pixmap pixmap = new Pixmap(1, 1, Pixmap.Format.RGBA8888);
+        pixmap.setColor(0.06f, 0.06f, 0.10f, 0.92f);
+        pixmap.fill();
+        Texture texture = new Texture(pixmap);
+        pixmap.dispose();
+        texture.setFilter(Texture.TextureFilter.Nearest, Texture.TextureFilter.Nearest);
+        return new TextureRegion(texture);
+    }
+
+    private TextureRegion createTitleDecoration() {
+        Pixmap pixmap = new Pixmap(200, 4, Pixmap.Format.RGBA8888);
+        pixmap.setColor(0.85f, 0.65f, 0.25f, 1f);
+        for (int i = 0; i < 4; i++) {
+            pixmap.drawLine(0, i, 199, i);
+        }
+        Texture texture = new Texture(pixmap);
+        pixmap.dispose();
+        texture.setFilter(Texture.TextureFilter.Nearest, Texture.TextureFilter.Nearest);
+        return new TextureRegion(texture);
+    }
+
+    private void createCustomSkin() {
+        Label.LabelStyle largeTitleStyle = new Label.LabelStyle();
+        largeTitleStyle.font = skin.getFont("default-font");
+        largeTitleStyle.fontColor = Color.GOLD;
+        skin.add("large-title", largeTitleStyle);
+
+        Label.LabelStyle statsStyle = new Label.LabelStyle();
+        statsStyle.font = skin.getFont("default-font");
+        statsStyle.fontColor = Color.LIGHT_GRAY;
+        skin.add("stats", statsStyle);
     }
 
     private Window createWindow() {
@@ -129,23 +196,21 @@ public class InventoryWindow {
         win.setMovable(true);
         win.setSize(WINDOW_WIDTH, WINDOW_HEIGHT);
         win.setVisible(false);
+        win.setBackground(new TextureRegionDrawable(panelBackground));
 
         Table mainContent = new Table();
-        mainContent.pad(10);
+        mainContent.pad(15);
 
-        mainContent.add(createHeader()).width(WINDOW_WIDTH - 40).padBottom(10);
+        mainContent.add(createHeader()).width(WINDOW_WIDTH - 40).padBottom(15);
         mainContent.row();
 
-        mainContent.add(createEquipmentSection()).width(WINDOW_WIDTH - 40).padBottom(15);
+        Table body = new Table();
+        body.add(createEquipmentSection()).width(280).padRight(20);
+        body.add(createInventorySection()).width(540);
+        mainContent.add(body).padBottom(15);
         mainContent.row();
 
-        mainContent.add(createSeparator()).padBottom(10);
-        mainContent.row();
-
-        mainContent.add(createInventorySection()).width(WINDOW_WIDTH - 40).padBottom(10);
-        mainContent.row();
-
-        mainContent.add(createHintLabel()).center();
+        mainContent.add(createFooter()).width(WINDOW_WIDTH - 40).padTop(10);
 
         win.add(mainContent).fill().expand();
         win.pack();
@@ -156,14 +221,30 @@ public class InventoryWindow {
     private Table createHeader() {
         Table header = new Table();
 
-        Label titleLabel = new Label("INVENTORY", skin, "title");
+        Label titleLabel = new Label("I N V E N T O R Y", skin, "large-title");
+        titleLabel.setFontScale(1.4f);
         titleLabel.setColor(Color.GOLD);
 
-        goldLabel = new Label("Gold: 0", skin, "default");
+        Table titleDecor = new Table();
+        titleDecor.add(new Image(titleDecoration)).width(180).height(4);
+        titleDecor.row();
+        titleDecor.add(titleLabel).padTop(8);
+        titleDecor.row();
+        titleDecor.add(new Image(titleDecoration)).width(180).height(4).padTop(8);
+
+        goldLabel = new Label("Gold: 0", skin, "stats");
+        goldLabel.setFontScale(0.9f);
         goldLabel.setColor(Color.YELLOW);
 
-        header.add(titleLabel).left().expandX();
-        header.add(goldLabel).right();
+        weightLabel = new Label("Weight: 0/100", skin, "stats");
+        weightLabel.setFontScale(0.9f);
+        weightLabel.setColor(Color.CYAN);
+
+        header.add(titleDecor).center().expandX();
+        header.row();
+        header.add(goldLabel).right().padTop(5);
+        header.row();
+        header.add(weightLabel).right();
 
         return header;
     }
@@ -171,23 +252,31 @@ public class InventoryWindow {
     private Table createEquipmentSection() {
         Table section = new Table();
 
-        Label equipLabel = new Label("EQUIPMENT", skin, "title");
+        Label equipLabel = new Label("E Q U I P M E N T", skin, "large-title");
+        equipLabel.setFontScale(0.85f);
         equipLabel.setColor(Color.CYAN);
-        equipLabel.setFontScale(0.9f);
 
         equipmentTable = new Table();
         equipmentTable.setBackground(createSlotBackground());
-        equipmentTable.pad(5);
+        equipmentTable.pad(10);
 
-        addEquipmentSlot("weapon", "Weapon", 0);
-        addEquipmentSlot("helmet", "Helmet", 1);
-        addEquipmentSlot("chest", "Chest", 2);
-        addEquipmentSlot("legs", "Legs", 3);
-        addEquipmentSlot("boots", "Boots", 4);
+        addEquipmentSlot("helmet", "Helmet");
+        equipmentTable.row();
+        addEquipmentSlot("weapon", "Weapon");
+        addEquipmentSlot("chest", "Chest");
+        equipmentTable.row();
+        addEquipmentSlot("legs", "Legs");
+        addEquipmentSlot("boots", "Boots");
 
-        section.add(equipLabel).left().padBottom(5);
+        section.add(equipLabel).center().padBottom(12);
         section.row();
-        section.add(equipmentTable);
+        section.add(equipmentTable).padBottom(10);
+        section.row();
+
+        statsLabel = new Label("", skin, "stats");
+        statsLabel.setFontScale(0.75f);
+        statsLabel.setColor(Color.LIGHT_GRAY);
+        section.add(statsLabel).center().padTop(5);
 
         return section;
     }
@@ -195,66 +284,69 @@ public class InventoryWindow {
     private Table createInventorySection() {
         Table section = new Table();
 
-        Label invLabel = new Label("INVENTORY", skin, "title");
+        Label invLabel = new Label("I N V E N T O R Y", skin, "large-title");
+        invLabel.setFontScale(0.85f);
         invLabel.setColor(Color.ORANGE);
-        invLabel.setFontScale(0.9f);
 
         inventoryTable = new Table();
         inventoryTable.setBackground(createSlotBackground());
-        inventoryTable.pad(5);
+        inventoryTable.pad(8);
 
         for (int slot = 0; slot < Inventory.TOTAL_SLOTS; slot++) {
             InventorySlot inventorySlot = new InventorySlot(slot);
             inventorySlots.put(slot, inventorySlot);
-            inventoryTable.add(inventorySlot.getContainer()).size(SLOT_SIZE, SLOT_SIZE).pad(SLOT_PADDING);
+            // Aumentar o padding vertical para mais espaçamento entre linhas
+            inventoryTable.add(inventorySlot.getContainer())
+                    .size(SLOT_SIZE, SLOT_SIZE + 24)  // Altura maior para acomodar o nome
+                    .pad(SLOT_PADDING);
 
             if ((slot + 1) % INVENTORY_COLUMNS == 0) {
+                inventoryTable.row();
+                // Adicionar espaçamento extra entre linhas
+                inventoryTable.add().height(4);
                 inventoryTable.row();
             }
         }
 
-        section.add(invLabel).left().padBottom(5);
+        section.add(invLabel).center().padBottom(12);
         section.row();
         section.add(inventoryTable);
 
         return section;
     }
 
-    private Label createSeparator() {
-        Label separator = new Label("--------------------------------------------------", skin, "status");
-        separator.setColor(Color.DARK_GRAY);
-        return separator;
-    }
+    private Table createFooter() {
+        Table footer = new Table();
 
-    private Label createHintLabel() {
-        Label hintLabel = new Label("Drag & Drop to move | Right click to drop | Double click to equip/unequip", skin, "status");
-        hintLabel.setFontScale(0.7f);
+        Label hintLabel = new Label("Drag and Drop to move | Right click to drop | Double click to equip/unequip", skin, "stats");
+        hintLabel.setFontScale(0.65f);
         hintLabel.setColor(Color.LIGHT_GRAY);
-        return hintLabel;
+
+        footer.add(hintLabel).center();
+
+        return footer;
     }
 
-    private void addEquipmentSlot(String slotType, String label, int index) {
+    private void addEquipmentSlot(String slotType, String label) {
         EquipmentSlot eqSlot = new EquipmentSlot(slotType, label);
         equipmentSlots.put(slotType, eqSlot);
         equipmentTable.add(eqSlot.getContainer()).size(SLOT_SIZE, SLOT_SIZE).pad(SLOT_PADDING);
-
-        if (index == 4) {
-            equipmentTable.row();
-        }
     }
 
     private Drawable createSlotBackground() {
         Pixmap pixmap = new Pixmap(1, 1, Pixmap.Format.RGBA8888);
-        pixmap.setColor(0.08f, 0.08f, 0.12f, 0.85f);
+        pixmap.setColor(0.10f, 0.10f, 0.15f, 0.90f);
         pixmap.fill();
         Texture texture = new Texture(pixmap);
         pixmap.dispose();
+        texture.setFilter(Texture.TextureFilter.Nearest, Texture.TextureFilter.Nearest);
 
         Pixmap borderPix = new Pixmap(1, 1, Pixmap.Format.RGBA8888);
-        borderPix.setColor(0.35f, 0.25f, 0.10f, 1f);
+        borderPix.setColor(0.55f, 0.45f, 0.20f, 1f);
         borderPix.fill();
         Texture borderTex = new Texture(borderPix);
         borderPix.dispose();
+        borderTex.setFilter(Texture.TextureFilter.Nearest, Texture.TextureFilter.Nearest);
 
         TextureRegionDrawable bg = new TextureRegionDrawable(texture);
         TextureRegionDrawable border = new TextureRegionDrawable(borderTex);
@@ -263,15 +355,15 @@ public class InventoryWindow {
             @Override
             public void draw(com.badlogic.gdx.graphics.g2d.Batch batch, float x, float y, float width, float height) {
                 border.draw(batch, x, y, width, height);
-                bg.draw(batch, x + 2, y + 2, width - 4, height - 4);
+                bg.draw(batch, x + 3, y + 3, width - 6, height - 6);
             }
-            @Override public float getLeftWidth() { return 2; }
+            @Override public float getLeftWidth() { return 3; }
             @Override public void setLeftWidth(float leftWidth) {}
-            @Override public float getRightWidth() { return 2; }
+            @Override public float getRightWidth() { return 3; }
             @Override public void setRightWidth(float rightWidth) {}
-            @Override public float getTopHeight() { return 2; }
+            @Override public float getTopHeight() { return 3; }
             @Override public void setTopHeight(float topHeight) {}
-            @Override public float getBottomHeight() { return 2; }
+            @Override public float getBottomHeight() { return 3; }
             @Override public void setBottomHeight(float bottomHeight) {}
             @Override public float getMinWidth() { return 0; }
             @Override public void setMinWidth(float minWidth) {}
@@ -300,15 +392,31 @@ public class InventoryWindow {
 
         TextureRegion region = getItemTexture(itemId);
         if (region != null) {
-            table.add(new Image(region)).size(48, 48);
+            table.add(new Image(region)).size(56, 56);
         } else {
             Label label = new Label("?", skin);
             label.setColor(Color.WHITE);
-            table.add(label).size(48, 48);
+            label.setFontScale(1.2f);
+            table.add(label).size(56, 56);
         }
 
-        table.setSize(52, 52);
+        table.setSize(62, 62);
         return table;
+    }
+
+    private void showTooltip(ItemDefinition item, TextureRegion icon, Actor actor, InputEvent event) {
+        if (item == null || itemTooltip == null) return;
+
+        float mouseX = event.getStageX();
+        float mouseY = event.getStageY();
+
+        itemTooltip.show(item, icon, mouseX, mouseY);
+    }
+
+    private void hideTooltip() {
+        if (itemTooltip != null) {
+            itemTooltip.hide();
+        }
     }
 
     public void registerItemTexture(String itemId, TextureRegion region, ItemDefinition definition) {
@@ -328,38 +436,6 @@ public class InventoryWindow {
         }
     }
 
-    public boolean isItemRegistered(String itemId) {
-        if (itemId == null) return false;
-        return itemDefinitions.containsKey(itemId);
-    }
-
-    private boolean isEquippable(String itemId) {
-        ItemDefinition def = itemDefinitions.get(itemId);
-        if (def == null) return false;
-
-        String category = def.getCategory();
-        return "weapon".equals(category) || "armor".equals(category) || "equipment".equals(category);
-    }
-
-    private String getEquipmentSlotForItem(String itemId) {
-        ItemDefinition def = itemDefinitions.get(itemId);
-        if (def == null) return null;
-
-        String category = def.getCategory();
-
-        switch (category) {
-            case "weapon": return "weapon";
-            case "armor":
-                if (itemId.contains("helmet")) return "helmet";
-                if (itemId.contains("chest")) return "chest";
-                if (itemId.contains("legs")) return "legs";
-                if (itemId.contains("boots")) return "boots";
-                return "chest";
-            case "equipment": return "weapon";
-            default: return null;
-        }
-    }
-
     private TextureRegion getItemTexture(String itemId) {
         return itemTextures.getOrDefault(itemId, defaultIcon);
     }
@@ -369,6 +445,33 @@ public class InventoryWindow {
         return def != null ? def.getName() : itemId;
     }
 
+    private boolean isEquippable(String itemId) {
+        ItemDefinition def = itemDefinitions.get(itemId);
+        if (def == null) return false;
+        String category = def.getCategory();
+        return "weapon".equals(category) || "armor".equals(category) || "equipment".equals(category);
+    }
+
+    private String getEquipmentSlotForItem(String itemId) {
+        ItemDefinition def = itemDefinitions.get(itemId);
+        if (def == null) return null;
+
+        String category = def.getCategory();
+        String name = def.getName().toLowerCase();
+
+        switch (category) {
+            case "weapon": return "weapon";
+            case "armor":
+                if (name.contains("helmet") || name.contains("cap")) return "helmet";
+                if (name.contains("chest") || name.contains("tunic")) return "chest";
+                if (name.contains("legs") || name.contains("pants")) return "legs";
+                if (name.contains("boots")) return "boots";
+                return "chest";
+            case "equipment": return "weapon";
+            default: return null;
+        }
+    }
+
     public void updateInventory(Inventory inventory, int gold) {
         this.currentInventory = inventory;
 
@@ -376,7 +479,46 @@ public class InventoryWindow {
             goldLabel.setText("Gold: " + gold);
         }
 
+        int totalWeight = 0;
+        if (inventory != null) {
+            for (ItemStack stack : inventory.getSlots().values()) {
+                if (stack != null && !stack.isEmpty()) {
+                    totalWeight += stack.getQuantity();
+                }
+            }
+        }
+        if (weightLabel != null) {
+            weightLabel.setText("Weight: " + totalWeight + "/100");
+        }
+
+        updateStatsLabel();
         refreshDisplay();
+    }
+
+    private void updateStatsLabel() {
+        if (statsLabel == null || currentInventory == null) return;
+
+        StringBuilder stats = new StringBuilder();
+        int totalStr = 0;
+        int totalAgi = 0;
+        int totalWis = 0;
+
+        for (String itemId : currentInventory.getEquipped().values()) {
+            if (itemId != null && !itemId.isEmpty()) {
+                ItemDefinition def = itemDefinitions.get(itemId);
+                if (def != null) {
+                    totalStr += def.getStrengthBonus();
+                    totalAgi += def.getAgilityBonus();
+                    totalWis += def.getWisdomBonus();
+                }
+            }
+        }
+
+        stats.append("STR: +").append(totalStr).append("   ");
+        stats.append("AGI: +").append(totalAgi).append("   ");
+        stats.append("WIS: +").append(totalWis);
+
+        statsLabel.setText(stats.toString());
     }
 
     private void refreshDisplay() {
@@ -394,6 +536,7 @@ public class InventoryWindow {
             eqSlot.update(itemId);
         }
 
+        updateStatsLabel();
         window.invalidate();
         window.pack();
     }
@@ -405,11 +548,13 @@ public class InventoryWindow {
             stage.addActor(window);
         }
         window.toFront();
+        centerPosition(stage.getWidth(), stage.getHeight());
     }
 
     public void hide() {
         visible = false;
         window.setVisible(false);
+        hideTooltip();
     }
 
     public void toggle() {
@@ -428,26 +573,25 @@ public class InventoryWindow {
         );
     }
 
-    public void showDropConfirmation(String itemName, int quantity, Runnable onConfirm) {
-        Dialog dialog = new Dialog("Drop Item", skin) {
-            @Override
-            protected void result(Object object) {
-                if ((Boolean) object && onConfirm != null) {
-                    onConfirm.run();
-                }
-            }
-        };
-
-        dialog.text("Drop " + quantity + "x " + itemName + "?");
-        dialog.button("Yes", true);
-        dialog.button("No", false);
-        dialog.show(stage);
+    public boolean isItemRegistered(String itemId) {
+        return itemDefinitions.containsKey(itemId);
     }
 
-    public void setOnMoveItem(MoveItemCallback callback) { callbacks.moveItem = callback; }
-    public void setOnEquip(EquipItemCallback callback) { callbacks.equipItem = callback; }
-    public void setOnUnequip(UnequipItemCallback callback) { callbacks.unequipItem = callback; }
-    public void setOnDrop(DropItemCallback callback) { callbacks.dropItem = callback; }
+    public void setOnMoveItem(MoveItemCallback callback) {
+        this.callbacks.moveItem = callback;
+    }
+
+    public void setOnEquip(EquipItemCallback callback) {
+        this.callbacks.equipItem = callback;
+    }
+
+    public void setOnUnequip(UnequipItemCallback callback) {
+        this.callbacks.unequipItem = callback;
+    }
+
+    public void setOnDrop(DropItemCallback callback) {
+        this.callbacks.dropItem = callback;
+    }
 
     public void dispose() {
         window.clear();
@@ -456,6 +600,15 @@ public class InventoryWindow {
         }
         if (emptySlotIcon != null && emptySlotIcon.getTexture() != null) {
             emptySlotIcon.getTexture().dispose();
+        }
+        if (panelBackground != null && panelBackground.getTexture() != null) {
+            panelBackground.getTexture().dispose();
+        }
+        if (titleDecoration != null && titleDecoration.getTexture() != null) {
+            titleDecoration.getTexture().dispose();
+        }
+        if (itemTooltip != null) {
+            itemTooltip.dispose();
         }
     }
 
@@ -473,16 +626,17 @@ public class InventoryWindow {
             this.slot = slot;
             this.container = new Table();
             this.itemImage = new Image();
-            this.nameLabel = new Label("", skin, "default");
-            this.quantityLabel = new Label("", skin, "default");
+            this.nameLabel = new Label("", skin, "stats");
+            this.quantityLabel = new Label("", skin, "stats");
 
-            nameLabel.setFontScale(0.55f);
+            nameLabel.setFontScale(0.65f);
             nameLabel.setColor(Color.WHITE);
             nameLabel.setAlignment(Align.center);
+            nameLabel.setWrap(true);
 
-            quantityLabel.setFontScale(0.7f);
+            quantityLabel.setFontScale(0.8f);
             quantityLabel.setColor(Color.YELLOW);
-            quantityLabel.setAlignment(Align.bottomRight);
+            quantityLabel.setAlignment(Align.topRight);
 
             setupLayout();
             setupListeners();
@@ -490,33 +644,44 @@ public class InventoryWindow {
 
         private void setupLayout() {
             container.clear();
-            container.setBackground(createSlotBackground());
 
-            // Stack para sobrepor os elementos
-            Stack stack = new Stack();
+            // Layout vertical com mais espaçamento
+            Table verticalLayout = new Table();
+            verticalLayout.center();
+            verticalLayout.pad(6, 0, 6, 0); // Padding vertical (cima, baixo)
 
-            // Camada 1: Imagem do item (fundo)
-            stack.add(itemImage);
+            // Nome do item (em cima)
+            verticalLayout.add(nameLabel).width(SLOT_SIZE).padBottom(6);
+            verticalLayout.row();
 
-            // Camada 2: Table com nome e quantidade sobrepostos
-            Table overlay = new Table();
-            overlay.top().left();
-            overlay.add(nameLabel).padTop(4).padLeft(4).expandX().left();
-            overlay.row();
-            overlay.add().expandY();
-            overlay.row();
-            overlay.add(quantityLabel).padBottom(4).padRight(4).expandX().right();
+            // Imagem do item com a quantidade sobreposta
+            Table imageContainer = new Table();
+            imageContainer.setBackground(createSlotBackground());
 
-            stack.add(overlay);
+            Stack imageStack = new Stack();
 
-            container.add(stack).fill().expand();
+            // Imagem do item
+            imageStack.add(itemImage);
+
+            // Quantidade no canto superior direito
+            Table quantityOverlay = new Table();
+            quantityOverlay.top().right();
+            quantityOverlay.add(quantityLabel).padTop(4).padRight(6);
+            imageStack.add(quantityOverlay);
+
+            imageContainer.add(imageStack).size(SLOT_SIZE - 8, SLOT_SIZE - 8);
+            verticalLayout.add(imageContainer).size(SLOT_SIZE, SLOT_SIZE).padBottom(4);
+
+            container.add(verticalLayout).fill().expand();
         }
 
         private void setupListeners() {
             container.addListener(new ClickListener() {
                 @Override
                 public void clicked(InputEvent event, float x, float y) {
-                    if (isDoubleClick()) {
+                    if (getButton() == 1) {
+                        handleRightClick();
+                    } else if (isDoubleClick()) {
                         handleDoubleClick();
                     }
                     lastClickTime = System.currentTimeMillis();
@@ -525,6 +690,15 @@ public class InventoryWindow {
                 private boolean isDoubleClick() {
                     long currentTime = System.currentTimeMillis();
                     return currentTime - lastClickTime < 500;
+                }
+
+                private void handleRightClick() {
+                    if (callbacks.dropItem != null && currentInventory != null) {
+                        ItemStack stack = currentInventory.getSlot(slot);
+                        if (stack != null && !stack.isEmpty()) {
+                            callbacks.dropItem.accept(new DropAction(slot, stack.getQuantity()));
+                        }
+                    }
                 }
 
                 private void handleDoubleClick() {
@@ -539,11 +713,30 @@ public class InventoryWindow {
                     }
                 }
             });
+
+            container.addListener(new com.badlogic.gdx.scenes.scene2d.InputListener() {
+                @Override
+                public void enter(InputEvent event, float x, float y, int pointer, Actor fromActor) {
+                    if (currentInventory != null) {
+                        ItemStack stack = currentInventory.getSlot(slot);
+                        if (stack != null && !stack.isEmpty()) {
+                            ItemDefinition def = itemDefinitions.get(stack.getItemId());
+                            if (def != null) {
+                                TextureRegion icon = getItemTexture(stack.getItemId());
+                                showTooltip(def, icon, container, event);
+                            }
+                        }
+                    }
+                }
+
+                @Override
+                public void exit(InputEvent event, float x, float y, int pointer, Actor toActor) {
+                    hideTooltip();
+                }
+            });
         }
 
-        Table getContainer() {
-            return container;
-        }
+        Table getContainer() { return container; }
 
         void update(ItemStack stack) {
             boolean hasItem = stack != null && !stack.isEmpty();
@@ -554,7 +747,7 @@ public class InventoryWindow {
                 itemImage.setDrawable(new TextureRegionDrawable(icon != null ? icon : defaultIcon));
 
                 String itemName = getItemName(itemId);
-                String displayName = itemName.length() > 10 ? itemName.substring(0, 8) + "..." : itemName;
+                String displayName = itemName.length() > 12 ? itemName.substring(0, 10) + ".." : itemName;
                 nameLabel.setText(displayName);
                 nameLabel.setVisible(true);
 
@@ -583,6 +776,7 @@ public class InventoryWindow {
         final Table container;
         final Image itemImage;
         final Label itemLabel;
+        final Label slotLabel;
         private long lastClickTime;
 
         EquipmentSlot(String slotType, String label) {
@@ -590,11 +784,17 @@ public class InventoryWindow {
             this.label = label;
             this.container = new Table();
             this.itemImage = new Image();
-            this.itemLabel = new Label("", skin, "default");
+            this.itemLabel = new Label("", skin, "stats");
+            this.slotLabel = new Label(label, skin, "stats");
 
-            itemLabel.setFontScale(0.55f);
+            itemLabel.setFontScale(0.65f);
             itemLabel.setColor(Color.CYAN);
             itemLabel.setAlignment(Align.center);
+            itemLabel.setWrap(true);
+
+            slotLabel.setFontScale(0.65f);
+            slotLabel.setColor(Color.GRAY);
+            slotLabel.setAlignment(Align.center);
 
             setupLayout();
             setupListeners();
@@ -602,24 +802,35 @@ public class InventoryWindow {
 
         private void setupLayout() {
             container.clear();
-            container.setBackground(createSlotBackground());
 
-            Stack stack = new Stack();
-            stack.add(itemImage);
+            // Layout vertical: nome em cima, imagem no meio, slot label embaixo
+            Table verticalLayout = new Table();
+            verticalLayout.center();
 
-            Table overlay = new Table();
-            overlay.center();
-            overlay.add(itemLabel).center();
+            // Nome do item equipado (em cima)
+            verticalLayout.add(itemLabel).width(SLOT_SIZE).padBottom(4);
+            verticalLayout.row();
 
-            stack.add(overlay);
-            container.add(stack).fill().expand();
+            // Imagem do item (centro)
+            Table imageContainer = new Table();
+            imageContainer.setBackground(createSlotBackground());
+            imageContainer.add(itemImage).size(SLOT_SIZE - 8, SLOT_SIZE - 8);
+            verticalLayout.add(imageContainer).size(SLOT_SIZE, SLOT_SIZE);
+            verticalLayout.row();
+
+            // Nome do slot (embaixo)
+            verticalLayout.add(slotLabel).width(SLOT_SIZE).padTop(4);
+
+            container.add(verticalLayout).fill().expand();
         }
 
         private void setupListeners() {
             container.addListener(new ClickListener() {
                 @Override
                 public void clicked(InputEvent event, float x, float y) {
-                    if (isDoubleClick()) {
+                    if (getButton() == 1) {
+                        handleRightClick();
+                    } else if (isDoubleClick()) {
                         handleDoubleClick();
                     }
                     lastClickTime = System.currentTimeMillis();
@@ -628,6 +839,15 @@ public class InventoryWindow {
                 private boolean isDoubleClick() {
                     long currentTime = System.currentTimeMillis();
                     return currentTime - lastClickTime < 500;
+                }
+
+                private void handleRightClick() {
+                    if (callbacks.unequipItem != null && currentInventory != null) {
+                        String itemId = currentInventory.getEquipped().get(slotType);
+                        if (itemId != null && !itemId.isEmpty()) {
+                            callbacks.unequipItem.accept(getSlotIndex());
+                        }
+                    }
                 }
 
                 private void handleDoubleClick() {
@@ -650,11 +870,30 @@ public class InventoryWindow {
                     }
                 }
             });
+
+            container.addListener(new com.badlogic.gdx.scenes.scene2d.InputListener() {
+                @Override
+                public void enter(InputEvent event, float x, float y, int pointer, Actor fromActor) {
+                    if (currentInventory != null) {
+                        String itemId = currentInventory.getEquipped().get(slotType);
+                        if (itemId != null && !itemId.isEmpty()) {
+                            ItemDefinition def = itemDefinitions.get(itemId);
+                            if (def != null) {
+                                TextureRegion icon = getItemTexture(itemId);
+                                showTooltip(def, icon, container, event);
+                            }
+                        }
+                    }
+                }
+
+                @Override
+                public void exit(InputEvent event, float x, float y, int pointer, Actor toActor) {
+                    hideTooltip();
+                }
+            });
         }
 
-        Table getContainer() {
-            return container;
-        }
+        Table getContainer() { return container; }
 
         void update(String itemId) {
             boolean hasItem = itemId != null && !itemId.isEmpty();
@@ -664,7 +903,7 @@ public class InventoryWindow {
                 itemImage.setDrawable(new TextureRegionDrawable(icon != null ? icon : defaultIcon));
 
                 String itemName = getItemName(itemId);
-                String displayName = itemName.length() > 12 ? itemName.substring(0, 10) + "..." : itemName;
+                String displayName = itemName.length() > 12 ? itemName.substring(0, 10) + ".." : itemName;
                 itemLabel.setText(displayName);
                 itemLabel.setVisible(true);
             } else {
@@ -679,45 +918,28 @@ public class InventoryWindow {
 
     private class InventoryDragSource extends Source {
         final InventorySlot slot;
-
-        InventoryDragSource(InventorySlot slot) {
-            super(slot.getContainer());
-            this.slot = slot;
-        }
-
+        InventoryDragSource(InventorySlot slot) { super(slot.getContainer()); this.slot = slot; }
         @Override
         public Payload dragStart(InputEvent event, float x, float y, int pointer) {
             if (currentInventory == null) return null;
-
             ItemStack stack = currentInventory.getSlot(slot.slot);
             if (stack == null || stack.isEmpty()) return null;
-
             Payload payload = new Payload();
             payload.setObject(new DragData(slot.slot, true, stack.getItemId()));
             payload.setDragActor(createDragActor(stack.getItemId()));
-
             return payload;
         }
     }
 
     private class InventoryDragTarget extends Target {
         final InventorySlot slot;
-
-        InventoryDragTarget(InventorySlot slot) {
-            super(slot.getContainer());
-            this.slot = slot;
-        }
-
+        InventoryDragTarget(InventorySlot slot) { super(slot.getContainer()); this.slot = slot; }
         @Override
-        public boolean drag(Source source, Payload payload, float x, float y, int pointer) {
-            return true;
-        }
-
+        public boolean drag(Source source, Payload payload, float x, float y, int pointer) { return true; }
         @Override
         public void drop(Source source, Payload payload, float x, float y, int pointer) {
             DragData data = (DragData) payload.getObject();
             if (data == null || !data.isInventory) return;
-
             if (callbacks.moveItem != null && data.slot != slot.slot) {
                 callbacks.moveItem.accept(data.slot, slot.slot);
             }
@@ -726,51 +948,34 @@ public class InventoryWindow {
 
     private class EquipmentDragSource extends Source {
         final EquipmentSlot slot;
-
-        EquipmentDragSource(EquipmentSlot slot) {
-            super(slot.getContainer());
-            this.slot = slot;
-        }
-
+        EquipmentDragSource(EquipmentSlot slot) { super(slot.getContainer()); this.slot = slot; }
         @Override
         public Payload dragStart(InputEvent event, float x, float y, int pointer) {
             if (currentInventory == null) return null;
-
             String itemId = currentInventory.getEquipped().get(slot.slotType);
             if (itemId == null || itemId.isEmpty()) return null;
-
             Payload payload = new Payload();
             payload.setObject(new DragData(-1, false, itemId));
             payload.setDragActor(createDragActor(itemId));
-
             return payload;
         }
     }
 
     private class EquipmentDragTarget extends Target {
         final EquipmentSlot slot;
-
-        EquipmentDragTarget(EquipmentSlot slot) {
-            super(slot.getContainer());
-            this.slot = slot;
-        }
-
+        EquipmentDragTarget(EquipmentSlot slot) { super(slot.getContainer()); this.slot = slot; }
         @Override
         public boolean drag(Source source, Payload payload, float x, float y, int pointer) {
             DragData data = (DragData) payload.getObject();
             if (data == null || !data.isInventory) return false;
-
             if (!isEquippable(data.itemId)) return false;
-
             String expectedSlot = getEquipmentSlotForItem(data.itemId);
             return expectedSlot != null && expectedSlot.equals(slot.slotType);
         }
-
         @Override
         public void drop(Source source, Payload payload, float x, float y, int pointer) {
             DragData data = (DragData) payload.getObject();
             if (data == null || !data.isInventory) return;
-
             if (callbacks.equipItem != null && isEquippable(data.itemId)) {
                 callbacks.equipItem.accept(data.slot, slot.slotType);
             }
@@ -778,20 +983,13 @@ public class InventoryWindow {
     }
 
     private class OutsideWindowTarget extends Target {
-        OutsideWindowTarget(Actor actor) {
-            super(actor);
-        }
-
+        OutsideWindowTarget(Actor actor) { super(actor); }
         @Override
-        public boolean drag(Source source, Payload payload, float x, float y, int pointer) {
-            return true;
-        }
-
+        public boolean drag(Source source, Payload payload, float x, float y, int pointer) { return true; }
         @Override
         public void drop(Source source, Payload payload, float x, float y, int pointer) {
             DragData data = (DragData) payload.getObject();
             if (data == null || !data.isInventory || callbacks.dropItem == null || currentInventory == null) return;
-
             ItemStack stack = currentInventory.getSlot(data.slot);
             if (stack != null && !stack.isEmpty()) {
                 callbacks.dropItem.accept(new DropAction(data.slot, stack.getQuantity()));
@@ -803,7 +1001,6 @@ public class InventoryWindow {
         final int slot;
         final boolean isInventory;
         final String itemId;
-
         DragData(int slot, boolean isInventory, String itemId) {
             this.slot = slot;
             this.isInventory = isInventory;
@@ -814,7 +1011,6 @@ public class InventoryWindow {
     public static class DropAction {
         public final int slot;
         public final int quantity;
-
         public DropAction(int slot, int quantity) {
             this.slot = slot;
             this.quantity = quantity;
@@ -828,23 +1024,8 @@ public class InventoryWindow {
         DropItemCallback dropItem;
     }
 
-    @FunctionalInterface
-    public interface MoveItemCallback {
-        void accept(int fromSlot, int toSlot);
-    }
-
-    @FunctionalInterface
-    public interface EquipItemCallback {
-        void accept(int inventorySlot, String equipmentSlot);
-    }
-
-    @FunctionalInterface
-    public interface UnequipItemCallback {
-        void accept(int equipmentIndex);
-    }
-
-    @FunctionalInterface
-    public interface DropItemCallback {
-        void accept(DropAction action);
-    }
+    @FunctionalInterface public interface MoveItemCallback { void accept(int fromSlot, int toSlot); }
+    @FunctionalInterface public interface EquipItemCallback { void accept(int inventorySlot, String equipmentSlot); }
+    @FunctionalInterface public interface UnequipItemCallback { void accept(int equipmentIndex); }
+    @FunctionalInterface public interface DropItemCallback { void accept(DropAction action); }
 }

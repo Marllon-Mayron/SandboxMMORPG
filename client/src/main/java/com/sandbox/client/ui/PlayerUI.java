@@ -106,13 +106,14 @@ public class PlayerUI {
     private Consumer<InventoryWindow.DropAction> onDropItemCallback;
 
     // Dimensões fixas
-    private static final int HUD_WIDTH = 200;
-    private static final int CHAT_WIDTH = 420;
-    private static final int CHAT_HEIGHT = 300;
+    private static final int HUD_WIDTH = 220;
+    private static final int CHAT_WIDTH = 450;
+    private static final int CHAT_HEIGHT = 320;
+    private static final int TASKBAR_Y_OFFSET = 10;
 
     // BARRA DE VIDA - VALORES ABSOLUTOS
-    private static final int HEALTH_BAR_WIDTH = 220;
-    private static final int HEALTH_BAR_HEIGHT = 20;
+    private static final int HEALTH_BAR_WIDTH = 260;
+    private static final int HEALTH_BAR_HEIGHT = 24;
     private static final int HEALTH_BAR_X = 0;
 
     public PlayerUI() {
@@ -126,6 +127,7 @@ public class PlayerUI {
         createSkin();
         createUI();
         createTaskBarAndWindows();
+        createChatContainer();
 
         logger.info("PlayerUI initialized");
     }
@@ -259,51 +261,51 @@ public class PlayerUI {
 
         playerNameLabel = new Label("Player: ", skin, "default");
         playerNameLabel.setColor(Color.GOLD);
-        playerNameLabel.setFontScale(1.1f);
-        infoPanel.add(playerNameLabel).left().padBottom(5).colspan(2);
+        playerNameLabel.setFontScale(1.2f);
+        infoPanel.add(playerNameLabel).left().padBottom(8).colspan(2);
         infoPanel.row();
 
         goldLabel = new Label("Gold: 0", skin, "default");
         goldLabel.setColor(Color.GOLD);
-        infoPanel.add(goldLabel).left().padBottom(5).colspan(2);
+        infoPanel.add(goldLabel).left().padBottom(8).colspan(2);
         infoPanel.row();
 
         levelLabel = new Label("Level: 1", skin, "default");
         levelLabel.setColor(Color.CYAN);
-        infoPanel.add(levelLabel).left().padBottom(5).colspan(2);
+        infoPanel.add(levelLabel).left().padBottom(8).colspan(2);
         infoPanel.row();
 
-        Label separator = new Label("------------------", skin, "status");
+        Label separator = new Label("──────────────────", skin, "status");
         separator.setColor(Color.DARK_GRAY);
-        infoPanel.add(separator).left().padBottom(5).colspan(2);
+        infoPanel.add(separator).left().padBottom(8).colspan(2);
         infoPanel.row();
 
-        healthLabel = new Label("HP:", skin, "default");
-        infoPanel.add(healthLabel).left().padRight(10);
+        healthLabel = new Label("❤️ HP:", skin, "default");
+        infoPanel.add(healthLabel).left().padRight(15);
         healthValueLabel = new Label("100/100", skin, "default");
         healthValueLabel.setColor(Color.RED);
         infoPanel.add(healthValueLabel).right();
         infoPanel.row();
 
-        manaLabel = new Label("Mana:", skin, "default");
-        infoPanel.add(manaLabel).left().padRight(10);
+        manaLabel = new Label("💙 Mana:", skin, "default");
+        infoPanel.add(manaLabel).left().padRight(15);
         manaValueLabel = new Label("50/50", skin, "default");
         manaValueLabel.setColor(Color.CYAN);
         infoPanel.add(manaValueLabel).right();
         infoPanel.row();
 
-        staminaLabel = new Label("Stamina:", skin, "default");
-        infoPanel.add(staminaLabel).left().padRight(10);
+        staminaLabel = new Label("💚 Stamina:", skin, "default");
+        infoPanel.add(staminaLabel).left().padRight(15);
         staminaValueLabel = new Label("100/100", skin, "default");
         staminaValueLabel.setColor(Color.LIME);
         infoPanel.add(staminaValueLabel).right();
         infoPanel.row();
 
-        infoPanel.add(separator).left().padTop(5).padBottom(5).colspan(2);
+        infoPanel.add(separator).left().padTop(8).padBottom(8).colspan(2);
         infoPanel.row();
 
-        speedLabel = new Label("Speed:", skin, "default");
-        infoPanel.add(speedLabel).left().padRight(10);
+        speedLabel = new Label("⚡ Speed:", skin, "default");
+        infoPanel.add(speedLabel).left().padRight(15);
         speedValueLabel = new Label("100%", skin, "default");
         speedValueLabel.setColor(Color.CYAN);
         infoPanel.add(speedValueLabel).right();
@@ -386,7 +388,7 @@ public class PlayerUI {
         if (skin.has("window-bg", Drawable.class)) {
             chatContainer.setBackground(skin.getDrawable("window-bg"));
         }
-        chatContainer.pad(8);
+        chatContainer.pad(10);
         chatContainer.setSize(CHAT_WIDTH, CHAT_HEIGHT);
 
         chatContentLabel = new Label("", skin, "default");
@@ -397,17 +399,18 @@ public class PlayerUI {
         chatScrollPane = new ScrollPane(chatContentLabel, skin);
         chatScrollPane.setFadeScrollBars(false);
         chatScrollPane.setScrollingDisabled(true, false);
-        chatScrollPane.setSize(CHAT_WIDTH - 10, CHAT_HEIGHT - 80);
+        chatScrollPane.setSize(CHAT_WIDTH - 20, CHAT_HEIGHT - 85);
 
-        chatContainer.add(chatScrollPane).width(CHAT_WIDTH - 10).height(CHAT_HEIGHT - 80).padBottom(5);
+        chatContainer.add(chatScrollPane).width(CHAT_WIDTH - 20).height(CHAT_HEIGHT - 85).padBottom(8);
         chatContainer.row();
 
+        Table inputRow = new Table();
         chatInputField = new TextField("", skin);
         chatInputField.setMessageText("Press ENTER to chat...");
-        chatInputField.setSize(CHAT_WIDTH - 80, 35);
+        chatInputField.setSize(CHAT_WIDTH - 85, 38);
 
         TextButton sendButton = new TextButton("Send", skin, "primary");
-        sendButton.setSize(70, 35);
+        sendButton.setSize(75, 38);
         sendButton.addListener(new ChangeListener() {
             @Override
             public void changed(ChangeEvent event, Actor actor) {
@@ -415,10 +418,9 @@ public class PlayerUI {
             }
         });
 
-        Table inputTable = new Table();
-        inputTable.add(chatInputField).width(CHAT_WIDTH - 80).padRight(5);
-        inputTable.add(sendButton).width(70);
-        chatContainer.add(inputTable).width(CHAT_WIDTH);
+        inputRow.add(chatInputField).width(CHAT_WIDTH - 85).padRight(8);
+        inputRow.add(sendButton).width(75);
+        chatContainer.add(inputRow).width(CHAT_WIDTH);
         chatContainer.row();
 
         stage.addActor(chatContainer);
@@ -472,7 +474,6 @@ public class PlayerUI {
 
     public void setChatInputProcessor(Consumer<String> callback) {
         this.sendMessageCallback = callback;
-        createChatContainer();
     }
 
     public void update(Player player, float terrainSpeed) {
@@ -509,7 +510,6 @@ public class PlayerUI {
         float manaPercent = (float) currentMana / maxMana * 100;
         float staminaPercent = (float) currentStamina / maxStamina * 100;
 
-        // HP Color
         if (hpPercent < 30f) {
             healthValueLabel.setColor(Color.RED);
             healthLabel.setColor(Color.RED);
@@ -521,7 +521,6 @@ public class PlayerUI {
             healthLabel.setColor(Color.WHITE);
         }
 
-        // Mana color
         if (manaPercent < 30f) {
             manaValueLabel.setColor(Color.RED);
             manaLabel.setColor(Color.RED);
@@ -533,7 +532,6 @@ public class PlayerUI {
             manaLabel.setColor(Color.WHITE);
         }
 
-        // Stamina color
         if (staminaPercent < 30f) {
             staminaValueLabel.setColor(Color.RED);
         } else if (staminaPercent < 70f) {
@@ -542,7 +540,6 @@ public class PlayerUI {
             staminaValueLabel.setColor(Color.LIME);
         }
 
-        // Speed
         int terrainPercent = Math.round(terrainSpeed * 100);
         float totalMultiplier = terrainSpeed * currentSpeedMultiplier;
         String speedDisplay = String.format("(%d%% / %.1fx)", terrainPercent, totalMultiplier);
@@ -812,7 +809,7 @@ public class PlayerUI {
         uiCamera.update();
         shapeRenderer.setProjectionMatrix(uiCamera.combined);
 
-        float actualY = currentHeight - HEALTH_BAR_HEIGHT;
+        float actualY = currentHeight - HEALTH_BAR_HEIGHT - 10;
 
         shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
 
@@ -830,7 +827,7 @@ public class PlayerUI {
         } else {
             shapeRenderer.setColor(0.9f, 0.2f, 0.2f, 0.9f);
         }
-        shapeRenderer.rect(HEALTH_BAR_X + 2, actualY + 2, Math.max(0, fillWidth - 4), HEALTH_BAR_HEIGHT - 4);
+        shapeRenderer.rect(HEALTH_BAR_X + 3, actualY + 3, Math.max(0, fillWidth - 6), HEALTH_BAR_HEIGHT - 6);
 
         shapeRenderer.end();
 
@@ -841,8 +838,8 @@ public class PlayerUI {
 
         fontManager.begin();
         fontManager.getBatch().setProjectionMatrix(uiCamera.combined);
-        String healthText = currentHp + "/" + maxHp;
-        fontManager.draw(FontManager.NORMAL, healthText, HEALTH_BAR_X + HEALTH_BAR_WIDTH + 8, actualY + HEALTH_BAR_HEIGHT - 4, Color.WHITE);
+        String healthText = "❤️ " + currentHp + "/" + maxHp;
+        fontManager.draw(FontManager.NORMAL, healthText, HEALTH_BAR_X + HEALTH_BAR_WIDTH + 12, actualY + HEALTH_BAR_HEIGHT - 6, Color.WHITE);
         fontManager.end();
     }
 
@@ -868,7 +865,7 @@ public class PlayerUI {
         }
 
         if (taskBar != null) {
-            taskBar.setPosition(width - 310, 10);
+            taskBar.setPosition(width - 310, TASKBAR_Y_OFFSET);
         }
 
         float chatXPos = width * 0.01f;

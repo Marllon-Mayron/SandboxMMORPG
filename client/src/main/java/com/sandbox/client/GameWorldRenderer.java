@@ -202,7 +202,7 @@ public class GameWorldRenderer implements Screen {
 
         try {
             Texture texture = new Texture(file);
-            texture.setFilter(Texture.TextureFilter.Linear, Texture.TextureFilter.Linear);
+            texture.setFilter(Texture.TextureFilter.Nearest, Texture.TextureFilter.Nearest);
             spritesheets.put(loadedPath, texture);
 
             int cols = texture.getWidth() / TILE_SIZE;

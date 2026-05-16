@@ -70,7 +70,7 @@ public class ProjectileAnimationRenderer {
             }
 
             Texture texture = new Texture(file);
-            texture.setFilter(Texture.TextureFilter.Linear, Texture.TextureFilter.Linear);
+            texture.setFilter(Texture.TextureFilter.Nearest, Texture.TextureFilter.Nearest);
             textures.put(anim.getId(), texture);
             animations.put(anim.getId(), anim);
 
