@@ -1,12 +1,9 @@
 package com.sandbox.client;
 
 import com.badlogic.gdx.Game;
+import com.common.sandbox.network.packets.*;
 import com.sandbox.client.screens.ScreenManager;
 import com.common.sandbox.model.Player;
-import com.common.sandbox.network.packets.ItemSpawnPacket;
-import com.common.sandbox.network.packets.ItemDespawnPacket;
-import com.common.sandbox.network.packets.InventoryUpdatePacket;
-import com.common.sandbox.network.packets.PickupResultPacket;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -60,10 +57,12 @@ public class SandboxClient extends Game {
         // Callbacks de itens
         networkClient.setItemSpawnCallback(this::onItemSpawn);
         networkClient.setItemDespawnCallback(this::onItemDespawn);
+        networkClient.setItemDefinitionSyncCallback(this::onItemDefinitionSync);
 
         // Callbacks de inventário
         networkClient.setInventoryCallback(this::onInventoryUpdate);
         networkClient.setPickupResultCallback(this::onPickupResult);
+
     }
 
     // ==================== CALLBACKS DE ITENS ====================
@@ -87,6 +86,12 @@ public class SandboxClient extends Game {
         }
     }
 
+    public void onItemDefinitionSync(ItemDefinitionSyncPacket packet) {
+        logger.info("Received {} item definitions from server", packet.itemDefinitions.size());
+        if (currentGameWorldRenderer instanceof GameWorldRenderer) {
+            ((GameWorldRenderer) currentGameWorldRenderer).onItemDefinitionSync(packet);
+        }
+    }
     // ==================== CALLBACKS DE INVENTÁRIO ====================
 
     private void onInventoryUpdate(InventoryUpdatePacket packet) {

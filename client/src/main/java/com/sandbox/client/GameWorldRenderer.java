@@ -86,6 +86,7 @@ public class GameWorldRenderer implements Screen {
     private final Map<String, GroundItem> localGroundItems = new ConcurrentHashMap<>();
     private long lastPickupCheck = 0;
     private static final long PICKUP_CHECK_INTERVAL_MS = 500;
+    private final Map<String, ItemDefinition> itemDefinitionCache = new ConcurrentHashMap<>();
 
     // ==================== SISTEMA DE COMBATE ====================
     private long lastAttackTime = 0;
@@ -211,6 +212,20 @@ public class GameWorldRenderer implements Screen {
 
             logger.info("✅ Loaded item spritesheet: {} ({}x{} tiles, {}x{} pixels)",
                     loadedPath, cols, rows, texture.getWidth(), texture.getHeight());
+
+            // Após carregar o spritesheet, registrar texturas dos itens que já estão no cache
+            if (playerUI != null && !itemDefinitionCache.isEmpty()) {
+                logger.info("Registering textures for {} cached item definitions", itemDefinitionCache.size());
+                for (ItemDefinition def : itemDefinitionCache.values()) {
+                    registerItemTextureForDefinition(def);
+                }
+            }
+
+            // Se o jogador já tem inventário, atualizar as texturas
+            if (currentPlayer != null && currentPlayer.getInventory() != null && playerUI != null) {
+                refreshInventoryTextures();
+            }
+
         } catch (Exception e) {
             logger.error("Failed to load item spritesheet: {}", loadedPath, e);
         }
@@ -555,34 +570,9 @@ public class GameWorldRenderer implements Screen {
                 itemRenderer.addItem(packet.item);
                 localGroundItems.put(packet.item.getInstanceId(), packet.item);
 
-                if (playerUI != null) {
-                    String itemId = packet.item.getDefinition().getId();
-                    String category = packet.item.getDefinition().getCategory();
-                    String spritesheetPath = packet.item.getDefinition().getSpritesheet();
-                    int tileX = packet.item.getDefinition().getTileX();
-                    int tileY = packet.item.getDefinition().getTileY();
-
-                    logger.info("=== REGISTERING ITEM DEFINITION ===");
-                    logger.info("Item ID: {}", itemId);
-                    logger.info("Item Name: {}", packet.item.getDefinition().getName());
-                    logger.info("Category: {}", category);
-                    logger.info("Spritesheet: {}", spritesheetPath);
-                    logger.info("Tile: ({}, {})", tileX, tileY);
-
-                    // Buscar a textura do spritesheet
-                    TextureRegion[][] regions = spritesheetRegions.get(spritesheetPath);
-                    TextureRegion icon = null;
-
-                    if (regions != null && tileY < regions.length && tileX < regions[0].length) {
-                        icon = regions[tileY][tileX];
-                        logger.info("✅ Texture found for item: {}", itemId);
-                    } else {
-                        logger.warn("❌ Texture NOT found for item: {} - regions available: {}",
-                                itemId, regions != null ? regions.length : 0);
-                    }
-
-                    // Registrar no PlayerUI (que vai passar para o InventoryWindow)
-                    playerUI.registerItemTexture(itemId, icon, packet.item.getDefinition());
+                ItemDefinition def = packet.item.getDefinition();
+                if (def != null && playerUI != null) {
+                    registerItemTextureForDefinition(def);
                 }
 
                 logger.info("Item spawned in world: {} ({}) at ({}, {})",
@@ -916,18 +906,12 @@ public class GameWorldRenderer implements Screen {
         return def;
     }
 
-    // Cache de definições de itens (para não buscar toda hora)
-    private final Map<String, ItemDefinition> itemDefinitionCache = new HashMap<>();
-
     private ItemDefinition getItemDefinition(String itemId) {
-        // Em produção, isso viria do servidor ou de um cache local
-        // Por enquanto, retorna definições básicas para teste
-        if (itemDefinitionCache.containsKey(itemId)) {
-            return itemDefinitionCache.get(itemId);
+        // Agora usa o cache vindo do servidor
+        ItemDefinition def = itemDefinitionCache.get(itemId);
+        if (def != null) {
+            return def;
         }
-
-        // Simular busca - na prática, você teria um ItemManager no cliente
-        ItemDefinition def = new ItemDefinition();
         switch (itemId) {
             case "simple_bow":
                 def.setName("Arco Simples");
@@ -999,6 +983,61 @@ public class GameWorldRenderer implements Screen {
         return def;
     }
 
+    public void onItemDefinitionSync(ItemDefinitionSyncPacket packet) {
+        Gdx.app.postRunnable(() -> {
+            if (packet.itemDefinitions == null) return;
+
+            itemDefinitionCache.clear();
+            itemDefinitionCache.putAll(packet.itemDefinitions);
+
+            logger.info("Cached {} item definitions from server", itemDefinitionCache.size());
+
+            // Registrar texturas no PlayerUI para todos os itens
+            if (playerUI != null) {
+                for (ItemDefinition def : itemDefinitionCache.values()) {
+                    registerItemTextureForDefinition(def);
+                }
+            }
+
+            // Se já temos inventário, atualizar as texturas
+            if (currentPlayer != null && currentPlayer.getInventory() != null) {
+                refreshInventoryTextures();
+            }
+        });
+    }
+
+    private void registerItemTextureForDefinition(ItemDefinition def) {
+        String spritesheetPath = def.getSpritesheet();
+        TextureRegion[][] regions = spritesheetRegions.get(spritesheetPath);
+        TextureRegion icon = null;
+
+        if (regions != null && def.getTileY() < regions.length && def.getTileX() < regions[0].length) {
+            icon = regions[def.getTileY()][def.getTileX()];
+        }
+
+        if (playerUI != null) {
+            playerUI.registerItemTexture(def.getId(), icon, def);
+        }
+    }
+
+    private void refreshInventoryTextures() {
+        if (currentPlayer == null || currentPlayer.getInventory() == null) return;
+
+        // Re-registrar todos os itens do inventário
+        for (ItemStack stack : currentPlayer.getInventory().getSlots().values()) {
+            if (stack != null && !stack.isEmpty()) {
+                ItemDefinition def = itemDefinitionCache.get(stack.getItemId());
+                if (def != null) {
+                    registerItemTextureForDefinition(def);
+                }
+            }
+        }
+
+        // Atualizar UI
+        if (playerUI != null) {
+            playerUI.updateInventory(currentPlayer.getInventory(), currentPlayer.getGold());
+        }
+    }
     // ==================== MÉTODOS DE MOVIMENTO ====================
 
     private void handleInput(float delta) {

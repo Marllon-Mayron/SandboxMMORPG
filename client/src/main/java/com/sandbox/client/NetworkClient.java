@@ -52,11 +52,14 @@ public class NetworkClient {
     private Consumer<PickupResultPacket> pickupResultCallback;
     private Consumer<ItemSpawnPacket> itemSpawnCallback;
     private Consumer<ItemDespawnPacket> itemDespawnCallback;
+    private Consumer<ItemDefinitionSyncPacket> itemDefinitionSyncCallback;
 
     private Consumer<AttackBroadcast> attackBroadcastCallback;
     private Consumer<DamagePacket> damagePacketCallback;
     private Consumer<ProjectileStatePacket> projectileStateCallback;
     private Consumer<AnimationSyncPacket> animationSyncCallback;
+
+
 
     public NetworkClient(String host, int port) {
         this.host = host;
@@ -258,6 +261,10 @@ public class NetworkClient {
     public void setAnimationSyncCallback(Consumer<AnimationSyncPacket> callback) {
         this.animationSyncCallback = callback;
     }
+    public void setItemDefinitionSyncCallback(Consumer<ItemDefinitionSyncPacket> callback) {
+        this.itemDefinitionSyncCallback = callback;
+    }
+
     private class ClientHandler extends SimpleChannelInboundHandler<Object> {
         @Override
         protected void channelRead0(ChannelHandlerContext ctx, Object msg) {
@@ -312,7 +319,9 @@ public class NetworkClient {
                 } else if (msg instanceof PickupResultPacket && pickupResultCallback != null) {
                     pickupResultCallback.accept((PickupResultPacket) msg);
                 } else if (msg instanceof DropItemPacket) {
-                    // Enviar para servidor (já está sendo enviado)
+
+                } else if (msg instanceof ItemDefinitionSyncPacket && itemDefinitionSyncCallback != null) {
+                    itemDefinitionSyncCallback.accept((ItemDefinitionSyncPacket) msg);
                 } else if (msg instanceof AttackBroadcast && attackBroadcastCallback != null) {
                     attackBroadcastCallback.accept((AttackBroadcast) msg);
                 } else if (msg instanceof DamagePacket && damagePacketCallback != null) {

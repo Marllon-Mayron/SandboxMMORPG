@@ -379,6 +379,9 @@ public class ItemManager {
         return groundItems.size();
     }
 
+    public Map<String, ItemDefinition> getAllItemDefinitions() {
+        return new HashMap<>(itemDefinitions);
+    }
     public void resendAllItemsToPlayer(ChannelHandlerContext ctx) {
         logger.info("Resending all items to player - Total items: {}", groundItems.size());
         for (GroundItem item : groundItems.values()) {

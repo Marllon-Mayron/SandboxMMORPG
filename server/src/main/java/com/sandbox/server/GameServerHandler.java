@@ -148,12 +148,19 @@ public class GameServerHandler extends SimpleChannelInboundHandler<Object> {
                 broadcastToAll(joinMsg);
 
                 sendMapToPlayer(ctx, player);
+
                 sendAllExistingItemsToPlayer(ctx, player);
+
                 sendFriendListToPlayer(ctx, player);
+
                 sendAllExistingPlayers(ctx, player);
+
                 AnimationSyncPacket animSync = new AnimationSyncPacket(AnimationManager.getInstance().getAllProjectileAnimations());
                 sendPacket(ctx, animSync);
 
+                ItemDefinitionSyncPacket itemSync = new ItemDefinitionSyncPacket(ItemManager.getInstance().getAllItemDefinitions());
+                sendPacket(ctx, itemSync);
+                logger.info("Sent ItemDefinitionSync with {} item definitions", itemSync.itemDefinitions.size());
             } else {
                 logger.warn("Login Falhou - Usuario: {}", request.username);
                 LoginResponse response = new LoginResponse(false, "Usuario ou senha invalidos!", null);

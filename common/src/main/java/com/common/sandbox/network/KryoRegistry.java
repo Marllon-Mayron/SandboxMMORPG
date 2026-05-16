@@ -2,7 +2,6 @@ package com.common.sandbox.network;
 
 import com.common.sandbox.model.*;
 import com.common.sandbox.network.packets.*;
-import com.common.sandbox.network.packets.InventoryUpdatePacket;
 import com.esotericsoftware.kryo.Kryo;
 
 import java.util.ArrayList;
@@ -18,8 +17,6 @@ public class KryoRegistry {
     private static final int ID_REGISTER_REQUEST = 12;
     private static final int ID_REGISTER_RESPONSE = 13;
 
-    // REMOVIDOS: ID_MOVEMENT_REQUEST, ID_MOVEMENT_BROADCAST, ID_MOVEMENT_CONFIRM
-    // NOVO ID para PlayerStatePacket
     private static final int ID_PLAYER_STATE = 24;
 
     private static final int ID_CHAT_MESSAGE = 30;
@@ -71,6 +68,7 @@ public class KryoRegistry {
     private static final int ID_PROJECTILE_STATE = 190;
 
     private static final int ID_ANIMATION_SYNC = 200;
+    private static final int ID_ITEM_DEFINITION_SYNC = 210;
     private static boolean registered = false;
 
     public static synchronized void registerClasses(Kryo kryo) {
@@ -136,6 +134,17 @@ public class KryoRegistry {
         kryo.register(ProjectileStatePacket.class, ID_PROJECTILE_STATE);
         kryo.register(Projectile.class, 191);
 
+        kryo.register(AttackBroadcast.class, ID_ATTACK_BROADCAST);
+        kryo.register(DamagePacket.class, ID_DAMAGE_PACKET);
+        kryo.register(AttackType.class, ID_ATTACK_TYPE);
+        kryo.register(AttackResult.class, ID_ATTACK_RESULT);
+        kryo.register(CombatStats.class, ID_COMBAT_STATS);
+
+        kryo.register(AnimationSyncPacket.class, ID_ANIMATION_SYNC);
+        kryo.register(ProjectileAnimation.class, 201);
+
+        kryo.register(ItemDefinitionSyncPacket.class, ID_ITEM_DEFINITION_SYNC);
+
         // Arrays multidimensionais
         kryo.register(int[][].class, 90);
         kryo.register(int[][][].class, 91);
@@ -189,15 +198,7 @@ public class KryoRegistry {
         //hashmap
         kryo.register(java.util.HashMap.class, 179);
 
-        kryo.register(AttackBroadcast.class, ID_ATTACK_BROADCAST);
-        kryo.register(DamagePacket.class, ID_DAMAGE_PACKET);
-        kryo.register(AttackType.class, ID_ATTACK_TYPE);
-        kryo.register(AttackResult.class, ID_ATTACK_RESULT);
-        kryo.register(CombatStats.class, ID_COMBAT_STATS);
-
-        kryo.register(AnimationSyncPacket.class, ID_ANIMATION_SYNC);
-        kryo.register(ProjectileAnimation.class, 201);
-        // IMPORTANTE: Permitir registro automático para classes não listadas
+        // Permitir registro automático para classes não listadas
         kryo.setRegistrationRequired(false);
 
         registered = true;
