@@ -11,59 +11,72 @@ import com.badlogic.gdx.scenes.scene2d.utils.ChangeListener;
 import com.badlogic.gdx.scenes.scene2d.utils.Drawable;
 import com.badlogic.gdx.scenes.scene2d.utils.TextureRegionDrawable;
 import com.common.sandbox.model.player.Player;
+import com.common.sandbox.network.packets.player.AttributeUpgradePacket;
+import com.common.sandbox.network.packets.player.PlayerStatePacket;
+import com.sandbox.client.NetworkClient;
+import com.sandbox.client.SandboxClient;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import java.util.HashMap;
+import java.util.Map;
 
 public class AttributesWindow {
     private static final Logger logger = LoggerFactory.getLogger(AttributesWindow.class);
 
     private Window window;
     private Skin skin;
+    private Stage stage;
+    private SandboxClient gameClient;
+    private NetworkClient networkClient;
+
     private boolean visible = false;
     private Player currentPlayer;
-    private Stage stage;
 
-    // Primary Stats Labels
+    private Map<String, Label> attributeValueLabels;
+    private Map<String, TextButton> attributeAddButtons;
+    private Map<String, Label> attributePendingLabels;
+    private Map<String, Integer> pendingUpgrades;
+
     private Label levelValueLabel;
     private Label experienceValueLabel;
     private Label experienceProgressLabel;
-    private Label nextLevelXpLabel;
+    private Label attributePointsAvailableLabel;
 
-    // Combat Stats Labels
-    private Label hpValueLabel;
-    private Label manaValueLabel;
-    private Label staminaValueLabel;
-    private Label hpRegenLabel;
-    private Label manaRegenLabel;
-    private Label staminaRegenLabel;
+    private ScrollPane scrollPane;
+    private Table contentTable;
 
-    // Movement Stats Labels
-    private Label baseSpeedLabel;
-    private Label sprintMultiplierLabel;
-    private Label dashDistanceLabel;
-    private Label dashCooldownLabel;
-    private Label dashCostLabel;
+    private TextButton saveButton;
+    private TextButton resetButton;
 
-    // Attributes Labels
-    private Label strengthValueLabel;
-    private Label agilityValueLabel;
-    private Label wisdomValueLabel;
+    private AttributeSaveCallback saveCallback;
 
-    // Points Labels
-    private Label attributePointsValueLabel;
-    private Label skillPointsValueLabel;
+    public interface AttributeSaveCallback {
+        void onSave(Map<String, Integer> upgrades);
+    }
 
-    // Progress bar for experience
-    private ProgressBar expProgressBar;
-
-    public AttributesWindow(Skin skin, Stage stage) {
+    public AttributesWindow(Skin skin, Stage stage, SandboxClient gameClient) {
         this.skin = skin;
         this.stage = stage;
+        this.gameClient = gameClient;
+        this.networkClient = gameClient != null ? gameClient.getNetworkClient() : null;
+        this.attributeValueLabels = new HashMap<>();
+        this.attributeAddButtons = new HashMap<>();
+        this.attributePendingLabels = new HashMap<>();
+        this.pendingUpgrades = new HashMap<>();
+
+        this.levelValueLabel = new Label("", skin);
+        this.experienceValueLabel = new Label("", skin);
+        this.experienceProgressLabel = new Label("", skin);
+
         createWindow();
     }
 
+    public void setSaveCallback(AttributeSaveCallback callback) {
+        this.saveCallback = callback;
+    }
+
     private void createWindow() {
-        // Window background
         Pixmap pixmap = new Pixmap(1, 1, Pixmap.Format.RGBA8888);
         pixmap.setColor(0.05f, 0.05f, 0.08f, 0.98f);
         pixmap.fill();
@@ -71,7 +84,6 @@ public class AttributesWindow {
         pixmap.dispose();
         Drawable windowBackground = new TextureRegionDrawable(texture);
 
-        // Border
         Pixmap borderPixmap = new Pixmap(1, 1, Pixmap.Format.RGBA8888);
         borderPixmap.setColor(0.35f, 0.25f, 0.10f, 1f);
         borderPixmap.fill();
@@ -79,7 +91,6 @@ public class AttributesWindow {
         borderPixmap.dispose();
         Drawable borderDrawable = new TextureRegionDrawable(borderTexture);
 
-        // Progress bar style
         Pixmap barBgPixmap = new Pixmap(1, 1, Pixmap.Format.RGBA8888);
         barBgPixmap.setColor(0.15f, 0.10f, 0.05f, 1f);
         barBgPixmap.fill();
@@ -101,180 +112,203 @@ public class AttributesWindow {
         BitmapFont font = skin.getFont("default-font");
 
         Window.WindowStyle windowStyle = new Window.WindowStyle(font, Color.GOLD, windowBackground);
-        window = new Window(" C H A R A C T E R   I N F O R M A T I O N ", windowStyle);
+        window = new Window("ATTRIBUTE SYSTEM", windowStyle);
         window.setModal(true);
         window.setMovable(true);
-        window.setSize(460, 620);
+        window.setSize(600, 700);
         window.setVisible(false);
 
         Table mainTable = new Table();
         mainTable.setBackground(borderDrawable);
 
-        Table content = new Table();
-        content.pad(15);
-        content.setBackground(windowBackground);
+        Table rootContent = new Table();
+        rootContent.pad(10);
 
-        // Header
-        Label headerLabel = new Label("S T A T U S", skin, "title");
+        Table headerTable = new Table();
+        headerTable.setBackground(windowBackground);
+        headerTable.pad(10);
+
+        Label headerLabel = new Label("ATTRIBUTE POINTS SYSTEM", skin, "title");
         headerLabel.setColor(Color.GOLD);
         headerLabel.setFontScale(1.2f);
-        content.add(headerLabel).colspan(2).center().padBottom(15);
-        content.row();
+        headerTable.add(headerLabel).center().colspan(2).padBottom(10);
+        headerTable.row();
 
-        addSeparator(content);
+        attributePointsAvailableLabel = new Label("Available Points: 0", skin, "title");
+        attributePointsAvailableLabel.setColor(Color.GREEN);
+        headerTable.add(attributePointsAvailableLabel).center().colspan(2).padBottom(5);
+        headerTable.row();
 
-        // Section: PROGRESSION
-        Label progressionTitle = new Label("PROGRESSION", skin, "title");
-        progressionTitle.setColor(Color.CYAN);
-        content.add(progressionTitle).colspan(2).left().padBottom(8);
-        content.row();
-        addThinSeparator(content);
+        Label infoLabel = new Label("Click + to add points, then SAVE to confirm", skin, "status");
+        infoLabel.setColor(Color.LIGHT_GRAY);
+        infoLabel.setFontScale(0.8f);
+        headerTable.add(infoLabel).center().colspan(2).padBottom(5);
 
-        addStatRow(content, "Level:", levelValueLabel = createValueLabel(), Color.CYAN);
+        rootContent.add(headerTable).fillX().padBottom(10);
+        rootContent.row();
 
-        // Experience with progress bar
-        Table expTable = new Table();
-        experienceValueLabel = createValueLabel();
-        experienceProgressLabel = createValueLabel();
+        contentTable = new Table();
+        contentTable.pad(10);
 
-        expTable.add(new Label("Experience:", skin, "default")).left().padRight(20);
-        expTable.add(experienceValueLabel).right();
-        expTable.row();
-        expTable.add(new Label("Progress:", skin, "default")).left().padRight(20);
-        expTable.add(experienceProgressLabel).right();
+        scrollPane = new ScrollPane(contentTable, skin);
+        scrollPane.setFadeScrollBars(false);
+        scrollPane.setScrollingDisabled(true, false);
+        scrollPane.setForceScroll(false, true);
 
-        content.add(expTable).colspan(2).padBottom(6);
-        content.row();
+        rootContent.add(scrollPane).width(560).height(520).padBottom(10);
+        rootContent.row();
 
-        addStatRow(content, "Next Level:", nextLevelXpLabel = createValueLabel(), Color.LIGHT_GRAY);
+        Table buttonTable = new Table();
 
-        // Experience progress bar
-        expProgressBar = new ProgressBar(0, 1, 0.01f, false, progressStyle);
-        expProgressBar.setSize(380, 12);
-        content.add(expProgressBar).colspan(2).width(380).height(12).padTop(5).padBottom(10);
-        content.row();
+        resetButton = new TextButton("RESET ALL", skin, "default");
+        resetButton.addListener(new ChangeListener() {
+            @Override
+            public void changed(ChangeEvent event, Actor actor) {
+                resetPendingUpgrades();
+            }
+        });
 
-        addSeparator(content);
+        saveButton = new TextButton("SAVE POINTS", skin, "primary");
+        saveButton.addListener(new ChangeListener() {
+            @Override
+            public void changed(ChangeEvent event, Actor actor) {
+                savePendingUpgrades();
+            }
+        });
 
-        // Section: COMBAT STATUS
-        Label combatTitle = new Label("C O M B A T   S T A T U S", skin, "title");
-        combatTitle.setColor(Color.CORAL);
-        content.add(combatTitle).colspan(2).left().padBottom(8);
-        content.row();
-        addThinSeparator(content);
-
-        addStatRow(content, "Health:", hpValueLabel = createValueLabel(), Color.GREEN);
-        addStatRow(content, "Mana:", manaValueLabel = createValueLabel(), Color.CYAN);
-        addStatRow(content, "Stamina:", staminaValueLabel = createValueLabel(), Color.LIME);
-
-        // Regen info
-        Table regenTable = new Table();
-        hpRegenLabel = createValueLabel();
-        manaRegenLabel = createValueLabel();
-        staminaRegenLabel = createValueLabel();
-
-        regenTable.add(new Label("HP Regen:", skin, "default")).left().padRight(15);
-        regenTable.add(hpRegenLabel).right().padRight(25);
-        regenTable.add(new Label("MP Regen:", skin, "default")).left().padRight(15);
-        regenTable.add(manaRegenLabel).right().padRight(25);
-        regenTable.add(new Label("SP Regen:", skin, "default")).left().padRight(15);
-        regenTable.add(staminaRegenLabel).right();
-
-        content.add(regenTable).colspan(2).padTop(5).padBottom(10);
-        content.row();
-
-        addSeparator(content);
-
-        // Section: MOVEMENT
-        Label movementTitle = new Label("M O V E M E N T", skin, "title");
-        movementTitle.setColor(Color.YELLOW);
-        content.add(movementTitle).colspan(2).left().padBottom(8);
-        content.row();
-        addThinSeparator(content);
-
-        baseSpeedLabel = createValueLabel();
-        sprintMultiplierLabel = createValueLabel();
-        dashDistanceLabel = createValueLabel();
-        dashCooldownLabel = createValueLabel();
-        dashCostLabel = createValueLabel();
-
-        Table movementTable = new Table();
-        movementTable.add(new Label("Base Speed:", skin, "default")).left().padRight(15);
-        movementTable.add(baseSpeedLabel).right().padRight(25);
-        movementTable.add(new Label("Sprint Mult:", skin, "default")).left().padRight(15);
-        movementTable.add(sprintMultiplierLabel).right();
-        movementTable.row();
-        movementTable.add(new Label("Dash Dist:", skin, "default")).left().padRight(15);
-        movementTable.add(dashDistanceLabel).right().padRight(25);
-        movementTable.add(new Label("Dash CD:", skin, "default")).left().padRight(15);
-        movementTable.add(dashCooldownLabel).right();
-        movementTable.row();
-        movementTable.add(new Label("Dash Cost:", skin, "default")).left().padRight(15);
-        movementTable.add(dashCostLabel).right();
-
-        content.add(movementTable).colspan(2).padBottom(10);
-        content.row();
-
-        addSeparator(content);
-
-        // Section: ATTRIBUTES
-        Label attrTitle = new Label("A T T R I B U T E S", skin, "title");
-        attrTitle.setColor(Color.ORANGE);
-        content.add(attrTitle).colspan(2).left().padBottom(8);
-        content.row();
-        addThinSeparator(content);
-
-        Table attrTable = new Table();
-        strengthValueLabel = createValueLabel();
-        agilityValueLabel = createValueLabel();
-        wisdomValueLabel = createValueLabel();
-
-        attrTable.add(new Label("Strength:", skin, "default")).left().padRight(15);
-        attrTable.add(strengthValueLabel).right().padRight(40);
-        attrTable.add(new Label("Agility:", skin, "default")).left().padRight(15);
-        attrTable.add(agilityValueLabel).right().padRight(40);
-        attrTable.add(new Label("Wisdom:", skin, "default")).left().padRight(15);
-        attrTable.add(wisdomValueLabel).right();
-
-        content.add(attrTable).colspan(2).padBottom(10);
-        content.row();
-
-        addSeparator(content);
-
-        // Section: AVAILABLE POINTS
-        Label pointsTitle = new Label("A V A I L A B L E   P O I N T S", skin, "title");
-        pointsTitle.setColor(Color.PINK);
-        content.add(pointsTitle).colspan(2).left().padBottom(8);
-        content.row();
-        addThinSeparator(content);
-
-        Table pointsTable = new Table();
-        attributePointsValueLabel = createValueLabel();
-        skillPointsValueLabel = createValueLabel();
-
-        pointsTable.add(new Label("Attribute Points:", skin, "default")).left().padRight(15);
-        pointsTable.add(attributePointsValueLabel).right().padRight(40);
-        pointsTable.add(new Label("Skill Points:", skin, "default")).left().padRight(15);
-        pointsTable.add(skillPointsValueLabel).right();
-
-        content.add(pointsTable).colspan(2).padBottom(10);
-        content.row();
-
-        addSeparator(content);
-
-        // Close button
-        TextButton closeButton = new TextButton("C L O S E", skin, "primary");
+        TextButton closeButton = new TextButton("CLOSE", skin, "default");
         closeButton.addListener(new ChangeListener() {
             @Override
             public void changed(ChangeEvent event, Actor actor) {
                 hide();
             }
         });
-        content.add(closeButton).colspan(2).center().width(200).height(45).padTop(10);
 
-        mainTable.add(content).fill().expand();
+        buttonTable.add(resetButton).width(150).height(40).padRight(10);
+        buttonTable.add(saveButton).width(150).height(40).padRight(10);
+        buttonTable.add(closeButton).width(150).height(40);
+
+        rootContent.add(buttonTable).center();
+
+        mainTable.add(rootContent).fill().expand();
         window.add(mainTable).fill().expand();
+
+        buildAttributesTable();
         window.pack();
+    }
+
+    private void buildAttributesTable() {
+        contentTable.clear();
+        attributeValueLabels.clear();
+        attributeAddButtons.clear();
+        attributePendingLabels.clear();
+
+        addSectionHeader("RESOURCES");
+        addAttributeRow("Max HP", "max_hp", Color.GREEN);
+        addAttributeRow("Max Mana", "max_mana", Color.CYAN);
+        addAttributeRow("Max Stamina", "max_stamina", Color.LIME);
+        addSeparator();
+
+        addSectionHeader("REGENERATION");
+        addAttributeRow("HP Regeneration", "hp_regen", Color.GREEN);
+        addAttributeRow("Mana Regeneration", "mana_regen", Color.CYAN);
+        addAttributeRow("Stamina Regeneration", "stamina_regen", Color.LIME);
+        addSeparator();
+
+        addSectionHeader("DEFENSES");
+        addAttributeRow("Physical Defense", "physical_defense", Color.ORANGE);
+        addAttributeRow("Magic Defense", "magic_defense", Color.PURPLE);
+        addSeparator();
+
+        addSectionHeader("POWER");
+        addAttributeRow("Physical Power", "physical_power", Color.ORANGE);
+        addAttributeRow("Ranged Power", "ranged_power", Color.GREEN);
+        addAttributeRow("Magic Power", "magic_power", Color.CYAN);
+        addSeparator();
+
+        addSectionHeader("OFFENSIVE");
+        addAttributeRow("Critical Chance", "critical_chance", Color.GOLD);
+        addAttributeRow("Critical Damage", "critical_damage", Color.GOLD);
+        addAttributeRow("Dodge Chance", "dodge_chance", Color.LIME);
+        addSeparator();
+
+        addSectionHeader("SPEEDS");
+        addAttributeRow("Attack Speed", "attack_speed", Color.CYAN);
+        addAttributeRow("Movement Speed", "movement_speed", Color.CYAN);
+        addSeparator();
+
+        addSectionHeader("UTILITIES");
+        addAttributeRow("Cooldown Reduction", "cooldown_reduction", Color.MAGENTA);
+        addAttributeRow("Life Steal", "life_steal", Color.RED);
+        addAttributeRow("Mana Steal", "mana_steal", Color.BLUE);
+        addAttributeRow("Tenacity", "tenacity", Color.ORANGE);
+        addSeparator();
+
+        addSectionHeader("ELEMENTAL RESISTANCES");
+        addAttributeRow("Fire Resistance", "fire_resistance", Color.RED);
+        addAttributeRow("Ice Resistance", "ice_resistance", Color.CYAN);
+        addAttributeRow("Lightning Resistance", "lightning_resistance", Color.YELLOW);
+        addAttributeRow("Poison Resistance", "poison_resistance", Color.GREEN);
+        addAttributeRow("Holy Resistance", "holy_resistance", Color.GOLD);
+        addAttributeRow("Dark Resistance", "dark_resistance", Color.PURPLE);
+        addSeparator();
+
+        addSectionHeader("LUCK");
+        addAttributeRow("Luck (Drop Rate)", "luck", Color.GOLD);
+    }
+
+    private void addAttributeRow(String displayName, String attributeId, Color valueColor) {
+        Table rowTable = new Table();
+
+        float increment = Player.getAttributeIncrement(attributeId);
+        String formattedIncrement = Player.getFormattedAttributeIncrement(attributeId);
+
+        Label nameLabel = new Label(displayName + " " + formattedIncrement, skin, "default");
+        nameLabel.setColor(Color.LIGHT_GRAY);
+        nameLabel.setFontScale(0.9f);
+
+        Label valueLabel = createValueLabel();
+        valueLabel.setColor(valueColor);
+        attributeValueLabels.put(attributeId, valueLabel);
+
+        TextButton addButton = new TextButton("+", skin, "primary");
+        addButton.setSize(40, 30);
+        addButton.addListener(new ChangeListener() {
+            @Override
+            public void changed(ChangeEvent event, Actor actor) {
+                addPointToAttribute(attributeId);
+            }
+        });
+        attributeAddButtons.put(attributeId, addButton);
+
+        Label pendingLabel = new Label("(+0)", skin, "status");
+        pendingLabel.setColor(Color.GREEN);
+        pendingLabel.setFontScale(0.8f);
+        attributePendingLabels.put(attributeId, pendingLabel);
+
+        rowTable.add(nameLabel).width(220).left().padRight(10);
+        rowTable.add(valueLabel).width(80).center().padRight(10);
+        rowTable.add(addButton).width(40).height(30).padRight(10);
+        rowTable.add(pendingLabel).width(60).left();
+
+        contentTable.add(rowTable).left().padBottom(5).colspan(4);
+        contentTable.row();
+    }
+
+    private void addSectionHeader(String title) {
+        Label header = new Label(title, skin, "title");
+        header.setColor(Color.CYAN);
+        header.setFontScale(0.9f);
+        contentTable.add(header).left().padTop(10).padBottom(5).colspan(4);
+        contentTable.row();
+    }
+
+    private void addSeparator() {
+        Label separator = new Label("------------------------------------------------", skin, "status");
+        separator.setColor(Color.DARK_GRAY);
+        separator.setFontScale(0.6f);
+        contentTable.add(separator).colspan(4).center().padTop(5).padBottom(5);
+        contentTable.row();
     }
 
     private Label createValueLabel() {
@@ -283,128 +317,401 @@ public class AttributesWindow {
         return label;
     }
 
-    private void addStatRow(Table table, String labelText, Label valueLabel, Color valueColor) {
-        Label statLabel = new Label(labelText, skin, "default");
-        statLabel.setColor(Color.LIGHT_GRAY);
-        table.add(statLabel).left().padRight(20).padBottom(5);
-        valueLabel.setColor(valueColor);
-        table.add(valueLabel).right().padBottom(5);
-        table.row();
+    private void addPointToAttribute(String attributeId) {
+        if (currentPlayer == null) return;
+
+        int availablePoints = currentPlayer.getAttributePoints() - getTotalPendingPoints();
+        if (availablePoints <= 0) {
+            showFeedback("No attribute points available!", Color.RED);
+            return;
+        }
+
+        float increment = Player.getAttributeIncrement(attributeId);
+        int currentPending = pendingUpgrades.getOrDefault(attributeId, 0);
+
+        // Adicionar o valor de incremento
+        int incrementValue;
+        if (increment < 1 && increment > 0) {
+            // Atributos percentuais: armazenamos como pontos percentuais (1 = 1%)
+            incrementValue = (int)(increment * 100);
+        } else {
+            incrementValue = (int)increment;
+        }
+
+        pendingUpgrades.put(attributeId, currentPending + incrementValue);
+
+        updateAttributeDisplay(attributeId);
+        updatePointsDisplay();
+
+        showFeedback("+ Added to " + attributeId, Color.GREEN);
     }
 
-    private void addSeparator(Table table) {
-        Label separator = new Label("------------------------------------------------", skin, "status");
-        separator.setColor(Color.DARK_GRAY);
-        table.add(separator).colspan(2).center().padTop(8).padBottom(8);
-        table.row();
+    private void updateAttributeDisplay(String attributeId) {
+        if (currentPlayer == null) return;
+
+        Label valueLabel = attributeValueLabels.get(attributeId);
+        if (valueLabel == null) return;
+
+        int currentValue = getCurrentAttributeValue(attributeId);
+        int pendingValue = pendingUpgrades.getOrDefault(attributeId, 0);
+        int totalValue = currentValue + pendingValue;
+
+        // Para atributos percentuais, mostrar como percentual
+        if (isPercentAttribute(attributeId)) {
+            float percentValue = totalValue / 100f;
+            valueLabel.setText(String.format("%.1f%%", percentValue * 100));
+        } else {
+            valueLabel.setText(String.valueOf(totalValue));
+        }
+
+        if (pendingValue > 0) {
+            valueLabel.setColor(Color.YELLOW);
+        } else {
+            valueLabel.setColor(Color.WHITE);
+        }
+
+        Label pendingLabel = attributePendingLabels.get(attributeId);
+        if (pendingLabel != null) {
+            if (isPercentAttribute(attributeId)) {
+                float pendingPercent = pendingValue / 100f;
+                pendingLabel.setText(String.format("(+%.1f%%)", pendingPercent * 100));
+            } else {
+                pendingLabel.setText("(+" + pendingValue + ")");
+            }
+            pendingLabel.setColor(pendingValue > 0 ? Color.GREEN : Color.DARK_GRAY);
+        }
     }
 
-    private void addThinSeparator(Table table) {
-        Label separator = new Label("-----------------------------------------", skin, "status");
-        separator.setColor(Color.DARK_GRAY);
-        separator.setFontScale(0.7f);
-        table.add(separator).colspan(2).center().padTop(3).padBottom(3);
-        table.row();
+    private boolean isPercentAttribute(String attributeId) {
+        switch (attributeId) {
+            case "critical_chance":
+            case "critical_damage":
+            case "dodge_chance":
+            case "attack_speed":
+            case "cooldown_reduction":
+            case "life_steal":
+            case "mana_steal":
+            case "tenacity":
+            case "fire_resistance":
+            case "ice_resistance":
+            case "lightning_resistance":
+            case "poison_resistance":
+            case "holy_resistance":
+            case "dark_resistance":
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    private int getPointCostForAttribute(String attributeId, int pendingValue) {
+        float increment = Player.getAttributeIncrement(attributeId);
+        int incrementValue = (increment < 1 && increment > 0) ? (int)(increment * 100) : (int)increment;
+
+        if (incrementValue == 0) return pendingValue;
+        return pendingValue / incrementValue;
+    }
+
+    private void savePendingUpgrades() {
+        if (pendingUpgrades.isEmpty()) {
+            showFeedback("No pending upgrades to save", Color.YELLOW);
+            return;
+        }
+
+        int totalPointsUsed = getTotalPendingPoints();
+        if (totalPointsUsed > currentPlayer.getAttributePoints()) {
+            showFeedback("Not enough attribute points!", Color.RED);
+            return;
+        }
+
+        logger.info("Saving {} attribute upgrades, using {} points", pendingUpgrades.size(), totalPointsUsed);
+
+        // APLICAR OS UPGRADES LOCALMENTE PRIMEIRO
+        for (Map.Entry<String, Integer> entry : pendingUpgrades.entrySet()) {
+            String attributeId = entry.getKey();
+            int value = entry.getValue();
+            applyUpgradeToPlayer(attributeId, value);
+        }
+
+        // REMOVER OS PONTOS GASTOS
+        currentPlayer.setAttributePoints(currentPlayer.getAttributePoints() - totalPointsUsed);
+
+        // ATUALIZAR A UI IMEDIATAMENTE
+        updateAllAttributesDisplay();
+        updatePointsDisplay();
+
+        // ATUALIZAR HEALTH BAR E STATUS
+        if (currentPlayer.getOnStatusChanged() != null) {
+            currentPlayer.getOnStatusChanged().run();
+        }
+
+        // ENVIAR PARA O SERVIDOR (SALVAR NO BANCO)
+        if (networkClient != null) {
+            AttributeUpgradePacket packet = new AttributeUpgradePacket();
+            // Converter pendingUpgrades para o formato esperado pelo servidor (valores brutos)
+            Map<String, Integer> upgradesToSend = new HashMap<>();
+            for (Map.Entry<String, Integer> entry : pendingUpgrades.entrySet()) {
+                String attributeId = entry.getKey();
+                int value = entry.getValue();
+                float increment = Player.getAttributeIncrement(attributeId);
+                // Converter de volta para o valor bruto
+                int rawValue;
+                if (increment < 1 && increment > 0) {
+                    rawValue = (int)(value / (increment * 100));
+                } else {
+                    rawValue = value / (int)increment;
+                }
+                upgradesToSend.put(attributeId, rawValue);
+            }
+            packet.upgrades = upgradesToSend;
+            networkClient.sendPacket(packet);
+        }
+
+        // LIMPAR PENDING UPGRADES
+        pendingUpgrades.clear();
+
+        // ATUALIZAR DISPLAY NOVAMENTE PARA REMOVER OS (+) AMARELOS
+        for (String attributeId : attributeValueLabels.keySet()) {
+            updateAttributeDisplay(attributeId);
+        }
+
+        showFeedback("Points saved successfully!", Color.GREEN);
+    }
+
+    private void applyUpgradeToPlayer(String attributeId, int value) {
+        if (currentPlayer == null) return;
+
+        float increment = Player.getAttributeIncrement(attributeId);
+        int rawValue = (increment < 1 && increment > 0) ? (int)(value / (increment * 100)) : value / (int)increment;
+
+        switch (attributeId) {
+            case "max_hp":
+                currentPlayer.setBonusMaxHp(currentPlayer.getBonusMaxHp() + rawValue);
+                currentPlayer.setCurrentHp(currentPlayer.getMaxHp());
+                break;
+            case "max_mana":
+                currentPlayer.setBonusMaxMana(currentPlayer.getBonusMaxMana() + rawValue);
+                currentPlayer.setCurrentMana(currentPlayer.getMaxMana());
+                break;
+            case "max_stamina":
+                currentPlayer.setBonusMaxStamina(currentPlayer.getBonusMaxStamina() + rawValue);
+                currentPlayer.setCurrentStamina(currentPlayer.getMaxStamina());
+                break;
+            case "hp_regen":
+                currentPlayer.setBonusHpRegen(currentPlayer.getBonusHpRegen() + rawValue);
+                break;
+            case "mana_regen":
+                currentPlayer.setBonusManaRegen(currentPlayer.getBonusManaRegen() + rawValue);
+                break;
+            case "stamina_regen":
+                currentPlayer.setBonusStaminaRegen(currentPlayer.getBonusStaminaRegen() + rawValue);
+                break;
+            case "physical_defense":
+                currentPlayer.setBonusPhysicalDefense(currentPlayer.getBonusPhysicalDefense() + rawValue);
+                break;
+            case "magic_defense":
+                currentPlayer.setBonusMagicDefense(currentPlayer.getBonusMagicDefense() + rawValue);
+                break;
+            case "physical_power":
+                currentPlayer.setBonusPhysicalPower(currentPlayer.getBonusPhysicalPower() + rawValue);
+                break;
+            case "ranged_power":
+                currentPlayer.setBonusRangedPower(currentPlayer.getBonusRangedPower() + rawValue);
+                break;
+            case "magic_power":
+                currentPlayer.setBonusMagicPower(currentPlayer.getBonusMagicPower() + rawValue);
+                break;
+            case "critical_chance":
+                currentPlayer.setBonusCriticalChance(currentPlayer.getBonusCriticalChance() + (rawValue * increment));
+                break;
+            case "critical_damage":
+                currentPlayer.setBonusCriticalDamage(currentPlayer.getBonusCriticalDamage() + (rawValue * increment));
+                break;
+            case "dodge_chance":
+                currentPlayer.setBonusDodgeChance(currentPlayer.getBonusDodgeChance() + (rawValue * increment));
+                break;
+            case "attack_speed":
+                currentPlayer.setBonusAttackSpeed(currentPlayer.getBonusAttackSpeed() + (rawValue * increment));
+                break;
+            case "movement_speed":
+                currentPlayer.setBonusMovementSpeed(currentPlayer.getBonusMovementSpeed() + rawValue);
+                break;
+            case "cooldown_reduction":
+                currentPlayer.setBonusCooldownReduction(currentPlayer.getBonusCooldownReduction() + (rawValue * increment));
+                break;
+            case "life_steal":
+                currentPlayer.setBonusLifeSteal(currentPlayer.getBonusLifeSteal() + (rawValue * increment));
+                break;
+            case "mana_steal":
+                currentPlayer.setBonusManaSteal(currentPlayer.getBonusManaSteal() + (rawValue * increment));
+                break;
+            case "tenacity":
+                currentPlayer.setBonusTenacity(currentPlayer.getBonusTenacity() + (rawValue * increment));
+                break;
+            case "luck":
+                currentPlayer.setBonusLuck(currentPlayer.getBonusLuck() + rawValue);
+                break;
+            case "fire_resistance":
+                currentPlayer.setBonusFireResistance(currentPlayer.getBonusFireResistance() + rawValue);
+                break;
+            case "ice_resistance":
+                currentPlayer.setBonusIceResistance(currentPlayer.getBonusIceResistance() + rawValue);
+                break;
+            case "lightning_resistance":
+                currentPlayer.setBonusLightningResistance(currentPlayer.getBonusLightningResistance() + rawValue);
+                break;
+            case "poison_resistance":
+                currentPlayer.setBonusPoisonResistance(currentPlayer.getBonusPoisonResistance() + rawValue);
+                break;
+            case "holy_resistance":
+                currentPlayer.setBonusHolyResistance(currentPlayer.getBonusHolyResistance() + rawValue);
+                break;
+            case "dark_resistance":
+                currentPlayer.setBonusDarkResistance(currentPlayer.getBonusDarkResistance() + rawValue);
+                break;
+        }
+
+        currentPlayer.validateCurrentStats();
+    }
+
+    private int getCurrentAttributeValue(String attributeId) {
+        if (currentPlayer == null) return 0;
+
+        switch (attributeId) {
+            case "max_hp": return currentPlayer.getBonusMaxHp();
+            case "max_mana": return currentPlayer.getBonusMaxMana();
+            case "max_stamina": return currentPlayer.getBonusMaxStamina();
+            case "hp_regen": return currentPlayer.getBonusHpRegen();
+            case "mana_regen": return currentPlayer.getBonusManaRegen();
+            case "stamina_regen": return currentPlayer.getBonusStaminaRegen();
+            case "physical_defense": return currentPlayer.getBonusPhysicalDefense();
+            case "magic_defense": return currentPlayer.getBonusMagicDefense();
+            case "physical_power": return currentPlayer.getBonusPhysicalPower();
+            case "ranged_power": return currentPlayer.getBonusRangedPower();
+            case "magic_power": return currentPlayer.getBonusMagicPower();
+            case "critical_chance": return (int)(currentPlayer.getBonusCriticalChance() * 100);
+            case "critical_damage": return (int)(currentPlayer.getBonusCriticalDamage() * 100);
+            case "dodge_chance": return (int)(currentPlayer.getBonusDodgeChance() * 100);
+            case "attack_speed": return (int)(currentPlayer.getBonusAttackSpeed() * 100);
+            case "movement_speed": return (int)currentPlayer.getBonusMovementSpeed();
+            case "cooldown_reduction": return (int)(currentPlayer.getBonusCooldownReduction() * 100);
+            case "life_steal": return (int)(currentPlayer.getBonusLifeSteal() * 100);
+            case "mana_steal": return (int)(currentPlayer.getBonusManaSteal() * 100);
+            case "tenacity": return (int)(currentPlayer.getBonusTenacity() * 100);
+            case "luck": return currentPlayer.getBonusLuck();
+            case "fire_resistance": return currentPlayer.getBonusFireResistance();
+            case "ice_resistance": return currentPlayer.getBonusIceResistance();
+            case "lightning_resistance": return currentPlayer.getBonusLightningResistance();
+            case "poison_resistance": return currentPlayer.getBonusPoisonResistance();
+            case "holy_resistance": return currentPlayer.getBonusHolyResistance();
+            case "dark_resistance": return currentPlayer.getBonusDarkResistance();
+            default: return 0;
+        }
+    }
+
+    private int getTotalPendingPoints() {
+        int total = 0;
+        for (Map.Entry<String, Integer> entry : pendingUpgrades.entrySet()) {
+            total += getPointCostForAttribute(entry.getKey(), entry.getValue());
+        }
+        return total;
+    }
+
+    private void updatePointsDisplay() {
+        if (currentPlayer == null) return;
+
+        int availablePoints = currentPlayer.getAttributePoints() - getTotalPendingPoints();
+        attributePointsAvailableLabel.setText("Available Points: " + availablePoints);
+
+        if (availablePoints > 0) {
+            attributePointsAvailableLabel.setColor(Color.GREEN);
+        } else if (availablePoints == 0) {
+            attributePointsAvailableLabel.setColor(Color.YELLOW);
+        } else {
+            attributePointsAvailableLabel.setColor(Color.RED);
+        }
+
+        boolean hasPoints = availablePoints > 0;
+        for (TextButton button : attributeAddButtons.values()) {
+            button.setDisabled(!hasPoints);
+        }
+    }
+
+    private void resetPendingUpgrades() {
+        pendingUpgrades.clear();
+
+        for (String attributeId : attributeValueLabels.keySet()) {
+            updateAttributeDisplay(attributeId);
+        }
+
+        updatePointsDisplay();
+        showFeedback("Pending upgrades reset", Color.YELLOW);
+    }
+
+    // Este metodo sera chamado quando o servidor confirmar com PlayerStatePacket
+    public void onUpgradesConfirmed() {
+        // Limpar pending upgrades
+        pendingUpgrades.clear();
+
+        for (String attributeId : attributeValueLabels.keySet()) {
+            updateAttributeDisplay(attributeId);
+        }
+
+        updatePointsDisplay();
+        showFeedback("Points applied successfully!", Color.GREEN);
+    }
+
+    private void updateAllAttributesDisplay() {
+        for (String attributeId : attributeValueLabels.keySet()) {
+            updateAttributeDisplay(attributeId);
+        }
+    }
+
+    private void showFeedback(String message, Color color) {
+        Label feedback = new Label(message, skin, "default");
+        feedback.setColor(color);
+        feedback.setFontScale(0.9f);
+
+        Table feedbackTable = new Table();
+        feedbackTable.add(feedback).pad(5);
+
+        feedbackTable.setPosition(window.getX() + window.getWidth() / 2 - 100,
+                window.getY() + window.getHeight() - 30);
+
+        stage.addActor(feedbackTable);
+
+        com.badlogic.gdx.utils.Timer.schedule(new com.badlogic.gdx.utils.Timer.Task() {
+            @Override
+            public void run() {
+                feedbackTable.remove();
+            }
+        }, 2);
     }
 
     public void update(Player player) {
         this.currentPlayer = player;
         if (player == null) return;
 
-        // Progression
-        levelValueLabel.setText(String.valueOf(player.getLevel()));
+        if (levelValueLabel != null) {
+            levelValueLabel.setText(String.valueOf(player.getLevel()));
+        }
+
         int currentExp = player.getExperience();
         int nextLevelExp = player.getXpForNextLevel();
-        experienceValueLabel.setText(currentExp + " / " + nextLevelExp);
+        if (experienceValueLabel != null) {
+            experienceValueLabel.setText(currentExp + " / " + nextLevelExp);
+        }
 
         float progress = player.getXpProgress();
-        experienceProgressLabel.setText(Math.round(progress * 100) + "%");
-        expProgressBar.setValue(progress);
-
-        nextLevelXpLabel.setText(nextLevelExp + " XP required");
-
-        // Combat Status
-        hpValueLabel.setText(player.getCurrentHp() + " / " + player.getMaxHp());
-        manaValueLabel.setText(player.getCurrentMana() + " / " + player.getMaxMana());
-        staminaValueLabel.setText(player.getCurrentStamina() + " / " + player.getMaxStamina());
-
-        // Regen values
-        hpRegenLabel.setText(player.getHpRegenPerSecond() + " hp/s");
-        manaRegenLabel.setText(player.getManaRegenPerSecond() + " mp/s");
-        staminaRegenLabel.setText(player.getStaminaRegenPerSecond() + " sp/s");
-
-        // Color regen labels based on values
-        hpRegenLabel.setColor(player.getHpRegenPerSecond() > 0 ? Color.GREEN : Color.RED);
-        manaRegenLabel.setColor(player.getManaRegenPerSecond() > 0 ? Color.CYAN : Color.RED);
-        staminaRegenLabel.setColor(player.getStaminaRegenPerSecond() > 0 ? Color.LIME : Color.RED);
-
-        // Movement
-        baseSpeedLabel.setText((int)Player.getBaseSpeed() + " px/s");
-        sprintMultiplierLabel.setText("x" + Player.getSprintMultiplier());
-        dashDistanceLabel.setText(Player.getDashDistance() + " px");
-        dashCooldownLabel.setText((Player.getDashCooldownMs() / 1000) + "s");
-        dashCostLabel.setText(Player.getDashStaminaCost() + " sp");
-
-        baseSpeedLabel.setColor(Color.CYAN);
-        sprintMultiplierLabel.setColor(Color.YELLOW);
-        dashDistanceLabel.setColor(Color.WHITE);
-        dashCooldownLabel.setColor(Color.WHITE);
-        dashCostLabel.setColor(Color.WHITE);
-
-        // Attributes
-        strengthValueLabel.setText(String.valueOf(player.getStrength()));
-        agilityValueLabel.setText(String.valueOf(player.getAgility()));
-        wisdomValueLabel.setText(String.valueOf(player.getWisdom()));
-
-        strengthValueLabel.setColor(Color.ORANGE);
-        agilityValueLabel.setColor(Color.GREEN);
-        wisdomValueLabel.setColor(Color.PURPLE);
-
-        // Points
-        attributePointsValueLabel.setText(String.valueOf(player.getAttributePoints()));
-        skillPointsValueLabel.setText(String.valueOf(player.getSkillPoints()));
-
-        if (player.getAttributePoints() > 0) {
-            attributePointsValueLabel.setColor(Color.GREEN);
-        } else {
-            attributePointsValueLabel.setColor(Color.YELLOW);
+        if (experienceProgressLabel != null) {
+            experienceProgressLabel.setText(Math.round(progress * 100) + "%");
         }
 
-        if (player.getSkillPoints() > 0) {
-            skillPointsValueLabel.setColor(Color.GREEN);
-        } else {
-            skillPointsValueLabel.setColor(Color.PINK);
-        }
+        updateAllAttributesDisplay();
+        updatePointsDisplay();
 
-        // Color HP based on percentage
-        float hpPercent = player.getHpPercentage();
-        if (hpPercent > 0.6f) {
-            hpValueLabel.setColor(Color.GREEN);
-        } else if (hpPercent > 0.3f) {
-            hpValueLabel.setColor(Color.ORANGE);
-        } else {
-            hpValueLabel.setColor(Color.RED);
-        }
-
-        // Color Mana based on percentage
-        float manaPercent = player.getManaPercentage();
-        if (manaPercent > 0.5f) {
-            manaValueLabel.setColor(Color.CYAN);
-        } else if (manaPercent > 0.2f) {
-            manaValueLabel.setColor(Color.ORANGE);
-        } else {
-            manaValueLabel.setColor(Color.RED);
-        }
-
-        // Color Stamina based on percentage
-        float staminaPercent = player.getStaminaPercentage();
-        if (staminaPercent > 0.5f) {
-            staminaValueLabel.setColor(Color.LIME);
-        } else if (staminaPercent > 0.2f) {
-            staminaValueLabel.setColor(Color.ORANGE);
-        } else {
-            staminaValueLabel.setColor(Color.RED);
-        }
+        logger.info("Attributes window updated for {} - Available points: {}",
+                player.getUsername(), player.getAttributePoints());
     }
 
     public void show() {
@@ -422,6 +729,7 @@ public class AttributesWindow {
     public void hide() {
         visible = false;
         window.setVisible(false);
+        resetPendingUpgrades();
     }
 
     public void toggle() {

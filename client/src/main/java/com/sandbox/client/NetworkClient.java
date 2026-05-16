@@ -17,6 +17,7 @@ import com.common.sandbox.network.packets.combat.DamagePacket;
 import com.common.sandbox.network.packets.combat.ProjectileStatePacket;
 import com.common.sandbox.network.packets.connection.HandshakePacket;
 import com.common.sandbox.network.packets.connection.PingPacket;
+import com.common.sandbox.network.packets.player.AttributeUpgradePacket;
 import com.common.sandbox.network.packets.player.PlayerLeftPacket;
 import com.common.sandbox.network.packets.player.PlayerStatePacket;
 import com.common.sandbox.network.packets.social.FriendListResponse;
@@ -40,6 +41,7 @@ import io.netty.handler.codec.LengthFieldPrepender;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.Map;
 import java.util.function.Consumer;
 
 public class NetworkClient {
@@ -75,7 +77,7 @@ public class NetworkClient {
     private Consumer<DamagePacket> damagePacketCallback;
     private Consumer<ProjectileStatePacket> projectileStateCallback;
     private Consumer<AnimationSyncPacket> animationSyncCallback;
-
+    private Consumer<AttributeUpgradePacket> attributeUpgradeCallback;
 
 
     public NetworkClient(String host, int port) {
@@ -202,6 +204,12 @@ public class NetworkClient {
         sendPacket(packet);
     }
 
+    public void sendAttributeUpgrade(Map<String, Integer> upgrades) {
+        AttributeUpgradePacket packet = new AttributeUpgradePacket();
+        packet.upgrades = upgrades;
+        sendPacket(packet);
+    }
+
     public void sendChat(String playerId, String playerName, String message) {
         ChatMessage chat = new ChatMessage(playerId, playerName, message);
         sendPacket(chat);
@@ -281,6 +289,9 @@ public class NetworkClient {
     public void setItemDefinitionSyncCallback(Consumer<ItemDefinitionSyncPacket> callback) {
         this.itemDefinitionSyncCallback = callback;
     }
+    public void setAttributeUpgradeCallback(Consumer<AttributeUpgradePacket> callback) {
+        this.attributeUpgradeCallback = callback;
+    }
 
     private class ClientHandler extends SimpleChannelInboundHandler<Object> {
         @Override
@@ -333,6 +344,8 @@ public class NetworkClient {
                     }
                 } else if (msg instanceof InventoryUpdatePacket && inventoryCallback != null) {
                     inventoryCallback.accept((InventoryUpdatePacket) msg);
+                } else if (msg instanceof AttributeUpgradePacket && attributeUpgradeCallback != null) {
+                    attributeUpgradeCallback.accept((AttributeUpgradePacket) msg);
                 } else if (msg instanceof PickupResultPacket && pickupResultCallback != null) {
                     pickupResultCallback.accept((PickupResultPacket) msg);
                 } else if (msg instanceof DropItemPacket) {

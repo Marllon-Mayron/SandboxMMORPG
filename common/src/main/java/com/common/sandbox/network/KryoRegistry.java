@@ -29,6 +29,7 @@ import com.common.sandbox.network.packets.combat.ProjectileStatePacket;
 import com.common.sandbox.network.packets.connection.HandshakePacket;
 import com.common.sandbox.network.packets.connection.PingPacket;
 import com.common.sandbox.network.packets.inventory.*;
+import com.common.sandbox.network.packets.player.AttributeUpgradePacket;
 import com.common.sandbox.network.packets.player.PlayerLeftPacket;
 import com.common.sandbox.network.packets.player.PlayerStatePacket;
 import com.common.sandbox.network.packets.social.FriendListResponse;
@@ -101,6 +102,8 @@ public class KryoRegistry {
 
     private static final int ID_ANIMATION_SYNC = 200;
     private static final int ID_ITEM_DEFINITION_SYNC = 210;
+
+    private static final int ID_ATTRIBUTE_UPGRADE_PACKET = 220;
     private static boolean registered = false;
 
     public static synchronized void registerClasses(Kryo kryo) {
@@ -176,6 +179,8 @@ public class KryoRegistry {
         kryo.register(ProjectileAnimation.class, 201);
 
         kryo.register(ItemDefinitionSyncPacket.class, ID_ITEM_DEFINITION_SYNC);
+
+        kryo.register(AttributeUpgradePacket.class, ID_ATTRIBUTE_UPGRADE_PACKET);
 
         // Arrays multidimensionais
         kryo.register(int[][].class, 90);

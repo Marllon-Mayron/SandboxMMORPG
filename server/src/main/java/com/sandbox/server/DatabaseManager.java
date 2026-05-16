@@ -178,7 +178,7 @@ public class DatabaseManager {
     // ==================== PLAYER MANAGEMENT ====================
 
     public boolean registerPlayer(String username, String email, String password) {
-        String sql = "INSERT INTO players (id, username, email, password_hash, inventory, base_hp, base_mana, base_stamina) VALUES (?, ?, ?, ?, ?::jsonb, ?, ?, ?)";
+        String sql = "INSERT INTO players (id, username, email, password_hash, inventory) VALUES (?, ?, ?, ?, ?::jsonb)";
 
         try (Connection conn = getConnection();
              PreparedStatement pstmt = conn.prepareStatement(sql)) {
@@ -192,12 +192,14 @@ public class DatabaseManager {
             pstmt.setString(3, email);
             pstmt.setString(4, hashedPassword);
             pstmt.setString(5, emptyInventory);
-            pstmt.setInt(6, 100); // base_hp padrão
-            pstmt.setInt(7, 50);  // base_mana padrão
-            pstmt.setInt(8, 100); // base_stamina padrão
 
             int affectedRows = pstmt.executeUpdate();
-            return affectedRows > 0;
+
+            if (affectedRows > 0) {
+                logger.info("Player registered successfully: {}", username);
+                return true;
+            }
+            return false;
 
         } catch (SQLException e) {
             if (e.getSQLState().equals("23505")) {
@@ -211,11 +213,19 @@ public class DatabaseManager {
 
     public Player authenticatePlayer(String username, String password) {
         String sql = "SELECT id, username, email, password_hash, x, y, direction, " +
-                "level, experience, gold, current_hp, current_mana, current_stamina, " +
-                "base_hp, base_mana, base_stamina, " +
-                "strength, agility, wisdom, " +
-                "attribute_points, skill_points, " +
-                "hp_regen_per_second, mana_regen_per_second, stamina_regen_per_second, " +
+                "level, experience, gold, attribute_points, skill_points, " +
+                "current_hp, current_mana, current_stamina, " +
+                // Atributos bonus
+                "bonus_max_hp, bonus_max_mana, bonus_max_stamina, " +
+                "bonus_hp_regen, bonus_mana_regen, bonus_stamina_regen, " +
+                "bonus_physical_defense, bonus_magic_defense, " +
+                "bonus_physical_power, bonus_ranged_power, bonus_magic_power, " +
+                "bonus_critical_chance, bonus_critical_damage, bonus_dodge_chance, " +
+                "bonus_attack_speed, bonus_movement_speed, " +
+                "bonus_cooldown_reduction, bonus_life_steal, bonus_mana_steal, bonus_tenacity, " +
+                "bonus_luck, " +
+                "bonus_fire_resistance, bonus_ice_resistance, bonus_lightning_resistance, " +
+                "bonus_poison_resistance, bonus_holy_resistance, bonus_dark_resistance, " +
                 "inventory " +
                 "FROM players WHERE username = ?";
 
@@ -230,7 +240,7 @@ public class DatabaseManager {
                 if (BCrypt.checkpw(password, hashedPassword)) {
                     Player player = new Player();
 
-                    //  IDs e strings
+                    // Dados basicos
                     player.setId(rs.getObject("id").toString());
                     player.setUsername(rs.getString("username"));
                     player.setEmail(rs.getString("email"));
@@ -238,50 +248,65 @@ public class DatabaseManager {
                     player.setY(rs.getFloat("y"));
                     player.setDirection(rs.getString("direction") != null ? rs.getString("direction") : "DOWN");
 
-                    // VALORES BASE (persistidos)
-                    player.setBaseHp(rs.getInt("base_hp"));
-                    player.setBaseMana(rs.getInt("base_mana"));
-                    player.setBaseStamina(rs.getInt("base_stamina"));
-
-                    // ATRIBUTOS
+                    // Progressao
                     player.setLevel(rs.getInt("level"));
                     player.setExperience(rs.getInt("experience"));
                     player.setGold(rs.getInt("gold"));
-
-                    player.setStrength(rs.getInt("strength"));
-                    player.setAgility(rs.getInt("agility"));
-                    player.setWisdom(rs.getInt("wisdom"));
-
                     player.setAttributePoints(rs.getInt("attribute_points"));
                     player.setSkillPoints(rs.getInt("skill_points"));
 
-                    // REGENERAÇÃO
-                    player.setHpRegenPerSecond(rs.getInt("hp_regen_per_second"));
-                    player.setManaRegenPerSecond(rs.getInt("mana_regen_per_second"));
-                    player.setStaminaRegenPerSecond(rs.getInt("stamina_regen_per_second"));
-
-                    // STATUS ATUAIS (persistidos)
+                    // Status atuais
                     player.setCurrentHp(rs.getInt("current_hp"));
                     player.setCurrentMana(rs.getInt("current_mana"));
                     player.setCurrentStamina(rs.getInt("current_stamina"));
 
-                    // LOG PARA DEBUG
-                    logger.info("📊 DATABASE LOADED - {}: BaseHP={}, CurrentHP={}, Strength={}, Level={}",
-                            username,
-                            player.getBaseHp(), player.getCurrentHp(),
-                            player.getStrength(), player.getLevel());
-                    logger.info("   Calculated MaxHP: {}/{}", player.getMaxHp(), player.getMaxHp());
+                    // Carregar todos os bonus
+                    player.setBonusMaxHp(rs.getInt("bonus_max_hp"));
+                    player.setBonusMaxMana(rs.getInt("bonus_max_mana"));
+                    player.setBonusMaxStamina(rs.getInt("bonus_max_stamina"));
 
-                    // Carregar inventário
+                    player.setBonusHpRegen(rs.getInt("bonus_hp_regen"));
+                    player.setBonusManaRegen(rs.getInt("bonus_mana_regen"));
+                    player.setBonusStaminaRegen(rs.getInt("bonus_stamina_regen"));
+
+                    player.setBonusPhysicalDefense(rs.getInt("bonus_physical_defense"));
+                    player.setBonusMagicDefense(rs.getInt("bonus_magic_defense"));
+
+                    player.setBonusPhysicalPower(rs.getInt("bonus_physical_power"));
+                    player.setBonusRangedPower(rs.getInt("bonus_ranged_power"));
+                    player.setBonusMagicPower(rs.getInt("bonus_magic_power"));
+
+                    player.setBonusCriticalChance(rs.getFloat("bonus_critical_chance"));
+                    player.setBonusCriticalDamage(rs.getFloat("bonus_critical_damage"));
+                    player.setBonusDodgeChance(rs.getFloat("bonus_dodge_chance"));
+
+                    player.setBonusAttackSpeed(rs.getFloat("bonus_attack_speed"));
+                    player.setBonusMovementSpeed(rs.getFloat("bonus_movement_speed"));
+
+                    player.setBonusCooldownReduction(rs.getFloat("bonus_cooldown_reduction"));
+                    player.setBonusLifeSteal(rs.getFloat("bonus_life_steal"));
+                    player.setBonusManaSteal(rs.getFloat("bonus_mana_steal"));
+                    player.setBonusTenacity(rs.getFloat("bonus_tenacity"));
+
+                    player.setBonusLuck(rs.getInt("bonus_luck"));
+
+                    player.setBonusFireResistance(rs.getInt("bonus_fire_resistance"));
+                    player.setBonusIceResistance(rs.getInt("bonus_ice_resistance"));
+                    player.setBonusLightningResistance(rs.getInt("bonus_lightning_resistance"));
+                    player.setBonusPoisonResistance(rs.getInt("bonus_poison_resistance"));
+                    player.setBonusHolyResistance(rs.getInt("bonus_holy_resistance"));
+                    player.setBonusDarkResistance(rs.getInt("bonus_dark_resistance"));
+
+                    // Carregar inventario
                     String inventoryJson = rs.getString("inventory");
                     if (inventoryJson != null && !inventoryJson.isEmpty()) {
                         try {
                             Inventory inventory = objectMapper.readValue(inventoryJson, Inventory.class);
                             player.setInventory(inventory);
-                            logger.info("Loaded inventory for {}: {} items equipped, {} slots",
+                            logger.info("Loaded inventory for {}: {} slots, {} equipped",
                                     username,
-                                    inventory.getEquipped().size(),
-                                    inventory.getSlots().size());
+                                    inventory.getSlots().size(),
+                                    inventory.getEquipped().size());
                         } catch (Exception e) {
                             logger.error("Failed to parse inventory JSON for player {}", username, e);
                             player.setInventory(new Inventory());
@@ -293,17 +318,21 @@ public class DatabaseManager {
                     player.setOnline(true);
                     updateLastLogin(player.getId());
 
-                    logger.info("✅ Jogador {} carregado - Level {} | HP {}/{} (Base={}) | Stamina {}/{}",
+                    logger.info("Player {} loaded - Level {} | HP {}/{} | AP: {} | Power P:{}/R:{}/M:{}",
                             username, player.getLevel(),
-                            player.getCurrentHp(), player.getMaxHp(), player.getBaseHp(),
-                            player.getCurrentStamina(), player.getMaxStamina());
+                            player.getCurrentHp(), player.getMaxHp(),
+                            player.getAttributePoints(),
+                            player.getPhysicalPower(), player.getRangedPower(), player.getMagicPower());
+
                     return player;
+                } else {
+                    logger.warn("Invalid password for player: {}", username);
                 }
             }
             return null;
 
         } catch (SQLException e) {
-            logger.error("❌ Erro ao autenticar jogador", e);
+            logger.error("Error authenticating player", e);
             return null;
         }
     }
@@ -318,84 +347,131 @@ public class DatabaseManager {
         }
 
         String sql = """
-            UPDATE players SET 
-                x = ?, y = ?, direction = ?,
-                level = ?, experience = ?, gold = ?,
-                current_hp = ?, current_mana = ?, current_stamina = ?,
-                base_hp = ?, base_mana = ?, base_stamina = ?,
-                strength = ?, agility = ?, wisdom = ?,
-                attribute_points = ?, skill_points = ?,
-                hp_regen_per_second = ?, mana_regen_per_second = ?, stamina_regen_per_second = ?,
-                inventory = ?::jsonb,
-                last_login = CURRENT_TIMESTAMP,
-                is_online = ?
-            WHERE id = ?::uuid
-            """;
+        UPDATE players SET 
+            x = ?, y = ?, direction = ?,
+            level = ?, experience = ?, gold = ?,
+            attribute_points = ?, skill_points = ?,
+            current_hp = ?, current_mana = ?, current_stamina = ?,
+            is_online = ?,
+            inventory = ?::jsonb,
+            
+            bonus_max_hp = ?,
+            bonus_max_mana = ?,
+            bonus_max_stamina = ?,
+            bonus_hp_regen = ?,
+            bonus_mana_regen = ?,
+            bonus_stamina_regen = ?,
+            bonus_physical_defense = ?,
+            bonus_magic_defense = ?,
+            bonus_physical_power = ?,
+            bonus_ranged_power = ?,
+            bonus_magic_power = ?,
+            bonus_critical_chance = ?,
+            bonus_critical_damage = ?,
+            bonus_dodge_chance = ?,
+            bonus_attack_speed = ?,
+            bonus_movement_speed = ?,
+            bonus_cooldown_reduction = ?,
+            bonus_life_steal = ?,
+            bonus_mana_steal = ?,
+            bonus_tenacity = ?,
+            bonus_luck = ?,
+            bonus_fire_resistance = ?,
+            bonus_ice_resistance = ?,
+            bonus_lightning_resistance = ?,
+            bonus_poison_resistance = ?,
+            bonus_holy_resistance = ?,
+            bonus_dark_resistance = ?
+        WHERE id = ?::uuid
+        """;
 
         try (Connection conn = getConnection();
              PreparedStatement pstmt = conn.prepareStatement(sql)) {
 
             String inventoryJson = objectMapper.writeValueAsString(player.getInventory());
 
-            // Posição
-            pstmt.setFloat(1, player.getX());
-            pstmt.setFloat(2, player.getY());
-            pstmt.setString(3, player.getDirection());
+            int index = 1;
 
-            // Level, Experiência, Gold
-            pstmt.setInt(4, player.getLevel());
-            pstmt.setInt(5, player.getExperience());
-            pstmt.setInt(6, player.getGold());
+            // Posicao
+            pstmt.setFloat(index++, player.getX());
+            pstmt.setFloat(index++, player.getY());
+            pstmt.setString(index++, player.getDirection());
+
+            // Progressao
+            pstmt.setInt(index++, player.getLevel());
+            pstmt.setInt(index++, player.getExperience());
+            pstmt.setInt(index++, player.getGold());
+            pstmt.setInt(index++, player.getAttributePoints());
+            pstmt.setInt(index++, player.getSkillPoints());
 
             // Status atuais
-            pstmt.setInt(7, player.getCurrentHp());
-            pstmt.setInt(8, player.getCurrentMana());
-            pstmt.setInt(9, player.getCurrentStamina());
+            pstmt.setInt(index++, player.getCurrentHp());
+            pstmt.setInt(index++, player.getCurrentMana());
+            pstmt.setInt(index++, player.getCurrentStamina());
 
-            // VALORES BASE (persistidos)
-            pstmt.setInt(10, player.getBaseHp());
-            pstmt.setInt(11, player.getBaseMana());
-            pstmt.setInt(12, player.getBaseStamina());
+            // Online status
+            pstmt.setBoolean(index++, player.isOnline());
 
-            // Atributos
-            pstmt.setInt(13, player.getStrength());
-            pstmt.setInt(14, player.getAgility());
-            pstmt.setInt(15, player.getWisdom());
+            // Inventario
+            pstmt.setString(index++, inventoryJson);
 
-            // Pontos
-            pstmt.setInt(16, player.getAttributePoints());
-            pstmt.setInt(17, player.getSkillPoints());
+            // Bonus atributos
+            pstmt.setInt(index++, player.getBonusMaxHp());
+            pstmt.setInt(index++, player.getBonusMaxMana());
+            pstmt.setInt(index++, player.getBonusMaxStamina());
 
-            // Regeneração
-            pstmt.setInt(18, player.getHpRegenPerSecond());
-            pstmt.setInt(19, player.getManaRegenPerSecond());
-            pstmt.setInt(20, player.getStaminaRegenPerSecond());
+            pstmt.setInt(index++, player.getBonusHpRegen());
+            pstmt.setInt(index++, player.getBonusManaRegen());
+            pstmt.setInt(index++, player.getBonusStaminaRegen());
 
-            // Inventário e status online
-            pstmt.setString(21, inventoryJson);
-            pstmt.setBoolean(22, player.isOnline());
+            pstmt.setInt(index++, player.getBonusPhysicalDefense());
+            pstmt.setInt(index++, player.getBonusMagicDefense());
 
-            // WHERE
-            pstmt.setObject(23, UUID.fromString(player.getId()));
+            pstmt.setInt(index++, player.getBonusPhysicalPower());
+            pstmt.setInt(index++, player.getBonusRangedPower());
+            pstmt.setInt(index++, player.getBonusMagicPower());
+
+            pstmt.setFloat(index++, player.getBonusCriticalChance());
+            pstmt.setFloat(index++, player.getBonusCriticalDamage());
+            pstmt.setFloat(index++, player.getBonusDodgeChance());
+
+            pstmt.setFloat(index++, player.getBonusAttackSpeed());
+            pstmt.setFloat(index++, player.getBonusMovementSpeed());
+
+            pstmt.setFloat(index++, player.getBonusCooldownReduction());
+            pstmt.setFloat(index++, player.getBonusLifeSteal());
+            pstmt.setFloat(index++, player.getBonusManaSteal());
+            pstmt.setFloat(index++, player.getBonusTenacity());
+
+            pstmt.setInt(index++, player.getBonusLuck());
+
+            pstmt.setInt(index++, player.getBonusFireResistance());
+            pstmt.setInt(index++, player.getBonusIceResistance());
+            pstmt.setInt(index++, player.getBonusLightningResistance());
+            pstmt.setInt(index++, player.getBonusPoisonResistance());
+            pstmt.setInt(index++, player.getBonusHolyResistance());
+            pstmt.setInt(index++, player.getBonusDarkResistance());
+
+            // WHERE clause
+            pstmt.setObject(index++, UUID.fromString(player.getId()));
 
             int updated = pstmt.executeUpdate();
 
-            logger.info("💾 SAVED {} - BaseHP={}, CurrentHP={}/{}, Strength={}, Level={}, Pos=({},{})",
+            logger.debug("Saved player {} - Level {} | HP {}/{} | AP: {} | Pos: ({},{})",
                     player.getUsername(),
-                    player.getBaseHp(),
-                    player.getCurrentHp(), player.getMaxHp(),
-                    player.getStrength(),
                     player.getLevel(),
+                    player.getCurrentHp(), player.getMaxHp(),
+                    player.getAttributePoints(),
                     player.getX(), player.getY());
 
             if (updated == 0) {
-                logger.warn("⚠️ No rows updated for player {}", player.getUsername());
+                logger.warn("No rows updated for player {}", player.getUsername());
             }
 
         } catch (SQLException e) {
-            logger.error("❌ Erro ao salvar jogador {}", player.getUsername(), e);
+            logger.error("Error saving player {}", player.getUsername(), e);
         } catch (Exception e) {
-            logger.error("❌ Erro ao serializar inventário para {}", player.getUsername(), e);
+            logger.error("Error serializing inventory for {}", player.getUsername(), e);
         }
     }
 

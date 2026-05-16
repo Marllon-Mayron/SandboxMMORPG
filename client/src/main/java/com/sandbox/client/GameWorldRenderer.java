@@ -176,8 +176,6 @@ public class GameWorldRenderer implements Screen {
         if (currentPlayer != null) {
             gameCamera.setTarget(currentPlayer.getX(), currentPlayer.getY());
             gameCamera.resetPosition();
-            // Inicializar stats de combate do jogador
-            currentPlayer.updateCombatStatsFromEquipment();
         }
     }
 
@@ -265,7 +263,7 @@ public class GameWorldRenderer implements Screen {
     private void setupCallbacks() {
         logger.info("Setting up callbacks for GameWorldRenderer");
 
-        game.getNetworkClient().setPlayerStateCallback(this::onPlayerState);  // NOVO
+        game.getNetworkClient().setPlayerStateCallback(this::onPlayerState);
         game.getNetworkClient().setPlayerLeftCallback(this::onPlayerLeft);
         game.getNetworkClient().setChatCallback(this::onChatMessage);
         game.getNetworkClient().setChunkCallback(this::onChunkReceived);
@@ -403,87 +401,44 @@ public class GameWorldRenderer implements Screen {
             boolean isSelf = (currentPlayer != null && packet.playerId.equals(currentPlayer.getId()));
 
             if (isSelf) {
-                // Atualizar proprio jogador
+                // ATUALIZAR APENAS POSICAO E DIRECAO
                 currentPlayer.setX(packet.x);
                 currentPlayer.setY(packet.y);
                 currentPlayer.setDirection(packet.direction);
 
-                if (packet.fullSync) {
-                    currentPlayer.setBaseHp(packet.baseHp);
-                    currentPlayer.setBaseMana(packet.baseMana);
-                    currentPlayer.setBaseStamina(packet.baseStamina);
-                    currentPlayer.setCurrentHp(packet.currentHp);
-                    currentPlayer.setCurrentMana(packet.currentMana);
-                    currentPlayer.setCurrentStamina(packet.currentStamina);
-                    currentPlayer.setStrength(packet.strength);
-                    currentPlayer.setAgility(packet.agility);
-                    currentPlayer.setWisdom(packet.wisdom);
-                    currentPlayer.setLevel(packet.level);
-                    currentPlayer.setGold(packet.gold);
-                    currentPlayer.setExperience(packet.experience);
-
-                    if (packet.currentAttackCooldown > 0) {
-                        currentPlayer.setCurrentAttackCooldown(packet.currentAttackCooldown);
-                    }
-                    if (playerUI != null) {
-                        playerUI.setHealth(currentPlayer.getCurrentHp(), currentPlayer.getMaxHp());
-                        playerUI.setMana(currentPlayer.getCurrentMana(), currentPlayer.getMaxMana());
-                        playerUI.setStamina(currentPlayer.getCurrentStamina(), currentPlayer.getMaxStamina());
-                        playerUI.setGold(currentPlayer.getGold());
-                    }
-
-                    logger.info("Updated SELF: HP={}/{}", currentPlayer.getCurrentHp(), currentPlayer.getMaxHp());
-                }
+                // NAO ATUALIZAR OUTROS CAMPOS PARA NAO SOBRESCREVER OS UPGRADES LOCAIS
+                // O servidor pode ter valores desatualizados
             } else {
-                // Outro jogador - verificar se ja existe
+                // Outro jogador
                 Player existing = otherPlayers.get(packet.playerId);
 
                 if (existing != null) {
-                    // Atualizar jogador existente
                     existing.setX(packet.x);
                     existing.setY(packet.y);
                     existing.setDirection(packet.direction);
-                    existing.setBaseHp(packet.baseHp);
-                    existing.setBaseMana(packet.baseMana);
-                    existing.setBaseStamina(packet.baseStamina);
                     existing.setCurrentHp(packet.currentHp);
                     existing.setCurrentMana(packet.currentMana);
                     existing.setCurrentStamina(packet.currentStamina);
-                    existing.setStrength(packet.strength);
-                    existing.setAgility(packet.agility);
-                    existing.setWisdom(packet.wisdom);
                     existing.setLevel(packet.level);
                     existing.setGold(packet.gold);
                     existing.setExperience(packet.experience);
-
-                    logger.debug("Updated existing player {}: HP={}/{}",
-                            existing.getUsername(), existing.getCurrentHp(), existing.getMaxHp());
+                    existing.setAttributePoints(packet.attributePoints);
                 } else {
-                    // Criar novo jogador
                     Player newPlayer = new Player();
                     newPlayer.setId(packet.playerId);
                     newPlayer.setUsername(packet.username);
                     newPlayer.setX(packet.x);
                     newPlayer.setY(packet.y);
                     newPlayer.setDirection(packet.direction);
-                    newPlayer.setBaseHp(packet.baseHp);
-                    newPlayer.setBaseMana(packet.baseMana);
-                    newPlayer.setBaseStamina(packet.baseStamina);
                     newPlayer.setCurrentHp(packet.currentHp);
                     newPlayer.setCurrentMana(packet.currentMana);
                     newPlayer.setCurrentStamina(packet.currentStamina);
-                    newPlayer.setStrength(packet.strength);
-                    newPlayer.setAgility(packet.agility);
-                    newPlayer.setWisdom(packet.wisdom);
                     newPlayer.setLevel(packet.level);
                     newPlayer.setGold(packet.gold);
                     newPlayer.setExperience(packet.experience);
+                    newPlayer.setAttributePoints(packet.attributePoints);
 
                     otherPlayers.put(packet.playerId, newPlayer);
-                    logger.info("Added new player {}: HP={}/{}",
-                            newPlayer.getUsername(), newPlayer.getCurrentHp(), newPlayer.getMaxHp());
-
-                    // Adicionar mensagem no chat
                     if (playerUI != null) {
                         playerUI.addChatMessage("*** " + packet.username + " entrou no mundo! ***");
                     }
@@ -612,7 +567,6 @@ public class GameWorldRenderer implements Screen {
         Gdx.app.postRunnable(() -> {
             if (currentPlayer != null && packet.inventory != null) {
                 currentPlayer.setInventory(packet.inventory);
-                currentPlayer.updateCombatStatsFromEquipment();
 
                 if (playerUI != null) {
                     playerUI.updateInventory(packet.inventory, currentPlayer.getGold());
@@ -1112,7 +1066,7 @@ public class GameWorldRenderer implements Screen {
 
         if (dir.x != 0 || dir.y != 0) {
             moved = true;
-            float baseSpeed = Player.getBaseSpeed();
+            float baseSpeed = currentPlayer.getMovementSpeed();
             float terrainSpeed = getCurrentTerrainSpeed();
 
             if (sprinting && currentPlayer.getCurrentStamina() > 0) {
@@ -1932,8 +1886,6 @@ public class GameWorldRenderer implements Screen {
             gameCamera.setTarget(currentPlayer.getX(), currentPlayer.getY());
             gameCamera.resetPosition();
         }
-
-        currentPlayer.updateCombatStatsFromEquipment();
     }
 
     @Override

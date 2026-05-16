@@ -21,6 +21,7 @@ import com.common.sandbox.network.packets.auth.RegisterRequest;
 import com.common.sandbox.network.packets.auth.RegisterResponse;
 import com.common.sandbox.network.packets.connection.HandshakePacket;
 import com.common.sandbox.network.packets.connection.PingPacket;
+import com.common.sandbox.network.packets.player.AttributeUpgradePacket;
 import com.common.sandbox.network.packets.player.PlayerLeftPacket;
 import com.common.sandbox.network.packets.player.PlayerStatePacket;
 import com.common.sandbox.network.packets.social.FriendListResponse;
@@ -42,6 +43,7 @@ import org.slf4j.LoggerFactory;
 import java.sql.SQLException;
 import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 
 public class GameServerHandler extends SimpleChannelInboundHandler<Object> {
     private static final Logger logger = LoggerFactory.getLogger(GameServerHandler.class);
@@ -119,6 +121,10 @@ public class GameServerHandler extends SimpleChannelInboundHandler<Object> {
             } else if (msg instanceof AttackInfo) {
                 if (currentPlayer != null) {
                     handleAttack(ctx, (AttackInfo) msg);
+                }
+            } else if (msg instanceof AttributeUpgradePacket) {
+                if (currentPlayer != null) {
+                    handleAttributeUpgrade(ctx, (AttributeUpgradePacket) msg);
                 }
             } else {
                 logger.warn("Tipo de pacote desconhecido: {}", msg.getClass().getSimpleName());
@@ -265,71 +271,37 @@ public class GameServerHandler extends SimpleChannelInboundHandler<Object> {
                 return;
             }
 
-            // LOG DO QUE O SERVIDOR RECEBEU
-            logger.info("========================================");
             logger.info("SERVER received PlayerState from {}:", player.getUsername());
-            logger.info("   HP from client: {}/{}", packet.currentHp, packet.getMaxHp());
-            logger.info("   Mana from client: {}/{}", packet.currentMana, packet.getMaxMana());
-            logger.info("   Stamina from client: {}/{}", packet.currentStamina, packet.getMaxStamina());
-            logger.info("   BaseHP from client: {}, Strength: {}", packet.baseHp, packet.strength);
+            logger.info("   HP from client: {}/{}", packet.currentHp, packet.maxHp);
+            logger.info("   Mana from client: {}/{}", packet.currentMana, packet.maxMana);
+            logger.info("   Stamina from client: {}/{}", packet.currentStamina, packet.maxStamina);
             logger.info("   Pos from client: ({}, {})", packet.x, packet.y);
             logger.info("   Server current HP: {}/{}", player.getCurrentHp(), player.getMaxHp());
-            logger.info("========================================");
 
-            // Validar colisao
             if (ChunkManager.getInstance().isSolid(packet.x, packet.y)) {
                 PlayerStatePacket correction = new PlayerStatePacket(player);
                 sendPacket(ctx, correction);
-                logger.info("   Collision detected, sending correction");
+                logger.info("Collision detected, sending correction");
                 return;
             }
 
-            // ATUALIZAR POSICAO E DIRECAO
             player.setX(packet.x);
             player.setY(packet.y);
             player.setDirection(packet.direction);
 
-            // ATUALIZAR VALORES BASE
-            if (packet.baseHp > 0) {
-                player.setBaseHp(packet.baseHp);
-            }
-            if (packet.baseMana > 0) {
-                player.setBaseMana(packet.baseMana);
-            }
-            if (packet.baseStamina > 0) {
-                player.setBaseStamina(packet.baseStamina);
-            }
-
-            // ATUALIZAR STATUS ATUAIS
             player.setCurrentHp(packet.currentHp);
             player.setCurrentMana(packet.currentMana);
             player.setCurrentStamina(packet.currentStamina);
 
-            // ATUALIZAR GOLD E EXPERIENCIA
             player.setGold(packet.gold);
             player.setExperience(packet.experience);
 
-            // ATUALIZAR LEVEL
             if (packet.level != player.getLevel()) {
                 player.setLevel(packet.level);
             }
 
-            // ATUALIZAR ATRIBUTOS
-            if (packet.strength > 0) {
-                player.setStrength(packet.strength);
-            }
-            if (packet.agility > 0) {
-                player.setAgility(packet.agility);
-            }
-            if (packet.wisdom > 0) {
-                player.setWisdom(packet.wisdom);
-            }
-
-            // VALIDAR SE OS STATUS ATUAIS NAO ULTRAPASSAM O MAX CALCULADO
             if (player.getCurrentHp() > player.getMaxHp()) {
                 player.setCurrentHp(player.getMaxHp());
-                logger.warn("   Fixed HP overflow for {}: was {}, set to {}",
-                        player.getUsername(), packet.currentHp, player.getMaxHp());
             }
             if (player.getCurrentMana() > player.getMaxMana()) {
                 player.setCurrentMana(player.getMaxMana());
@@ -338,24 +310,55 @@ public class GameServerHandler extends SimpleChannelInboundHandler<Object> {
                 player.setCurrentStamina(player.getMaxStamina());
             }
 
-            logger.info("   After update - Server HP: {}/{}, Mana: {}/{}, Stamina: {}/{}",
+            logger.info("After update - Server HP: {}/{}, Mana: {}/{}, Stamina: {}/{}",
                     player.getCurrentHp(), player.getMaxHp(),
                     player.getCurrentMana(), player.getMaxMana(),
                     player.getCurrentStamina(), player.getMaxStamina());
 
-            // BROADCAST - Criar pacote com os valores ATUAIS do servidor
             PlayerStatePacket broadcast = new PlayerStatePacket(player);
             broadcast.currentAttackCooldown = player.getCurrentAttackCooldown();
             broadcastToAll(broadcast);
 
-            // SALVAR NO BANCO
             GameWorld.getInstance().savePlayer(player);
-
-            logger.info("   Broadcast sent to all players and saved to database");
 
         } catch (Exception e) {
             logger.error("Erro handlePlayerState: {}", e.getMessage(), e);
         }
+    }
+
+    private void updateCombatStatsFromEquipment(Player player) {
+        if (player.getCombatStats() == null) {
+            player.setCombatStats(new CombatStats());
+        }
+
+        int weaponBonus = 0;
+        String equippedWeapon = player.getInventory() != null ?
+                player.getInventory().getEquipped().get("weapon") : null;
+
+        logger.info("=== EQUIPMENT CHECK ===");
+        logger.info("Player: {}", player.getUsername());
+        logger.info("Equipped weapon ID: {}", equippedWeapon);
+
+        if (equippedWeapon != null && !equippedWeapon.isEmpty()) {
+            ItemDefinition def = ItemManager.getInstance().getItemDefinition(equippedWeapon);
+            if (def != null) {
+                weaponBonus = def.getDamage();
+                logger.info("Weapon found: {}, Damage: {}", def.getName(), weaponBonus);
+            } else {
+                logger.warn("Weapon definition NOT FOUND for: {}", equippedWeapon);
+            }
+        } else {
+            logger.info("No weapon equipped, using base damage only");
+        }
+
+        player.getCombatStats().setWeaponDamageBonus(weaponBonus);
+        // Usar PhysicalPower do player (base + bonus de atributos)
+        player.getCombatStats().setStrengthBonus(player.getPhysicalPower() / 2);
+
+        logger.info("Final: PhysicalPower={}, WeaponBonus={}, Total={}",
+                player.getPhysicalPower(),
+                weaponBonus,
+                player.getPhysicalPower() + weaponBonus);
     }
 
     private void sendAllExistingPlayers(ChannelHandlerContext ctx, Player newPlayer) {
@@ -940,6 +943,172 @@ public class GameServerHandler extends SimpleChannelInboundHandler<Object> {
         return "weapon".equals(category) || "armor".equals(category) || "equipment".equals(category);
     }
 
+    private void handleAttributeUpgrade(ChannelHandlerContext ctx, AttributeUpgradePacket packet) {
+        if (currentPlayer == null || packet.upgrades == null) return;
+
+        logger.info("Received attribute upgrades from {}: {} upgrades",
+                currentPlayer.getUsername(), packet.upgrades.size());
+
+        int totalPointsUsed = 0;
+
+        for (Map.Entry<String, Integer> entry : packet.upgrades.entrySet()) {
+            String attributeId = entry.getKey();
+            int value = entry.getValue();
+
+            totalPointsUsed += getPointCostForAttribute(attributeId, value);
+            applyUpgradeToPlayer(attributeId, value);
+        }
+
+        if (totalPointsUsed > currentPlayer.getAttributePoints()) {
+            logger.warn("Player {} tried to use more points than available!", currentPlayer.getUsername());
+            return;
+        }
+
+        currentPlayer.setAttributePoints(currentPlayer.getAttributePoints() - totalPointsUsed);
+
+        // Validar stats após aplicar upgrades
+        currentPlayer.validateCurrentStats();
+
+        // Salvar no banco
+        DatabaseManager.getInstance().savePlayerAsync(currentPlayer);
+
+        // Enviar estado atualizado para o cliente (APENAS para quem enviou)
+        PlayerStatePacket statePacket = new PlayerStatePacket(currentPlayer);
+        statePacket.fullSync = true;
+        sendPacket(ctx, statePacket);
+
+        // Também broadcast para outros players (para atualizar vida máxima visível)
+        broadcastToAll(statePacket);
+
+        logger.info("Applied {} upgrades to {}, {} points remaining. New MaxHP: {}",
+                packet.upgrades.size(), currentPlayer.getUsername(),
+                currentPlayer.getAttributePoints(), currentPlayer.getMaxHp());
+    }
+
+    private int getPointCostForAttribute(String attributeId, int value) {
+        switch (attributeId) {
+            case "max_hp": return value / 10;
+            case "max_mana": return value / 10;
+            case "max_stamina": return value / 10;
+            case "hp_regen": return value;
+            case "mana_regen": return value;
+            case "stamina_regen": return value;
+            case "physical_defense": return value / 5;
+            case "magic_defense": return value / 5;
+            case "physical_power": return value / 3;
+            case "ranged_power": return value / 3;
+            case "magic_power": return value / 3;
+            case "critical_chance": return value;
+            case "critical_damage": return value / 5;
+            case "dodge_chance": return value;
+            case "attack_speed": return value / 2;
+            case "movement_speed": return value / 10;
+            case "cooldown_reduction": return value;
+            case "life_steal": return value;
+            case "mana_steal": return value;
+            case "tenacity": return value;
+            case "luck": return value / 5;
+            case "fire_resistance": return value / 5;
+            case "ice_resistance": return value / 5;
+            case "lightning_resistance": return value / 5;
+            case "poison_resistance": return value / 5;
+            case "holy_resistance": return value / 5;
+            case "dark_resistance": return value / 5;
+            default: return value;
+        }
+    }
+
+    private void applyUpgradeToPlayer(String attributeId, int value) {
+        switch (attributeId) {
+            case "max_hp":
+                currentPlayer.setBonusMaxHp(currentPlayer.getBonusMaxHp() + value);
+                currentPlayer.setCurrentHp(currentPlayer.getMaxHp());
+                break;
+            case "max_mana":
+                currentPlayer.setBonusMaxMana(currentPlayer.getBonusMaxMana() + value);
+                currentPlayer.setCurrentMana(currentPlayer.getMaxMana());
+                break;
+            case "max_stamina":
+                currentPlayer.setBonusMaxStamina(currentPlayer.getBonusMaxStamina() + value);
+                currentPlayer.setCurrentStamina(currentPlayer.getMaxStamina());
+                break;
+            case "hp_regen":
+                currentPlayer.setBonusHpRegen(currentPlayer.getBonusHpRegen() + value);
+                break;
+            case "mana_regen":
+                currentPlayer.setBonusManaRegen(currentPlayer.getBonusManaRegen() + value);
+                break;
+            case "stamina_regen":
+                currentPlayer.setBonusStaminaRegen(currentPlayer.getBonusStaminaRegen() + value);
+                break;
+            case "physical_defense":
+                currentPlayer.setBonusPhysicalDefense(currentPlayer.getBonusPhysicalDefense() + value);
+                break;
+            case "magic_defense":
+                currentPlayer.setBonusMagicDefense(currentPlayer.getBonusMagicDefense() + value);
+                break;
+            case "physical_power":
+                currentPlayer.setBonusPhysicalPower(currentPlayer.getBonusPhysicalPower() + value);
+                break;
+            case "ranged_power":
+                currentPlayer.setBonusRangedPower(currentPlayer.getBonusRangedPower() + value);
+                break;
+            case "magic_power":
+                currentPlayer.setBonusMagicPower(currentPlayer.getBonusMagicPower() + value);
+                break;
+            case "critical_chance":
+                currentPlayer.setBonusCriticalChance(currentPlayer.getBonusCriticalChance() + (value / 100f));
+                break;
+            case "critical_damage":
+                currentPlayer.setBonusCriticalDamage(currentPlayer.getBonusCriticalDamage() + (value / 100f));
+                break;
+            case "dodge_chance":
+                currentPlayer.setBonusDodgeChance(currentPlayer.getBonusDodgeChance() + (value / 100f));
+                break;
+            case "attack_speed":
+                currentPlayer.setBonusAttackSpeed(currentPlayer.getBonusAttackSpeed() + (value / 100f));
+                break;
+            case "movement_speed":
+                currentPlayer.setBonusMovementSpeed(currentPlayer.getBonusMovementSpeed() + value);
+                break;
+            case "cooldown_reduction":
+                currentPlayer.setBonusCooldownReduction(currentPlayer.getBonusCooldownReduction() + (value / 100f));
+                break;
+            case "life_steal":
+                currentPlayer.setBonusLifeSteal(currentPlayer.getBonusLifeSteal() + (value / 100f));
+                break;
+            case "mana_steal":
+                currentPlayer.setBonusManaSteal(currentPlayer.getBonusManaSteal() + (value / 100f));
+                break;
+            case "tenacity":
+                currentPlayer.setBonusTenacity(currentPlayer.getBonusTenacity() + (value / 100f));
+                break;
+            case "luck":
+                currentPlayer.setBonusLuck(currentPlayer.getBonusLuck() + value);
+                break;
+            case "fire_resistance":
+                currentPlayer.setBonusFireResistance(currentPlayer.getBonusFireResistance() + value);
+                break;
+            case "ice_resistance":
+                currentPlayer.setBonusIceResistance(currentPlayer.getBonusIceResistance() + value);
+                break;
+            case "lightning_resistance":
+                currentPlayer.setBonusLightningResistance(currentPlayer.getBonusLightningResistance() + value);
+                break;
+            case "poison_resistance":
+                currentPlayer.setBonusPoisonResistance(currentPlayer.getBonusPoisonResistance() + value);
+                break;
+            case "holy_resistance":
+                currentPlayer.setBonusHolyResistance(currentPlayer.getBonusHolyResistance() + value);
+                break;
+            case "dark_resistance":
+                currentPlayer.setBonusDarkResistance(currentPlayer.getBonusDarkResistance() + value);
+                break;
+        }
+
+        currentPlayer.validateCurrentStats();
+    }
+
     private void handleAttack(ChannelHandlerContext ctx, AttackInfo attackInfo) {
         if (currentPlayer == null) return;
 
@@ -1034,41 +1203,6 @@ public class GameServerHandler extends SimpleChannelInboundHandler<Object> {
         long cooldownMillis = (long)(cooldownSecs * 1000);
         float remaining = (cooldownMillis - elapsed) / 1000f;
         return Math.max(0, remaining);
-    }
-
-    private void updateCombatStatsFromEquipment(Player player) {
-        if (player.getCombatStats() == null) {
-            player.setCombatStats(new CombatStats());
-        }
-
-        int weaponBonus = 0;
-        String equippedWeapon = player.getInventory() != null ?
-                player.getInventory().getEquipped().get("weapon") : null;
-
-        logger.info("=== EQUIPMENT CHECK ===");
-        logger.info("Player: {}", player.getUsername());
-        logger.info("Equipped weapon ID: {}", equippedWeapon);
-
-        if (equippedWeapon != null && !equippedWeapon.isEmpty()) {
-            ItemDefinition def = ItemManager.getInstance().getItemDefinition(equippedWeapon);
-            if (def != null) {
-                weaponBonus = def.getDamage();  // ← USA O DANO REAL DO ITEM
-                logger.info("Weapon found: {}, Damage: {}", def.getName(), weaponBonus);
-            } else {
-                logger.warn("Weapon definition NOT FOUND for: {}", equippedWeapon);
-            }
-        } else {
-            logger.info("No weapon equipped, using base damage only");
-        }
-
-        player.getCombatStats().setWeaponDamageBonus(weaponBonus);
-        player.getCombatStats().setStrengthBonus(player.getStrength() / 2);
-
-        logger.info("Final: BaseDamage={}, WeaponBonus={}, StrengthBonus={}, Total={}",
-                player.getCombatStats().getBaseDamage(),
-                weaponBonus,
-                player.getStrength() / 2,
-                player.getCombatStats().getBaseDamage() + weaponBonus + (player.getStrength() / 2));
     }
 
     private AttackDefinition getAttackDefinition(String attackId) {

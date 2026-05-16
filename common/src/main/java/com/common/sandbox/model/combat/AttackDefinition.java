@@ -23,6 +23,7 @@ public class AttackDefinition implements Serializable {
     private boolean isRanged;
     private int maxTargets;
     private float knockbackPower;
+    private boolean isMagic = false;
 
     private String attackAnimation;    // "sword_slash", "bow_shoot", etc.
     private float projectileSpeed;
@@ -63,6 +64,8 @@ public class AttackDefinition implements Serializable {
     public void setMaxTargets(int maxTargets) { this.maxTargets = maxTargets; }
     public float getKnockbackPower() { return knockbackPower; }
     public void setKnockbackPower(float knockbackPower) { this.knockbackPower = knockbackPower; }
+    public boolean isMagic() { return isMagic; }
+    public void setMagic(boolean magic) { isMagic = magic; }
 
     public String getAttackAnimation() { return attackAnimation; }
     public void setAttackAnimation(String attackAnimation) { this.attackAnimation = attackAnimation; }

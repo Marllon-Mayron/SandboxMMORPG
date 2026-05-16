@@ -56,7 +56,6 @@ public class PlayerUI {
     private float screenWidth = 1280;
     private float screenHeight = 720;
 
-    // Componentes do HUD
     private Label playerNameLabel;
     private Label goldLabel;
     private Label levelLabel;
@@ -70,7 +69,6 @@ public class PlayerUI {
     private Label speedValueLabel;
     private float currentSpeedMultiplier = 1.0f;
 
-    // Componentes do Chat
     private boolean chatVisible = true;
     private Label chatContentLabel;
     private Table chatContainer;
@@ -78,20 +76,16 @@ public class PlayerUI {
     private ScrollPane chatScrollPane;
     private Consumer<String> sendMessageCallback;
 
-    // Janela de Atributos
     private AttributesWindow attributesWindow;
 
-    // Componentes do Sistema de Amigos
     private TaskBar taskBar;
     private FriendsWindow friendsWindow;
     private PrivateChatWindow privateChatWindow;
     private Runnable refreshFriendsCallback;
 
-    // Inventário
     private InventoryWindow inventoryWindow;
     private boolean inventoryVisible = false;
 
-    // Callbacks do Sistema de Amigos
     private Consumer<String> sendFriendRequestCallback;
     private Consumer<String> acceptFriendRequestCallback;
     private Consumer<String> rejectFriendRequestCallback;
@@ -99,19 +93,16 @@ public class PlayerUI {
     private BiConsumer<String, String> sendPrivateMessageCallback;
     private Consumer<String> onLoadPrivateChatHistory;
 
-    // Callbacks do Inventário
     private BiConsumer<Integer, Integer> onMoveItemCallback;
     private BiConsumer<Integer, String> onEquipItemCallback;
     private Consumer<Integer> onUnequipItemCallback;
     private Consumer<InventoryWindow.DropAction> onDropItemCallback;
 
-    // Dimensões fixas
     private static final int HUD_WIDTH = 220;
     private static final int CHAT_WIDTH = 450;
     private static final int CHAT_HEIGHT = 320;
     private static final int TASKBAR_Y_OFFSET = 10;
 
-    // BARRA DE VIDA - VALORES ABSOLUTOS
     private static final int HEALTH_BAR_WIDTH = 260;
     private static final int HEALTH_BAR_HEIGHT = 24;
     private static final int HEALTH_BAR_X = 0;
@@ -134,6 +125,11 @@ public class PlayerUI {
 
     public void setGame(SandboxClient game) {
         this.game = game;
+        // Atualizar o AttributesWindow com o gameClient se ele ja foi criado
+        if (attributesWindow != null && game != null) {
+            // Recriar o attributesWindow com o game correto
+            attributesWindow = new AttributesWindow(skin, stage, game);
+        }
     }
 
     private void createSkin() {
@@ -156,7 +152,6 @@ public class PlayerUI {
         skin.add("gold", goldBg);
         skin.add("red", redBg);
 
-        // Label styles
         Label.LabelStyle labelStyle = new Label.LabelStyle();
         labelStyle.font = font;
         labelStyle.fontColor = Color.WHITE;
@@ -182,7 +177,6 @@ public class PlayerUI {
         successStyle.fontColor = Color.GREEN;
         skin.add("success", successStyle);
 
-        // Button styles
         TextButton.TextButtonStyle textButtonStyle = new TextButton.TextButtonStyle();
         textButtonStyle.font = font;
         textButtonStyle.fontColor = Color.WHITE;
@@ -215,7 +209,6 @@ public class PlayerUI {
         editorStyle.over = blueBg;
         skin.add("editor", editorStyle);
 
-        // TextField style
         TextField.TextFieldStyle textFieldStyle = new TextField.TextFieldStyle();
         textFieldStyle.font = font;
         textFieldStyle.fontColor = Color.WHITE;
@@ -224,7 +217,6 @@ public class PlayerUI {
         textFieldStyle.selection = blueBg;
         skin.add("default", textFieldStyle);
 
-        // ScrollPane style
         ScrollPane.ScrollPaneStyle scrollStyle = new ScrollPane.ScrollPaneStyle();
         scrollStyle.background = darkBg;
         scrollStyle.vScroll = buttonBg;
@@ -233,7 +225,6 @@ public class PlayerUI {
         scrollStyle.hScrollKnob = blueBg;
         skin.add("default", scrollStyle);
 
-        // Window style
         Window.WindowStyle windowStyle = new Window.WindowStyle(font, Color.GOLD, darkBg);
         skin.add("default", windowStyle);
     }
@@ -352,11 +343,8 @@ public class PlayerUI {
             }
         });
         privateChatWindow.setOnLoadHistory(friendId -> {
-            logger.info("onLoadHistory called for friendId: {}", friendId);
             if (onLoadPrivateChatHistory != null) {
                 onLoadPrivateChatHistory.accept(friendId);
-            } else {
-                logger.warn("onLoadPrivateChatHistory callback is null!");
             }
         });
 
@@ -381,6 +369,9 @@ public class PlayerUI {
                 onDropItemCallback.accept(action);
             }
         });
+
+        // Nao criar attributesWindow aqui ainda - aguardar setGame ser chamado
+        attributesWindow = null;
     }
 
     private void createChatContainer() {
@@ -424,11 +415,13 @@ public class PlayerUI {
         chatContainer.row();
 
         stage.addActor(chatContainer);
-
-        attributesWindow = new AttributesWindow(skin, stage);
     }
 
-    // ==================== MÉTODOS PÚBLICOS ====================
+    private void ensureAttributesWindowCreated() {
+        if (attributesWindow == null && game != null) {
+            attributesWindow = new AttributesWindow(skin, stage, game);
+        }
+    }
 
     public void sendCurrentMessage() {
         if (chatInputField == null) return;
@@ -497,6 +490,7 @@ public class PlayerUI {
             manaValueLabel.setText(currentMana + "/" + maxMana);
             staminaValueLabel.setText(currentStamina + "/" + maxStamina);
 
+            ensureAttributesWindowCreated();
             if (attributesWindow != null && attributesWindow.isVisible()) {
                 attributesWindow.update(player);
             }
@@ -569,6 +563,7 @@ public class PlayerUI {
     }
 
     public boolean isAttributesVisible() {
+        ensureAttributesWindowCreated();
         return attributesWindow != null && attributesWindow.isVisible();
     }
 
@@ -586,7 +581,6 @@ public class PlayerUI {
         if (healthValueLabel != null) {
             healthValueLabel.setText(currentHp + "/" + maxHp);
         }
-        logger.info("🏥 UI Health updated to: {}/{}", currentHp, maxHp);
     }
 
     public void setMana(int current, int max) {
@@ -679,6 +673,7 @@ public class PlayerUI {
     }
 
     public void toggleAttributes() {
+        ensureAttributesWindowCreated();
         if (attributesWindow != null) {
             attributesWindow.toggle();
             if (attributesWindow.isVisible() && currentPlayer != null) {
@@ -693,8 +688,6 @@ public class PlayerUI {
             attributesWindow.hide();
         }
     }
-
-    // ==================== SISTEMA DE INVENTÁRIO ====================
 
     public void toggleInventory() {
         if (inventoryWindow != null) {
@@ -711,8 +704,6 @@ public class PlayerUI {
             inventoryWindow.updateInventory(inventory, gold);
         }
     }
-
-    // ==================== SISTEMA DE AMIGOS ====================
 
     public void toggleFriendsWindow() {
         if (friendsWindow != null) {
@@ -747,24 +738,13 @@ public class PlayerUI {
     }
 
     public void loadPrivateChatHistory(String friendId, List<PrivateMessagePacket> messages) {
-        logger.info("loadPrivateChatHistory called - friendId: {}, messages count: {}",
-                friendId, messages != null ? messages.size() : 0);
-
         if (privateChatWindow != null && privateChatWindow.isVisible()) {
             FriendListResponse.FriendInfo current = privateChatWindow.getCurrentFriend();
             if (current != null && current.playerId.equals(friendId)) {
-                logger.info("Loading history for current friend: {}", current.username);
                 privateChatWindow.loadHistory(messages);
-            } else {
-                logger.warn("Current friend mismatch or null. Current: {}, Requested: {}",
-                        current != null ? current.username : "null", friendId);
             }
-        } else {
-            logger.warn("Private chat window not visible or null");
         }
     }
-
-    // ==================== SETTERS DE CALLBACKS ====================
 
     public void setSendMessageCallback(Consumer<String> callback) { this.sendMessageCallback = callback; }
     public void setSendFriendRequestCallback(Consumer<String> callback) { this.sendFriendRequestCallback = callback; }
@@ -780,11 +760,8 @@ public class PlayerUI {
     public void setOnDropItemCallback(Consumer<InventoryWindow.DropAction> callback) { this.onDropItemCallback = callback; }
 
     public void registerItemTexture(String itemId, TextureRegion region, ItemDefinition definition) {
-        logger.info("PlayerUI.registerItemTexture - Item: {}, Category: {}", itemId, definition.getCategory());
         if (inventoryWindow != null) {
             inventoryWindow.registerItemTexture(itemId, region, definition);
-        } else {
-            logger.warn("InventoryWindow is null, cannot register item texture for: {}", itemId);
         }
     }
 
@@ -799,8 +776,6 @@ public class PlayerUI {
         return false;
     }
 
-    // ==================== BARRA DE VIDA (gráfica) ====================
-
     private void renderHealthBar() {
         float currentWidth = Gdx.graphics.getWidth();
         float currentHeight = Gdx.graphics.getHeight();
@@ -813,7 +788,6 @@ public class PlayerUI {
 
         shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
 
-        // Fundo
         shapeRenderer.setColor(0.3f, 0.1f, 0.1f, 0.9f);
         shapeRenderer.rect(HEALTH_BAR_X, actualY, HEALTH_BAR_WIDTH, HEALTH_BAR_HEIGHT);
 
@@ -842,8 +816,6 @@ public class PlayerUI {
         fontManager.draw(FontManager.NORMAL, healthText, HEALTH_BAR_X + HEALTH_BAR_WIDTH + 12, actualY + HEALTH_BAR_HEIGHT - 6, Color.WHITE);
         fontManager.end();
     }
-
-    // ==================== RENDER E RESIZE ====================
 
     public void render(SpriteBatch batch) {
         renderHealthBar();
@@ -915,6 +887,5 @@ public class PlayerUI {
         if (friendsWindow != null) friendsWindow.dispose();
         if (privateChatWindow != null) privateChatWindow.dispose();
         if (inventoryWindow != null) inventoryWindow.dispose();
-        logger.info("PlayerUI disposed");
     }
 }
