@@ -45,7 +45,7 @@ public class AnimationManager {
                 "animations/combat/projectiles/slash.png",
                 32, 32,
                 3,
-                0.05f
+                0.02f
         );
         projectileAnimations.put("slash", slashAnim);
         logger.info("Loaded melee animation: slash ({} frames, {} s/frame, total {} s)",

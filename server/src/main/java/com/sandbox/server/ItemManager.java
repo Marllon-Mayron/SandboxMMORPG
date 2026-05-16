@@ -77,7 +77,6 @@ public class ItemManager {
         ironSword.setAttackAnimation("sword_slash");
         ironSword.setAttackCooldown(1.25f);
         ironSword.setProjectileAnimationId("slash");
-        ironSword.setHitboxDuration(0.4f);
         ironSword.setRanged(false);
         itemDefinitions.put(ironSword.getId(), ironSword);
 
@@ -94,7 +93,6 @@ public class ItemManager {
         dagger.setAttackAnimation("dagger_stab");
         dagger.setAttackCooldown(0.67f);
         dagger.setProjectileAnimationId("stab");
-        dagger.setHitboxDuration(0.2f);
         dagger.setRanged(false);
         itemDefinitions.put(dagger.getId(), dagger);
 
@@ -111,7 +109,6 @@ public class ItemManager {
         axe.setAttackAnimation("sword_slash");
         axe.setAttackCooldown(1.43f);
         axe.setProjectileAnimationId("slash");
-        axe.setHitboxDuration(0.45f);
         axe.setRanged(false);
         itemDefinitions.put(axe.getId(), axe);
 
@@ -134,7 +131,6 @@ public class ItemManager {
         simpleBow.setProjectileSpeed(600f);
         simpleBow.setProjectileRange(400f);
         simpleBow.setProjectileAnimationId("arrow");
-        simpleBow.setHitboxDuration(0.15f);
         itemDefinitions.put(simpleBow.getId(), simpleBow);
 
         // Arco Longo
@@ -154,7 +150,6 @@ public class ItemManager {
         longBow.setProjectileSpeed(900f);
         longBow.setProjectileRange(550f);
         longBow.setProjectileAnimationId("arrow");
-        longBow.setHitboxDuration(0.2f);
         itemDefinitions.put(longBow.getId(), longBow);
 
         // Arco Rápido
@@ -174,7 +169,6 @@ public class ItemManager {
         quickBow.setProjectileSpeed(450f);
         quickBow.setProjectileRange(300f);
         quickBow.setProjectileAnimationId("arrow");
-        quickBow.setHitboxDuration(0.12f);
         itemDefinitions.put(quickBow.getId(), quickBow);
 
         // ==================== ITENS CONSUMÍVEIS ====================

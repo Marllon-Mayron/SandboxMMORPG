@@ -32,7 +32,8 @@ public class Projectile implements Serializable {
 
     public Projectile(String ownerId, String ownerName, String projectileType, String animationId,
                       float startX, float startY, float targetX, float targetY,
-                      float speed, float maxDistance, float damage, boolean wasCritical) {
+                      float speed, float maxDistance, float damage, boolean wasCritical,
+                      float angle) {
         this.id = UUID.randomUUID().toString();
         this.ownerId = ownerId;
         this.ownerName = ownerName;
@@ -51,6 +52,7 @@ public class Projectile implements Serializable {
         this.wasCritical = wasCritical;
         this.spawnTime = System.currentTimeMillis();
         this.active = true;
+        this.angle = angle;  // ← USA O ÂNGULO RECEBIDO
 
         // Calcular direção normalizada (para movimento)
         float dx = targetX - startX;
@@ -63,15 +65,6 @@ public class Projectile implements Serializable {
             this.directionX = 0;
             this.directionY = 1;
         }
-
-        // Calcular ângulo para rotação
-        this.angle = calculateAngle(startX, startY, targetX, targetY);
-
-        // Log para debug
-        System.out.println("=== PROJECTILE ANGLE ===");
-        System.out.println("Direction: (" + directionX + ", " + directionY + ")");
-        System.out.println("Angle: " + this.angle);
-        System.out.println("========================");
     }
 
     private float calculateAngle(float startX, float startY, float targetX, float targetY) {

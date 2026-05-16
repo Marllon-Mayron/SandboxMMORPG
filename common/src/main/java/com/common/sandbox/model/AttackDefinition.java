@@ -84,7 +84,7 @@ public class AttackDefinition implements Serializable {
         def.setMaxTargets(3);
         def.setKnockbackPower(30f);
         def.setRanged(false);
-        def.setHitboxDuration(0.3f);
+        def.setHitboxDuration(0.1f);
         def.setAttackAnimation("sword_slash");
         return def;
     }

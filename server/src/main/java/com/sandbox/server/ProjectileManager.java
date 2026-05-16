@@ -165,33 +165,49 @@ public class ProjectileManager {
             animationId = "slash";
         }
 
-        float angle = (float) Math.atan2(targetY - attacker.getY(), targetX - attacker.getX());
+        float angleRad = (float) Math.atan2(targetY - attacker.getY(), targetX - attacker.getX());
         float offsetDistance = isRanged ? 40f : 20f;
-        float offsetX = (float) Math.cos(angle) * offsetDistance;
-        float offsetY = (float) Math.sin(angle) * offsetDistance;
+        float offsetX = (float) Math.cos(angleRad) * offsetDistance;
+        float offsetY = (float) Math.sin(angleRad) * offsetDistance;
         float startX = attacker.getX() + offsetX;
         float startY = attacker.getY() + offsetY;
 
         float finalTargetX = targetX;
         float finalTargetY = targetY;
 
+        // Calcular ângulo em GRAUS para o sprite
+        float angleDegrees;
+
         if (!isRanged) {
             // Para melee, o projétil fica na posição inicial
             finalTargetX = startX;
             finalTargetY = startY;
+            // Ângulo baseado na direção do ataque
+            angleDegrees = (float) Math.toDegrees(Math.atan2(targetY - attacker.getY(), targetX - attacker.getX()));
+        } else {
+            // Para ranged, ângulo baseado na trajetória
+            angleDegrees = (float) Math.toDegrees(Math.atan2(finalTargetY - startY, finalTargetX - startX));
         }
 
+        angleDegrees = angleDegrees + 45;
+
+        // Normalizar para 0-360
+        if (angleDegrees < 0) angleDegrees += 360;
+        if (angleDegrees >= 360) angleDegrees -= 360;
+
+        // CRIA O PROJÉTIL
         Projectile projectile = new Projectile(
                 attacker.getId(), attacker.getUsername(),
                 projectileType, animationId,
                 startX, startY, finalTargetX, finalTargetY,
-                speed, range, damage, wasCritical
+                speed, range, damage, wasCritical,
+                angleDegrees
         );
 
         activeProjectiles.put(projectile.getId(), projectile);
         broadcastProjectileState(projectile);
 
-        // Para ataques melee, programar remoção após duração da animação
+        // Para melee, programar remoção após duração da animação
         if (!isRanged) {
             ProjectileAnimation anim = AnimationManager.getInstance().getAnimation(animationId);
             if (anim != null) {
@@ -205,15 +221,16 @@ public class ProjectileManager {
                     }
                 }, (long)(totalDuration * 1000), TimeUnit.MILLISECONDS);
 
-                // CORRIGIR O LOG
-                logger.info("Melee projectile will live for {} seconds (frames: {} x {} s/frame = {} s)",
+                logger.info("Melee projectile will live for {}s (frames: {} x {}s = {}s)",
                         totalDuration, anim.getTotalFrames(), anim.getFrameDuration(),
                         anim.getTotalFrames() * anim.getFrameDuration());
             }
         }
 
-        logger.info("Projectile spawned: {} by {} | Speed: {} | Range: {} | Ranged: {} | Anim: {}",
-                projectileType, attacker.getUsername(), speed, range, isRanged, animationId);
+        logger.info("Projectile spawned: {} by {} | Raw angle: {}° | Final angle: {}° | Ranged: {}",
+                projectileType, attacker.getUsername(),
+                (float) Math.toDegrees(Math.atan2(targetY - attacker.getY(), targetX - attacker.getX())),
+                angleDegrees, isRanged);
     }
 
     private void broadcastProjectileState(Projectile projectile) {

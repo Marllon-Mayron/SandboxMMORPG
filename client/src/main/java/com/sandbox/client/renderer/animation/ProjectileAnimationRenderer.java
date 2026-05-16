@@ -17,7 +17,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 public class ProjectileAnimationRenderer {
     private static final Logger logger = LoggerFactory.getLogger(ProjectileAnimationRenderer.class);
-    private static final int PROJECTILE_RENDER_SCALE = 4;
+    private static final int PROJECTILE_RENDER_SCALE = 2;
 
     private final Map<String, Texture> textures;
     private final Map<String, TextureRegion[]> animationFrames;
