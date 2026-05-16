@@ -1,9 +1,9 @@
 package com.sandbox.server;
 
-import com.common.sandbox.model.ItemDefinition;
-import com.common.sandbox.model.GroundItem;
-import com.common.sandbox.network.packets.ItemSpawnPacket;
-import com.common.sandbox.network.packets.ItemDespawnPacket;
+import com.common.sandbox.model.item.ItemDefinition;
+import com.common.sandbox.model.item.GroundItem;
+import com.common.sandbox.network.packets.inventory.ItemSpawnPacket;
+import com.common.sandbox.network.packets.inventory.ItemDespawnPacket;
 import io.netty.channel.ChannelHandlerContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

@@ -1,7 +1,6 @@
 package com.sandbox.client.editor.ui;
 
 import com.badlogic.gdx.Gdx;
-import com.badlogic.gdx.files.FileHandle;
 import com.badlogic.gdx.graphics.Color;
 import com.badlogic.gdx.graphics.Texture;
 import com.badlogic.gdx.scenes.scene2d.Actor;
@@ -10,8 +9,7 @@ import com.badlogic.gdx.scenes.scene2d.ui.*;
 import com.badlogic.gdx.scenes.scene2d.utils.ChangeListener;
 import com.badlogic.gdx.scenes.scene2d.utils.Drawable;
 import com.badlogic.gdx.scenes.scene2d.utils.TextureRegionDrawable;
-import com.badlogic.gdx.utils.viewport.ScreenViewport;
-import com.common.sandbox.model.TileTag;
+import com.common.sandbox.model.world.TileTag;
 import com.sandbox.client.SandboxClient;
 import com.sandbox.client.editor.core.EditorCamera;
 import com.sandbox.client.editor.models.*;

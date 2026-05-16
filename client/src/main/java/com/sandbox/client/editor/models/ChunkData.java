@@ -1,6 +1,6 @@
 package com.sandbox.client.editor.models;
 
-import com.common.sandbox.model.TileTag;
+import com.common.sandbox.model.world.TileTag;
 
 public class ChunkData {
     private int x;

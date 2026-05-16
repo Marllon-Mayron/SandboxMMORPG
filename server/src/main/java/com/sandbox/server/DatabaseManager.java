@@ -1,10 +1,9 @@
 package com.sandbox.server;
 
-import com.common.sandbox.model.Inventory;
-import com.common.sandbox.model.ItemStack;
-import com.common.sandbox.model.Player;
-import com.common.sandbox.network.packets.FriendListResponse;
-import com.common.sandbox.network.packets.PrivateMessagePacket;
+import com.common.sandbox.model.item.Inventory;
+import com.common.sandbox.model.player.Player;
+import com.common.sandbox.network.packets.social.FriendListResponse;
+import com.common.sandbox.network.packets.chat.PrivateMessagePacket;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import org.mindrot.jbcrypt.BCrypt;

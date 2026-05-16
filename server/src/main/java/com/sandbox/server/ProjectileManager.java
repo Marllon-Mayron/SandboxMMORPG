@@ -1,12 +1,12 @@
 package com.sandbox.server;
 
-import com.common.sandbox.model.ItemDefinition;
-import com.common.sandbox.model.Player;
-import com.common.sandbox.model.Projectile;
-import com.common.sandbox.model.ProjectileAnimation;
-import com.common.sandbox.network.packets.AttackBroadcast;
-import com.common.sandbox.network.packets.DamagePacket;
-import com.common.sandbox.network.packets.ProjectileStatePacket;
+import com.common.sandbox.model.item.ItemDefinition;
+import com.common.sandbox.model.player.Player;
+import com.common.sandbox.model.combat.Projectile;
+import com.common.sandbox.model.combat.ProjectileAnimation;
+import com.common.sandbox.network.packets.combat.AttackBroadcast;
+import com.common.sandbox.network.packets.combat.DamagePacket;
+import com.common.sandbox.network.packets.combat.ProjectileStatePacket;
 import io.netty.channel.Channel;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

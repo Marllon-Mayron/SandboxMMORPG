@@ -1,14 +1,13 @@
 package com.sandbox.client.ui;
 
-import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.graphics.Color;
 import com.badlogic.gdx.scenes.scene2d.Actor;
 import com.badlogic.gdx.scenes.scene2d.Stage;
 import com.badlogic.gdx.scenes.scene2d.ui.*;
 import com.badlogic.gdx.scenes.scene2d.utils.ChangeListener;
 import com.badlogic.gdx.utils.Align;
-import com.common.sandbox.network.packets.FriendListResponse;
-import com.common.sandbox.network.packets.PrivateMessagePacket;
+import com.common.sandbox.network.packets.social.FriendListResponse;
+import com.common.sandbox.network.packets.chat.PrivateMessagePacket;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

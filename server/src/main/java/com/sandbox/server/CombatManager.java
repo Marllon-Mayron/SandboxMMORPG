@@ -1,17 +1,17 @@
 package com.sandbox.server;
 
-import com.common.sandbox.model.*;
-import com.common.sandbox.network.packets.AttackBroadcast;
-import com.common.sandbox.network.packets.ChatMessage;
-import com.common.sandbox.network.packets.DamagePacket;
-import com.common.sandbox.network.packets.PlayerStatePacket;
-import io.netty.channel.Channel;
+import com.common.sandbox.model.combat.AttackDefinition;
+import com.common.sandbox.model.combat.AttackResult;
+import com.common.sandbox.model.enums.AttackType;
+import com.common.sandbox.model.item.ItemDefinition;
+import com.common.sandbox.model.player.CombatStats;
+import com.common.sandbox.model.player.Player;
+import com.common.sandbox.network.packets.chat.ChatMessage;
+import com.common.sandbox.network.packets.player.PlayerStatePacket;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.ArrayList;
 import java.util.Collection;
-import java.util.List;
 
 public class CombatManager {
     private static final Logger logger = LoggerFactory.getLogger(CombatManager.class);

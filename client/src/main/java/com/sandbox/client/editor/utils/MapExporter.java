@@ -1,6 +1,6 @@
 package com.sandbox.client.editor.utils;
 
-import com.common.sandbox.model.MapJSON;
+import com.common.sandbox.model.world.MapJSON;
 import com.sandbox.client.SandboxClient;
 import com.sandbox.client.editor.models.ChunkData;
 import com.sandbox.client.editor.models.EditorState;

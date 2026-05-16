@@ -1,9 +1,34 @@
 package com.sandbox.server;
 
-import com.common.sandbox.model.*;
-import com.common.sandbox.network.packets.*;
-import com.common.sandbox.network.packets.AttackInfo;
-import com.common.sandbox.network.packets.InventoryUpdatePacket;
+import com.common.sandbox.model.combat.AttackDefinition;
+import com.common.sandbox.model.item.GroundItem;
+import com.common.sandbox.model.item.ItemDefinition;
+import com.common.sandbox.model.item.ItemStack;
+import com.common.sandbox.model.player.CombatStats;
+import com.common.sandbox.model.player.Player;
+import com.common.sandbox.model.world.MapJSON;
+import com.common.sandbox.network.packets.chat.ChatMessage;
+import com.common.sandbox.network.packets.chat.PrivateMessageHistoryRequest;
+import com.common.sandbox.network.packets.chat.PrivateMessageHistoryResponse;
+import com.common.sandbox.network.packets.chat.PrivateMessagePacket;
+import com.common.sandbox.network.packets.combat.AnimationSyncPacket;
+import com.common.sandbox.network.packets.combat.AttackBroadcast;
+import com.common.sandbox.network.packets.combat.AttackInfo;
+import com.common.sandbox.network.packets.inventory.*;
+import com.common.sandbox.network.packets.auth.LoginRequest;
+import com.common.sandbox.network.packets.auth.LoginResponse;
+import com.common.sandbox.network.packets.auth.RegisterRequest;
+import com.common.sandbox.network.packets.auth.RegisterResponse;
+import com.common.sandbox.network.packets.connection.HandshakePacket;
+import com.common.sandbox.network.packets.connection.PingPacket;
+import com.common.sandbox.network.packets.player.PlayerLeftPacket;
+import com.common.sandbox.network.packets.player.PlayerStatePacket;
+import com.common.sandbox.network.packets.social.FriendListResponse;
+import com.common.sandbox.network.packets.social.FriendRequestPacket;
+import com.common.sandbox.network.packets.world.MapLoadRequest;
+import com.common.sandbox.network.packets.world.MapLoadResponse;
+import com.common.sandbox.network.packets.world.MapSaveRequest;
+import com.common.sandbox.network.packets.world.MapSaveResponse;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.SimpleChannelInboundHandler;
@@ -15,11 +40,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.sql.SQLException;
-import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 
 public class GameServerHandler extends SimpleChannelInboundHandler<Object> {
     private static final Logger logger = LoggerFactory.getLogger(GameServerHandler.class);

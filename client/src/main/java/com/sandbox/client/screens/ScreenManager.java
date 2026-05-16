@@ -5,7 +5,7 @@ import com.sandbox.client.screens.auth.AdminModeSelectorScreen;
 import com.sandbox.client.screens.auth.LoginScreen;
 import com.sandbox.client.screens.auth.RegisterScreen;
 import com.sandbox.client.screens.game.GameScreen;
-import com.common.sandbox.model.Player;
+import com.common.sandbox.model.player.Player;
 
 import java.util.Map;
 

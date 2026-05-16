@@ -1,6 +1,6 @@
 package com.sandbox.server;
 
-import com.common.sandbox.model.MapJSON;
+import com.common.sandbox.model.world.MapJSON;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import org.slf4j.Logger;

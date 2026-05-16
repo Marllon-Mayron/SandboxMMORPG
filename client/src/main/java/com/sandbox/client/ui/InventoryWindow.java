@@ -16,9 +16,9 @@ import com.badlogic.gdx.scenes.scene2d.utils.DragAndDrop.Target;
 import com.badlogic.gdx.scenes.scene2d.utils.Drawable;
 import com.badlogic.gdx.scenes.scene2d.utils.TextureRegionDrawable;
 import com.badlogic.gdx.utils.Align;
-import com.common.sandbox.model.Inventory;
-import com.common.sandbox.model.ItemDefinition;
-import com.common.sandbox.model.ItemStack;
+import com.common.sandbox.model.item.Inventory;
+import com.common.sandbox.model.item.ItemDefinition;
+import com.common.sandbox.model.item.ItemStack;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

@@ -12,13 +12,13 @@ import com.badlogic.gdx.scenes.scene2d.ui.*;
 import com.badlogic.gdx.scenes.scene2d.utils.Drawable;
 import com.badlogic.gdx.scenes.scene2d.utils.TextureRegionDrawable;
 import com.badlogic.gdx.utils.viewport.ScreenViewport;
-import com.common.sandbox.model.MapJSON;
+import com.common.sandbox.model.world.MapJSON;
 import com.sandbox.client.SandboxClient;
 import com.sandbox.client.editor.core.*;
 import com.sandbox.client.editor.models.*;
 import com.sandbox.client.editor.ui.FixedLayoutUI;
 import com.sandbox.client.editor.utils.MapExporter;
-import com.common.sandbox.network.packets.MapLoadResponse;
+import com.common.sandbox.network.packets.world.MapLoadResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

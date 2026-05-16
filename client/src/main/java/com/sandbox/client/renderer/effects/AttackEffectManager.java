@@ -2,8 +2,8 @@ package com.sandbox.client.renderer.effects;
 
 import com.badlogic.gdx.graphics.g2d.SpriteBatch;
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
-import com.common.sandbox.model.AttackResult;
-import com.common.sandbox.network.packets.AttackBroadcast;
+import com.common.sandbox.model.combat.AttackResult;
+import com.common.sandbox.network.packets.combat.AttackBroadcast;
 import java.util.concurrent.ConcurrentLinkedQueue;
 
 public class AttackEffectManager {

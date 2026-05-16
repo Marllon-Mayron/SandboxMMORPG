@@ -1,9 +1,9 @@
 package com.sandbox.client;
 
 import com.badlogic.gdx.Game;
-import com.common.sandbox.network.packets.*;
+import com.common.sandbox.network.packets.inventory.*;
 import com.sandbox.client.screens.ScreenManager;
-import com.common.sandbox.model.Player;
+import com.common.sandbox.model.player.Player;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

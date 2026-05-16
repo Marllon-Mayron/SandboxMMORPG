@@ -3,7 +3,7 @@ package com.sandbox.client.screens.game;
 import com.badlogic.gdx.Screen;
 import com.sandbox.client.GameWorldRenderer;
 import com.sandbox.client.SandboxClient;
-import com.common.sandbox.model.Player;
+import com.common.sandbox.model.player.Player;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import java.util.Map;

@@ -12,7 +12,7 @@ import com.sandbox.client.NetworkClient;
 import com.sandbox.client.SandboxClient;
 import com.sandbox.client.editor.MapEditorScreen;
 import com.sandbox.client.screens.AbstractScreen;
-import com.common.sandbox.network.packets.LoginResponse;
+import com.common.sandbox.network.packets.auth.LoginResponse;
 
 public class LoginScreen extends AbstractScreen {
     private final boolean adminMode;

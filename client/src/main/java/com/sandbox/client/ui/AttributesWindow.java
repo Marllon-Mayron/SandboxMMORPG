@@ -10,7 +10,7 @@ import com.badlogic.gdx.scenes.scene2d.ui.*;
 import com.badlogic.gdx.scenes.scene2d.utils.ChangeListener;
 import com.badlogic.gdx.scenes.scene2d.utils.Drawable;
 import com.badlogic.gdx.scenes.scene2d.utils.TextureRegionDrawable;
-import com.common.sandbox.model.Player;
+import com.common.sandbox.model.player.Player;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

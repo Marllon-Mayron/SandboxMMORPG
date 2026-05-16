@@ -10,7 +10,7 @@ import com.badlogic.gdx.scenes.scene2d.ui.TextField;
 import com.badlogic.gdx.scenes.scene2d.utils.ChangeListener;
 import com.sandbox.client.SandboxClient;
 import com.sandbox.client.screens.AbstractScreen;
-import com.common.sandbox.network.packets.RegisterResponse;
+import com.common.sandbox.network.packets.auth.RegisterResponse;
 
 public class RegisterScreen extends AbstractScreen {
     private final boolean adminMode;

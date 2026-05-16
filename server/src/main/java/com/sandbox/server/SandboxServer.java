@@ -1,6 +1,6 @@
 package com.sandbox.server;
 
-import com.common.sandbox.model.GroundItem;
+import com.common.sandbox.model.item.GroundItem;
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.channel.*;
 import io.netty.channel.nio.NioEventLoopGroup;

@@ -3,10 +3,9 @@ package com.sandbox.client.renderer;
 import com.badlogic.gdx.graphics.Color;
 import com.badlogic.gdx.graphics.g2d.BitmapFont;
 import com.badlogic.gdx.graphics.g2d.SpriteBatch;
-import com.common.sandbox.model.AttackType;
-import com.common.sandbox.network.packets.AttackBroadcast;
+import com.common.sandbox.model.enums.AttackType;
+import com.common.sandbox.network.packets.combat.AttackBroadcast;
 import com.sandbox.client.camera.GameCamera;
-import com.sandbox.client.FontManager;
 
 import java.util.concurrent.ConcurrentLinkedQueue;
 

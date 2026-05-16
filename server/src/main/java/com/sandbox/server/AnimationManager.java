@@ -1,6 +1,6 @@
 package com.sandbox.server;
 
-import com.common.sandbox.model.ProjectileAnimation;
+import com.common.sandbox.model.combat.ProjectileAnimation;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

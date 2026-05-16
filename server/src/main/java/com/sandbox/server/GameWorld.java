@@ -1,6 +1,6 @@
 package com.sandbox.server;
 
-import com.common.sandbox.model.Player;
+import com.common.sandbox.model.player.Player;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
