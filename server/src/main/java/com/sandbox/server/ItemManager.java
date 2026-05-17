@@ -18,23 +18,30 @@ public class ItemManager {
     private static final Logger logger = LoggerFactory.getLogger(ItemManager.class);
     private static ItemManager instance;
 
-    private final Map<String, ItemDefinition> itemDefinitions;
+    // Definições de itens (organizadas por tipo)
+    private final Map<String, ItemDefinition> weapons;
+    private final Map<String, ItemDefinition> armors;
+    private final Map<String, ItemDefinition> consumables;
+    private final Map<String, ItemDefinition> allItems;
+
+    // Itens no chão do mundo
     private final Map<String, GroundItem> groundItems;
     private final Map<String, Set<String>> chunkItems;
 
     private final ScheduledExecutorService scheduler;
-
     private boolean worldItemsSpawned = false;
 
     private ItemManager() {
-        this.itemDefinitions = new ConcurrentHashMap<>();
+        this.weapons = new ConcurrentHashMap<>();
+        this.armors = new ConcurrentHashMap<>();
+        this.consumables = new ConcurrentHashMap<>();
+        this.allItems = new ConcurrentHashMap<>();
         this.groundItems = new ConcurrentHashMap<>();
         this.chunkItems = new ConcurrentHashMap<>();
         this.scheduler = Executors.newSingleThreadScheduledExecutor();
 
         loadItemDefinitions();
         startDespawnTask();
-        // NÃO chamar spawnInitialItems aqui
     }
 
     public static synchronized ItemManager getInstance() {
@@ -45,190 +52,27 @@ public class ItemManager {
     }
 
     private void loadItemDefinitions() {
-        // ==================== ESPADAS ====================
+        ItemDataLoader loader = new ItemDataLoader();
+        loader.loadAllItems();
 
-        // Espada Simples
-        ItemDefinition sword = new ItemDefinition();
-        sword.setId("simple_sword");
-        sword.setName("Espada Simples");
-        sword.setCategory("weapon");
-        sword.setSpritesheet("itens/spritesheet_itens.png");
-        sword.setTileX(1);
-        sword.setTileY(0);
-        sword.setDamage(10);
-        sword.setAttackId("melee_sword");
-        sword.setAttackAnimation("sword_slash");
-        sword.setAttackCooldown(1.0f);
-        sword.setProjectileAnimationId("slash");
-        sword.setHitboxDuration(0.5f);
-        sword.setRanged(false);
-        itemDefinitions.put(sword.getId(), sword);
+        // Carregar os dados organizados
+        weapons.putAll(loader.getWeapons());
+        armors.putAll(loader.getArmors());
+        consumables.putAll(loader.getConsumables());
+        allItems.putAll(loader.getAllItems());
 
-        // Espada de Ferro
-        ItemDefinition ironSword = new ItemDefinition();
-        ironSword.setId("iron_sword");
-        ironSword.setName("Espada de Ferro");
-        ironSword.setCategory("weapon");
-        ironSword.setSpritesheet("itens/spritesheet_itens.png");
-        ironSword.setTileX(1);
-        ironSword.setTileY(0);
-        ironSword.setDamage(18);
-        ironSword.setAttackId("melee_sword");
-        ironSword.setAttackAnimation("sword_slash");
-        ironSword.setAttackCooldown(1.25f);
-        ironSword.setProjectileAnimationId("slash");
-        ironSword.setRanged(false);
-        itemDefinitions.put(ironSword.getId(), ironSword);
-
-        // Adaga
-        ItemDefinition dagger = new ItemDefinition();
-        dagger.setId("dagger");
-        dagger.setName("Adaga");
-        dagger.setCategory("weapon");
-        dagger.setSpritesheet("itens/spritesheet_itens.png");
-        dagger.setTileX(2);
-        dagger.setTileY(0);
-        dagger.setDamage(6);
-        dagger.setAttackId("melee_dagger");
-        dagger.setAttackAnimation("dagger_stab");
-        dagger.setAttackCooldown(0.67f);
-        dagger.setProjectileAnimationId("stab");
-        dagger.setRanged(false);
-        itemDefinitions.put(dagger.getId(), dagger);
-
-        // Machado Simples
-        ItemDefinition axe = new ItemDefinition();
-        axe.setId("simple_axe");
-        axe.setName("Machado Simples");
-        axe.setCategory("weapon");
-        axe.setSpritesheet("itens/spritesheet_itens.png");
-        axe.setTileX(3);
-        axe.setTileY(0);
-        axe.setDamage(14);
-        axe.setAttackId("melee_axe");
-        axe.setAttackAnimation("sword_slash");
-        axe.setAttackCooldown(1.43f);
-        axe.setProjectileAnimationId("slash");
-        axe.setRanged(false);
-        itemDefinitions.put(axe.getId(), axe);
-
-        // ==================== ARCOS ====================
-
-        // Arco Simples
-        ItemDefinition simpleBow = new ItemDefinition();
-        simpleBow.setId("simple_bow");
-        simpleBow.setName("Arco Simples");
-        simpleBow.setCategory("weapon");
-        simpleBow.setSpritesheet("itens/spritesheet_itens.png");
-        simpleBow.setTileX(0);
-        simpleBow.setTileY(1);
-        simpleBow.setDamage(8);
-        simpleBow.setAttackId("ranged_bow");
-        simpleBow.setAttackAnimation("bow_shoot");
-        simpleBow.setAttackCooldown(1.25f);
-        simpleBow.setRanged(true);
-        simpleBow.setProjectileId("arrow");
-        simpleBow.setProjectileSpeed(600f);
-        simpleBow.setProjectileRange(400f);
-        simpleBow.setProjectileAnimationId("arrow");
-        itemDefinitions.put(simpleBow.getId(), simpleBow);
-
-        // Arco Longo
-        ItemDefinition longBow = new ItemDefinition();
-        longBow.setId("long_bow");
-        longBow.setName("Arco Longo");
-        longBow.setCategory("weapon");
-        longBow.setSpritesheet("itens/spritesheet_itens.png");
-        longBow.setTileX(1);
-        longBow.setTileY(1);
-        longBow.setDamage(15);
-        longBow.setAttackId("ranged_bow");
-        longBow.setAttackAnimation("bow_shoot");
-        longBow.setAttackCooldown(1.67f);
-        longBow.setRanged(true);
-        longBow.setProjectileId("arrow");
-        longBow.setProjectileSpeed(900f);
-        longBow.setProjectileRange(550f);
-        longBow.setProjectileAnimationId("arrow");
-        itemDefinitions.put(longBow.getId(), longBow);
-
-        // Arco Rápido
-        ItemDefinition quickBow = new ItemDefinition();
-        quickBow.setId("quick_bow");
-        quickBow.setName("Arco Rápido");
-        quickBow.setCategory("weapon");
-        quickBow.setSpritesheet("itens/spritesheet_itens.png");
-        quickBow.setTileX(2);
-        quickBow.setTileY(1);
-        quickBow.setDamage(6);
-        quickBow.setAttackId("ranged_bow");
-        quickBow.setAttackAnimation("bow_shoot");
-        quickBow.setAttackCooldown(0.77f);
-        quickBow.setRanged(true);
-        quickBow.setProjectileId("arrow");
-        quickBow.setProjectileSpeed(450f);
-        quickBow.setProjectileRange(300f);
-        quickBow.setProjectileAnimationId("arrow");
-        itemDefinitions.put(quickBow.getId(), quickBow);
-
-        // ==================== ITENS CONSUMÍVEIS ====================
-
-        ItemDefinition apple = new ItemDefinition();
-        apple.setId("apple");
-        apple.setName("Maçã");
-        apple.setCategory("consumable");
-        apple.setSpritesheet("itens/spritesheet_itens.png");
-        apple.setTileX(0);
-        apple.setTileY(0);
-        apple.setHealAmount(25);
-        itemDefinitions.put(apple.getId(), apple);
-
-        ItemDefinition healthPotion = new ItemDefinition();
-        healthPotion.setId("health_potion");
-        healthPotion.setName("Poção de Vida");
-        healthPotion.setCategory("consumable");
-        healthPotion.setSpritesheet("itens/spritesheet_itens.png");
-        healthPotion.setTileX(3);
-        healthPotion.setTileY(1);
-        healthPotion.setHealAmount(50);
-        itemDefinitions.put(healthPotion.getId(), healthPotion);
-
-        // LOG MELHORADO: Percorrer todos os itens e printar informações completas
-        printAllItemDefinitions();
+        printSummary();
     }
 
-    private void printAllItemDefinitions() {
+    private void printSummary() {
         logger.info("========================================");
-        logger.info("        ITEM DEFINITIONS LOADED         ");
+        logger.info("        ITEMS LOADED SUCCESSFULLY       ");
         logger.info("========================================");
-
-        for (ItemDefinition def : itemDefinitions.values()) {
-            StringBuilder sb = new StringBuilder();
-            sb.append(String.format("📦 %s (ID: %s)", def.getName(), def.getId()));
-            sb.append(String.format(" | Category: %s", def.getCategory()));
-
-            if ("weapon".equals(def.getCategory())) {
-                sb.append(String.format(" | Damage: %d", def.getDamage()));
-                sb.append(String.format(" | Cooldown: %.2fs", def.getAttackCooldown()));
-                sb.append(String.format(" | Hitbox: %.2fs", def.getHitboxDuration()));
-                if (def.isRanged()) {
-                    sb.append(String.format(" | Ranged: ✓ | Speed: %.0f | Range: %.0f",
-                            def.getProjectileSpeed(), def.getProjectileRange()));
-                    sb.append(String.format(" | Anim: %s", def.getProjectileAnimationId()));
-                } else {
-                    sb.append(String.format(" | Melee: ✓ | Anim: %s", def.getProjectileAnimationId()));
-                }
-            } else if ("consumable".equals(def.getCategory())) {
-                sb.append(String.format(" | Heal: %d", def.getHealAmount()));
-            }
-
-            sb.append(String.format(" | Sprite: (%d,%d) %s", def.getTileX(), def.getTileY(), def.getSpritesheet()));
-
-            logger.info(sb.toString());
-        }
-
-        logger.info("========================================");
-        logger.info("Total items loaded: {}", itemDefinitions.size());
+        logger.info("Weapons:     {}", weapons.size());
+        logger.info("Armors:      {}", armors.size());
+        logger.info("Consumables: {}", consumables.size());
+        logger.info("----------------------------------------");
+        logger.info("Total:       {}", allItems.size());
         logger.info("========================================");
     }
 
@@ -239,24 +83,19 @@ public class ItemManager {
         }
 
         logger.info("=== SPAWNING WORLD ITEMS ===");
-
         groundItems.clear();
         chunkItems.clear();
 
-        // Espadas
+        // Armas
         spawnItem("simple_sword", 400, 300, 60);
         spawnItem("iron_sword", 550, 320, 90);
-
-        // Adaga
         spawnItem("dagger", 350, 400, 45);
+        spawnItem("simple_axe", 480, 280, 75);
 
         // Arcos
         spawnItem("simple_bow", 500, 350, 60);
         spawnItem("long_bow", 600, 380, 90);
         spawnItem("quick_bow", 450, 420, 60);
-
-        // Machado
-        spawnItem("simple_axe", 480, 280, 75);
 
         // Consumíveis
         spawnItem("apple", 430, 330, 45);
@@ -270,7 +109,7 @@ public class ItemManager {
     }
 
     public void spawnItem(String itemId, float x, float y, int despawnSeconds) {
-        ItemDefinition def = itemDefinitions.get(itemId);
+        ItemDefinition def = allItems.get(itemId);
         if (def == null) {
             logger.warn("Tried to spawn unknown item: {}", itemId);
             return;
@@ -282,8 +121,8 @@ public class ItemManager {
         groundItems.put(instanceId, item);
         addToChunkIndex(item);
 
-        logger.info("ITEM SPAWNED - ID: {}, Name: {}, Category: {}, Pos: ({}, {})",
-                instanceId.substring(0, 8), def.getName(), def.getCategory(), x, y);
+        logger.info("ITEM SPAWNED - {}, Category: {}, Pos: ({}, {})",
+                def.getName(), def.getCategory(), x, y);
 
         ItemSpawnPacket packet = new ItemSpawnPacket(item);
         GameServerHandler.broadcastToAll(packet);
@@ -293,14 +132,9 @@ public class ItemManager {
         GroundItem item = groundItems.remove(instanceId);
         if (item != null) {
             removeFromChunkIndex(item);
-
             ItemDespawnPacket packet = new ItemDespawnPacket(instanceId);
             GameServerHandler.broadcastToAll(packet);
-
-            logger.info("DESPAWNED - Item: {} [{}] after {}s",
-                    item.getDefinition().getName(),
-                    instanceId.substring(0, 8),
-                    item.getDespawnSeconds());
+            logger.debug("DESPAWNED - {}", item.getDefinition().getName());
         }
     }
 
@@ -308,13 +142,11 @@ public class ItemManager {
         scheduler.scheduleAtFixedRate(() -> {
             try {
                 List<String> expired = new ArrayList<>();
-
                 for (GroundItem item : groundItems.values()) {
                     if (item.isExpired()) {
                         expired.add(item.getInstanceId());
                     }
                 }
-
                 for (String id : expired) {
                     despawnItem(id);
                 }
@@ -348,52 +180,45 @@ public class ItemManager {
         }
     }
 
+    // ==================== GETTERS ====================
+
     public List<String> getAllItemIds() {
-        return new ArrayList<>(itemDefinitions.keySet());
+        return new ArrayList<>(allItems.keySet());
     }
 
-    public Collection<GroundItem> getAllItems() {
+    public Collection<GroundItem> getAllGroundItems() {
         return new ArrayList<>(groundItems.values());
     }
 
-    public void printAllItems() {
-        logger.info("=== ALL ITEMS IN MANAGER ===");
-        logger.info("Total items: {}", groundItems.size());
-        if (groundItems.isEmpty()) {
-            logger.info("  No items currently in manager");
-        } else {
-            for (GroundItem item : groundItems.values()) {
-                long timeLeft = (item.getSpawnTime() + (item.getDespawnSeconds() * 1000L)) - System.currentTimeMillis();
-                logger.info("  Item: {} [{}] at ({}, {}) - Despawn in {}s",
-                        item.getDefinition().getName(),
-                        item.getInstanceId().substring(0, 8),
-                        item.getX(),
-                        item.getY(),
-                        timeLeft / 1000);
-            }
-        }
-        logger.info("============================");
-    }
-
-    public int getItemCount() {
-        return groundItems.size();
-    }
-
     public Map<String, ItemDefinition> getAllItemDefinitions() {
-        return new HashMap<>(itemDefinitions);
-    }
-    public void resendAllItemsToPlayer(ChannelHandlerContext ctx) {
-        logger.info("Resending all items to player - Total items: {}", groundItems.size());
-        for (GroundItem item : groundItems.values()) {
-            ctx.writeAndFlush(new ItemSpawnPacket(item));
-        }
+        return new HashMap<>(allItems);
     }
 
-    public GroundItem removeItem(String instanceId) {
+    public Map<String, ItemDefinition> getWeapons() {
+        return new HashMap<>(weapons);
+    }
+
+    public Map<String, ItemDefinition> getArmors() {
+        return new HashMap<>(armors);
+    }
+
+    public Map<String, ItemDefinition> getConsumables() {
+        return new HashMap<>(consumables);
+    }
+
+    public ItemDefinition getItemDefinition(String itemId) {
+        return allItems.get(itemId);
+    }
+
+    public GroundItem getGroundItem(String instanceId) {
+        return groundItems.get(instanceId);
+    }
+
+    public GroundItem removeGroundItem(String instanceId) {
         GroundItem item = groundItems.remove(instanceId);
         if (item != null) {
             removeFromChunkIndex(item);
-            logger.info("Item removed: {} [{}]", item.getDefinition().getName(), instanceId.substring(0, 8));
+            logger.debug("Item removed from ground: {}", item.getDefinition().getName());
         }
         return item;
     }
@@ -412,8 +237,27 @@ public class ItemManager {
                 newItem.getDefinition().getName(), newItem.getX(), newItem.getY());
     }
 
-    public ItemDefinition getItemDefinition(String itemId) {
-        return itemDefinitions.get(itemId);
+    public int getGroundItemCount() {
+        return groundItems.size();
+    }
+
+    public void printAllItems() {
+        logger.info("=== GROUND ITEMS ({} items) ===", groundItems.size());
+        for (GroundItem item : groundItems.values()) {
+            long timeLeft = (item.getSpawnTime() + (item.getDespawnSeconds() * 1000L)) - System.currentTimeMillis();
+            logger.info("  {} [{}] at ({}, {}) - Despawn in {}s",
+                    item.getDefinition().getName(),
+                    item.getInstanceId().substring(0, 8),
+                    item.getX(), item.getY(),
+                    timeLeft / 1000);
+        }
+    }
+
+    public void resendAllItemsToPlayer(ChannelHandlerContext ctx) {
+        logger.info("Resending all ground items to player - Total: {}", groundItems.size());
+        for (GroundItem item : groundItems.values()) {
+            ctx.writeAndFlush(new ItemSpawnPacket(item));
+        }
     }
 
     public void shutdown() {

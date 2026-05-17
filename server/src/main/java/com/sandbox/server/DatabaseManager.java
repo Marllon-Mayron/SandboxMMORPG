@@ -215,7 +215,7 @@ public class DatabaseManager {
         String sql = "SELECT id, username, email, password_hash, x, y, direction, " +
                 "level, experience, gold, attribute_points, skill_points, " +
                 "current_hp, current_mana, current_stamina, " +
-                // Atributos bonus
+                // Bonus de atributos (upados pelo jogador)
                 "bonus_max_hp, bonus_max_mana, bonus_max_stamina, " +
                 "bonus_hp_regen, bonus_mana_regen, bonus_stamina_regen, " +
                 "bonus_physical_defense, bonus_magic_defense, " +
@@ -240,7 +240,7 @@ public class DatabaseManager {
                 if (BCrypt.checkpw(password, hashedPassword)) {
                     Player player = new Player();
 
-                    // Dados basicos
+                    // ==================== DADOS BÁSICOS ====================
                     player.setId(rs.getObject("id").toString());
                     player.setUsername(rs.getString("username"));
                     player.setEmail(rs.getString("email"));
@@ -248,19 +248,19 @@ public class DatabaseManager {
                     player.setY(rs.getFloat("y"));
                     player.setDirection(rs.getString("direction") != null ? rs.getString("direction") : "DOWN");
 
-                    // Progressao
+                    // ==================== PROGRESSÃO ====================
                     player.setLevel(rs.getInt("level"));
                     player.setExperience(rs.getInt("experience"));
                     player.setGold(rs.getInt("gold"));
                     player.setAttributePoints(rs.getInt("attribute_points"));
                     player.setSkillPoints(rs.getInt("skill_points"));
 
-                    // Status atuais
+                    // ==================== STATUS ATUAIS ====================
                     player.setCurrentHp(rs.getInt("current_hp"));
                     player.setCurrentMana(rs.getInt("current_mana"));
                     player.setCurrentStamina(rs.getInt("current_stamina"));
 
-                    // Carregar todos os bonus
+                    // ==================== BÔNUS DE ATRIBUTOS (UPADOS PELO JOGADOR) ====================
                     player.setBonusMaxHp(rs.getInt("bonus_max_hp"));
                     player.setBonusMaxMana(rs.getInt("bonus_max_mana"));
                     player.setBonusMaxStamina(rs.getInt("bonus_max_stamina"));
@@ -297,16 +297,14 @@ public class DatabaseManager {
                     player.setBonusHolyResistance(rs.getInt("bonus_holy_resistance"));
                     player.setBonusDarkResistance(rs.getInt("bonus_dark_resistance"));
 
-                    // Carregar inventario
+                    // ==================== INVENTÁRIO ====================
                     String inventoryJson = rs.getString("inventory");
                     if (inventoryJson != null && !inventoryJson.isEmpty()) {
                         try {
                             Inventory inventory = objectMapper.readValue(inventoryJson, Inventory.class);
                             player.setInventory(inventory);
-                            logger.info("Loaded inventory for {}: {} slots, {} equipped",
-                                    username,
-                                    inventory.getSlots().size(),
-                                    inventory.getEquipped().size());
+                            logger.debug("Loaded inventory for {}: {} slots, {} equipped",
+                                    username, inventory.getSlots().size(), inventory.getEquipped().size());
                         } catch (Exception e) {
                             logger.error("Failed to parse inventory JSON for player {}", username, e);
                             player.setInventory(new Inventory());
@@ -318,11 +316,23 @@ public class DatabaseManager {
                     player.setOnline(true);
                     updateLastLogin(player.getId());
 
-                    logger.info("Player {} loaded - Level {} | HP {}/{} | AP: {} | Power P:{}/R:{}/M:{}",
-                            username, player.getLevel(),
-                            player.getCurrentHp(), player.getMaxHp(),
-                            player.getAttributePoints(),
-                            player.getPhysicalPower(), player.getRangedPower(), player.getMagicPower());
+                    // LOG COMPLETO PARA DEBUG
+                    logger.info("========================================");
+                    logger.info("PLAYER LOADED FROM DATABASE: {}", username);
+                    logger.info("Level: {} | AP: {} | SP: {}", player.getLevel(), player.getAttributePoints(), player.getSkillPoints());
+                    logger.info("HP: {}/{}", player.getCurrentHp(), player.getMaxHp());
+                    logger.info("Mana: {}/{}", player.getCurrentMana(), player.getMaxMana());
+                    logger.info("Stamina: {}/{}", player.getCurrentStamina(), player.getMaxStamina());
+                    logger.info("Bonus MaxHP: {}", player.getBonusMaxHp());
+                    logger.info("Physical Power: {} (Base:10 + Bonus:{})", player.getPhysicalPower(), player.getBonusPhysicalPower());
+                    logger.info("Ranged Power: {} (Base:10 + Bonus:{})", player.getRangedPower(), player.getBonusRangedPower());
+                    logger.info("Magic Power: {} (Base:10 + Bonus:{})", player.getMagicPower(), player.getBonusMagicPower());
+                    logger.info("Physical Defense: {} (Base:0 + Bonus:{})", player.getPhysicalDefense(), player.getBonusPhysicalDefense());
+                    logger.info("Magic Defense: {} (Base:0 + Bonus:{})", player.getMagicDefense(), player.getBonusMagicDefense());
+                    logger.info("Critical Chance: {}% (Base:5% + Bonus:{})", player.getCriticalChance() * 100, player.getBonusCriticalChance() * 100);
+                    logger.info("Movement Speed: {} (Base:400 + Bonus:{})", player.getMovementSpeed(), player.getBonusMovementSpeed());
+                    logger.info("Equipped items: {}", player.getInventory().getEquipped());
+                    logger.info("========================================");
 
                     return player;
                 } else {
@@ -337,9 +347,6 @@ public class DatabaseManager {
         }
     }
 
-    /**
-     * MÉTODO ÚNICO DE SALVAMENTO - Salva TUDO
-     */
     public void savePlayer(Player player) {
         if (player == null) {
             logger.warn("Attempted to save null player");

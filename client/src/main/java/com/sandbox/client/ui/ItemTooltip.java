@@ -80,10 +80,10 @@ public class ItemTooltip {
 
         descriptionLabel = new Label("", skin, "default");
         descriptionLabel.setFontScale(0.85f);
-        descriptionLabel.setColor(Color.LIGHT_GRAY);
+        descriptionLabel.setColor(new Color(0.8f, 0.8f, 0.9f, 1f));
         descriptionLabel.setWrap(true);
         descriptionLabel.setAlignment(Align.topLeft);
-        content.add(descriptionLabel).width(TOOLTIP_WIDTH - PADDING * 2);
+        content.add(descriptionLabel).width(TOOLTIP_WIDTH - PADDING * 2).padTop(8);
 
         window.add(content).fill().expand();
         window.pack();
@@ -153,6 +153,7 @@ public class ItemTooltip {
         typeLabel.setText(getCategoryDisplayName(item.getCategory()));
 
         StringBuilder stats = new StringBuilder();
+
         if ("weapon".equals(item.getCategory())) {
             stats.append("Damage: ").append(item.getDamage());
             if (item.isRanged()) {
@@ -166,9 +167,50 @@ public class ItemTooltip {
             stats.append("Heal: ").append(item.getHealAmount());
         }
 
-        if (item.getStrengthBonus() > 0) stats.append("\nStrength +").append(item.getStrengthBonus());
-        if (item.getAgilityBonus() > 0) stats.append("\nAgility +").append(item.getAgilityBonus());
-        if (item.getWisdomBonus() > 0) stats.append("\nWisdom +").append(item.getWisdomBonus());
+        // Bônus de recursos
+        if (item.getBonusMaxHp() > 0) stats.append("\n+").append(item.getBonusMaxHp()).append(" Max HP");
+        if (item.getBonusMaxMana() > 0) stats.append("\n+").append(item.getBonusMaxMana()).append(" Max Mana");
+        if (item.getBonusMaxStamina() > 0) stats.append("\n+").append(item.getBonusMaxStamina()).append(" Max Stamina");
+
+        // Bônus de regeneração
+        if (item.getBonusHpRegen() > 0) stats.append("\n+").append(item.getBonusHpRegen()).append(" HP Regen");
+        if (item.getBonusManaRegen() > 0) stats.append("\n+").append(item.getBonusManaRegen()).append(" Mana Regen");
+        if (item.getBonusStaminaRegen() > 0) stats.append("\n+").append(item.getBonusStaminaRegen()).append(" Stamina Regen");
+
+        // Bônus de defesa
+        if (item.getBonusPhysicalDefense() > 0) stats.append("\n+").append(item.getBonusPhysicalDefense()).append(" Physical Defense");
+        if (item.getBonusMagicDefense() > 0) stats.append("\n+").append(item.getBonusMagicDefense()).append(" Magic Defense");
+
+        // Bônus de poder
+        if (item.getBonusPhysicalPower() > 0) stats.append("\n+").append(item.getBonusPhysicalPower()).append(" Physical Power");
+        if (item.getBonusRangedPower() > 0) stats.append("\n+").append(item.getBonusRangedPower()).append(" Ranged Power");
+        if (item.getBonusMagicPower() > 0) stats.append("\n+").append(item.getBonusMagicPower()).append(" Magic Power");
+
+        // Bônus de chance
+        if (item.getBonusCriticalChance() > 0) stats.append("\n+").append((int)(item.getBonusCriticalChance() * 100)).append("% Critical Chance");
+        if (item.getBonusCriticalDamage() > 0) stats.append("\n+").append((int)(item.getBonusCriticalDamage() * 100)).append("% Critical Damage");
+        if (item.getBonusDodgeChance() > 0) stats.append("\n+").append((int)(item.getBonusDodgeChance() * 100)).append("% Dodge Chance");
+
+        // Bônus de velocidade
+        if (item.getBonusAttackSpeed() > 0) stats.append("\n+").append((int)(item.getBonusAttackSpeed() * 100)).append("% Attack Speed");
+        if (item.getBonusMovementSpeed() > 0) stats.append("\n+").append((int)item.getBonusMovementSpeed()).append(" Movement Speed");
+
+        // Bônus de utilidades
+        if (item.getBonusCooldownReduction() > 0) stats.append("\n+").append((int)(item.getBonusCooldownReduction() * 100)).append("% Cooldown Reduction");
+        if (item.getBonusLifeSteal() > 0) stats.append("\n+").append((int)(item.getBonusLifeSteal() * 100)).append("% Life Steal");
+        if (item.getBonusManaSteal() > 0) stats.append("\n+").append((int)(item.getBonusManaSteal() * 100)).append("% Mana Steal");
+        if (item.getBonusTenacity() > 0) stats.append("\n+").append((int)(item.getBonusTenacity() * 100)).append("% Tenacity");
+
+        // Sorte
+        if (item.getBonusLuck() > 0) stats.append("\n+").append(item.getBonusLuck()).append(" Luck");
+
+        // Resistências elementais
+        if (item.getBonusFireResistance() > 0) stats.append("\n+").append(item.getBonusFireResistance()).append("% Fire Resistance");
+        if (item.getBonusIceResistance() > 0) stats.append("\n+").append(item.getBonusIceResistance()).append("% Ice Resistance");
+        if (item.getBonusLightningResistance() > 0) stats.append("\n+").append(item.getBonusLightningResistance()).append("% Lightning Resistance");
+        if (item.getBonusPoisonResistance() > 0) stats.append("\n+").append(item.getBonusPoisonResistance()).append("% Poison Resistance");
+        if (item.getBonusHolyResistance() > 0) stats.append("\n+").append(item.getBonusHolyResistance()).append("% Holy Resistance");
+        if (item.getBonusDarkResistance() > 0) stats.append("\n+").append(item.getBonusDarkResistance()).append("% Dark Resistance");
 
         statsLabel.setText(stats.toString());
 
@@ -235,16 +277,25 @@ public class ItemTooltip {
     }
 
     private String getItemDescription(ItemDefinition item) {
+        // Se o item tem descrição personalizada, usa ela
+        if (item.getDescription() != null && !item.getDescription().isEmpty()) {
+            return item.getDescription();
+        }
+
+        // Fallback para descrições genéricas
         if ("weapon".equals(item.getCategory())) {
             if (item.isRanged()) {
-                return "A ranged weapon that fires projectiles at enemies from a distance. Effective against targets from afar.";
+                return "Uma arma de longo alcance que dispara projéteis contra inimigos à distância.";
             } else {
-                return "A melee weapon for close combat engagement. Effective at short range.";
+                return "Uma arma corpo a corpo para combate próximo.";
             }
         } else if ("consumable".equals(item.getCategory())) {
-            return "Restores " + item.getHealAmount() + " health points when consumed. Can be used in combat or out of combat.";
+            return "Restaura " + item.getHealAmount() + " pontos de vida quando consumido.";
+        } else if ("armor".equals(item.getCategory())) {
+            return "Uma peça de armadura que oferece proteção e bônus de atributos.";
         }
-        return "A mysterious item of unknown origin and purpose. Its properties are yet to be discovered.";
+
+        return "Um item misterioso de origem desconhecida.";
     }
 
     public void dispose() {

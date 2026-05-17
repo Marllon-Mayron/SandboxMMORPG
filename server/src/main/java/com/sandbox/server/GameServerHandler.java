@@ -148,47 +148,84 @@ public class GameServerHandler extends SimpleChannelInboundHandler<Object> {
 
             if (player != null) {
                 logger.info("Login Sucesso - Usuario: {}", request.username);
+
+                // SALVAR O CURRENT HP DO BANCO ANTES DE QUALQUER CÁLCULO
+                int savedCurrentHp = player.getCurrentHp();
+                int savedCurrentMana = player.getCurrentMana();
+                int savedCurrentStamina = player.getCurrentStamina();
+
+                logger.info("BEFORE recalculation - Saved HP from DB: {}/{}", savedCurrentHp, player.getMaxHp());
+
                 currentPlayer = player;
 
-                GameWorld.getInstance().addPlayer(player, channelId);
+                // PASSO 1: RECALCULAR BÔNUS DOS EQUIPAMENTOS (aumenta maxHp)
+                recalculateEquipmentBonuses(currentPlayer);
 
-                LoginResponse response = new LoginResponse(true, "Login bem-sucedido!", player);
+                logger.info("AFTER equipment bonus - MaxHP: {}, Saved HP: {}",
+                        currentPlayer.getMaxHp(), savedCurrentHp);
+
+                // PASSO 2: APLICAR BÔNUS DE CONJUNTO
+                SetManager.getInstance().applySetBonuses(currentPlayer);
+
+                logger.info("AFTER set bonus - MaxHP: {}, Saved HP: {}",
+                        currentPlayer.getMaxHp(), savedCurrentHp);
+
+                // PASSO 3: RESTAURAR O CURRENT HP SALVO DO BANCO
+                // Mas garantir que não ultrapasse o novo maxHp
+                int finalCurrentHp = Math.min(savedCurrentHp, currentPlayer.getMaxHp());
+                currentPlayer.setCurrentHp(finalCurrentHp);
+                currentPlayer.setCurrentMana(Math.min(savedCurrentMana, currentPlayer.getMaxMana()));
+                currentPlayer.setCurrentStamina(Math.min(savedCurrentStamina, currentPlayer.getMaxStamina()));
+
+                logger.info("FINAL STATE - HP: {}/{} (Saved: {}, Max: {})",
+                        currentPlayer.getCurrentHp(), currentPlayer.getMaxHp(),
+                        savedCurrentHp, currentPlayer.getMaxHp());
+
+                // PASSO 4: ADICIONAR PLAYER AO MUNDO
+                GameWorld.getInstance().addPlayer(currentPlayer, channelId);
+
+                // PASSO 5: CRIAR RESPOSTA DE LOGIN
+                LoginResponse response = new LoginResponse(true, "Login bem-sucedido!", currentPlayer);
                 response.nearbyPlayers = new java.util.HashMap<>();
 
-                // Enviar TODOS os players com HP completo via PlayerStatePacket
+                // PASSO 6: ENVIAR TODOS OS OUTROS PLAYERS PARA O NOVO JOGADOR
                 for (Player p : GameWorld.getInstance().getAllPlayers()) {
-                    if (!p.getId().equals(player.getId())) {
+                    if (!p.getId().equals(currentPlayer.getId())) {
                         PlayerStatePacket statePacket = new PlayerStatePacket(p);
                         statePacket.fullSync = true;
                         sendPacket(ctx, statePacket);
                     }
                 }
 
+                // PASSO 7: ENVIAR RESPOSTA DE LOGIN
                 sendPacket(ctx, response);
 
-                // Broadcast do novo jogador com HP completo via PlayerStatePacket
-                PlayerStatePacket newPlayerState = new PlayerStatePacket(player);
+                // PASSO 8: BROADCAST DO NOVO JOGADOR
+                PlayerStatePacket newPlayerState = new PlayerStatePacket(currentPlayer);
                 newPlayerState.fullSync = true;
                 broadcastToAllExcept(newPlayerState, ctx.channel().id().asLongText());
 
-                ChatMessage joinMsg = new ChatMessage(player.getId(), "SISTEMA",
-                        player.getUsername() + " entrou no mundo!");
+                // PASSO 9: MENSAGEM DE ENTRADA
+                ChatMessage joinMsg = new ChatMessage(currentPlayer.getId(), "SISTEMA",
+                        currentPlayer.getUsername() + " entrou no mundo!");
                 broadcastToAll(joinMsg);
 
-                sendMapToPlayer(ctx, player);
+                // PASSO 10: ENVIAR MAPA, ITENS, ETC.
+                sendMapToPlayer(ctx, currentPlayer);
+                sendAllExistingItemsToPlayer(ctx, currentPlayer);
+                sendFriendListToPlayer(ctx, currentPlayer);
 
-                sendAllExistingItemsToPlayer(ctx, player);
-
-                sendFriendListToPlayer(ctx, player);
-
-                sendAllExistingPlayers(ctx, player);
-
+                // PASSO 11: ANIMAÇÕES E DEFINIÇÕES
                 AnimationSyncPacket animSync = new AnimationSyncPacket(AnimationManager.getInstance().getAllProjectileAnimations());
-                sendPacket(ctx, animSync);
-
                 ItemDefinitionSyncPacket itemSync = new ItemDefinitionSyncPacket(ItemManager.getInstance().getAllItemDefinitions());
+
+                sendPacket(ctx, animSync);
                 sendPacket(ctx, itemSync);
-                logger.info("Sent ItemDefinitionSync with {} item definitions", itemSync.itemDefinitions.size());
+
+                logger.info("Login complete for {} - Final HP: {}/{}",
+                        currentPlayer.getUsername(),
+                        currentPlayer.getCurrentHp(),
+                        currentPlayer.getMaxHp());
             } else {
                 logger.warn("Login Falhou - Usuario: {}", request.username);
                 LoginResponse response = new LoginResponse(false, "Usuario ou senha invalidos!", null);
@@ -200,7 +237,7 @@ public class GameServerHandler extends SimpleChannelInboundHandler<Object> {
     }
 
     private void sendAllExistingItemsToPlayer(ChannelHandlerContext ctx, Player player) {
-        Collection<GroundItem> allItems = ItemManager.getInstance().getAllItems();
+        Collection<GroundItem> allItems = ItemManager.getInstance().getAllGroundItems();
 
         logger.info("=== SENDING ITEMS TO PLAYER: {} ===", player.getUsername());
         logger.info("Total items in ItemManager: {}", allItems.size());
@@ -782,7 +819,7 @@ public class GameServerHandler extends SimpleChannelInboundHandler<Object> {
     private void handlePickupItem(ChannelHandlerContext ctx, PickupItemPacket packet) {
         if (currentPlayer == null) return;
 
-        GroundItem groundItem = ItemManager.getInstance().removeItem(packet.instanceId);
+        GroundItem groundItem = ItemManager.getInstance().removeGroundItem(packet.instanceId);
         if (groundItem == null) return;
 
         ItemDefinition def = groundItem.getDefinition();
@@ -895,26 +932,32 @@ public class GameServerHandler extends SimpleChannelInboundHandler<Object> {
                             unequipToInventory(packet.equipSlot);
                         }
                         currentPlayer.getInventory().equipItem(packet.slot, packet.equipSlot);
-                        logger.info("✅ Player {} equipped {} to slot {}",
+                        logger.info("Player {} equipped {} to slot {}",
                                 currentPlayer.getUsername(), stack.getItemId(), packet.equipSlot);
-                    } else {
-                        logger.warn("❌ Player {} attempted to equip non-equippable item: {} (Category: {})",
-                                currentPlayer.getUsername(), stack.getItemId(),
-                                def != null ? def.getCategory() : "unknown");
+
+                        // RECALCULAR BÔNUS DOS EQUIPAMENTOS
+                        recalculateEquipmentBonuses(currentPlayer);
+
+                        // ATUALIZAR BÔNUS DE CONJUNTO
+                        SetManager.getInstance().refreshSetBonuses(currentPlayer);
                     }
                 }
                 break;
 
             case "UNEQUIP":
                 String equippedItemId = currentPlayer.getInventory().getEquipped().get(packet.equipSlot);
-
                 if (equippedItemId != null && !equippedItemId.isEmpty()) {
                     currentPlayer.getInventory().unequipItem(packet.equipSlot);
-
                     ItemDefinition def = ItemManager.getInstance().getItemDefinition(equippedItemId);
                     if (def != null) {
                         currentPlayer.getInventory().addItem(equippedItemId, 1, def);
                         logger.info("Unequipped {} back to inventory", equippedItemId);
+
+                        // RECALCULAR BÔNUS DOS EQUIPAMENTOS
+                        recalculateEquipmentBonuses(currentPlayer);
+
+                        // ATUALIZAR BÔNUS DE CONJUNTO
+                        SetManager.getInstance().refreshSetBonuses(currentPlayer);
                     }
                 }
                 break;
@@ -922,8 +965,198 @@ public class GameServerHandler extends SimpleChannelInboundHandler<Object> {
 
         GameWorld.getInstance().savePlayer(currentPlayer);
 
+        // Enviar estado atualizado do jogador (com todos os atributos recalculados)
+        PlayerStatePacket statePacket = new PlayerStatePacket(currentPlayer);
+        statePacket.fullSync = true;
+        sendPacket(ctx, statePacket);
+
+        // Enviar inventário atualizado
         InventoryUpdatePacket invPacket = new InventoryUpdatePacket(currentPlayer.getInventory());
         sendPacket(ctx, invPacket);
+    }
+
+    /**
+     * Recalcula todos os bônus dos equipamentos e aplica ao jogador
+     */
+    private void recalculateEquipmentBonuses(Player player) {
+        if (player == null || player.getInventory() == null) {
+            logger.warn("recalculateEquipmentBonuses: player or inventory is null");
+            return;
+        }
+
+        logger.info("========== RECALCULATING EQUIPMENT BONUSES ==========");
+        logger.info("Player: {}", player.getUsername());
+
+        // Mostrar valores ANTES
+        logger.info("BEFORE - MaxHP: {}, BonusMaxHp: {}, EquipmentBonusMaxHp: {}",
+                player.getMaxHp(), player.getBonusMaxHp(), player.getEquipmentBonusMaxHp());
+        logger.info("BEFORE - PhysicalPower: {}, BonusPhysicalPower: {}, EquipmentBonusPhysicalPower: {}",
+                player.getPhysicalPower(), player.getBonusPhysicalPower(), player.getEquipmentBonusPhysicalPower());
+
+        // Resetar todos os bônus de equipamento
+        player.resetEquipmentBonuses();
+
+        logger.info("AFTER RESET - EquipmentBonusMaxHp: {}", player.getEquipmentBonusMaxHp());
+
+        // Somar bônus de todos os equipamentos equipados
+        Map<String, String> equipped = player.getInventory().getEquipped();
+        logger.info("Equipped items: {}", equipped);
+
+        for (Map.Entry<String, String> entry : equipped.entrySet()) {
+            String slot = entry.getKey();
+            String itemId = entry.getValue();
+            if (itemId != null && !itemId.isEmpty()) {
+                ItemDefinition def = ItemManager.getInstance().getItemDefinition(itemId);
+                if (def != null) {
+                    logger.info("  Adding bonus from {} (slot: {}): HP+{}, Power+{}",
+                            def.getName(), slot, def.getBonusMaxHp(), def.getBonusPhysicalPower());
+                    player.addEquipmentBonus(def);
+                } else {
+                    logger.warn("  Item definition not found for: {}", itemId);
+                }
+            }
+        }
+
+        // Mostrar valores DEPOIS
+        logger.info("AFTER ADDING - EquipmentBonusMaxHp: {}", player.getEquipmentBonusMaxHp());
+        logger.info("AFTER - MaxHP: {}, PhysicalPower: {}", player.getMaxHp(), player.getPhysicalPower());
+
+        // Validar stats
+        player.validateCurrentStats();
+
+        logger.info("FINAL - CurrentHP: {}/{}", player.getCurrentHp(), player.getMaxHp());
+        logger.info("======================================================");
+    }
+
+    /**
+     * Reseta apenas os bônus vindos de equipamentos
+     */
+    private void resetEquipmentBonuses(Player player) {
+        // NOTA: Esta é uma abordagem simples. Idealmente, teríamos campos separados
+        // para equipmentBonusMaxHp, equipmentBonusPhysicalPower, etc.
+        // Como simplificação, vamos subtrair todos os bônus dos equipamentos atuais
+
+        Map<String, String> equipped = player.getInventory().getEquipped();
+
+        for (String itemId : equipped.values()) {
+            if (itemId != null && !itemId.isEmpty()) {
+                ItemDefinition def = ItemManager.getInstance().getItemDefinition(itemId);
+                if (def != null) {
+                    removeEquipmentBonus(player, def);
+                }
+            }
+        }
+    }
+
+    /**
+     * Aplica os bônus de um item ao jogador
+     * CORRIGIDO: Usa os campos equipmentBonusXxx
+     */
+    private void applyEquipmentBonus(Player player, ItemDefinition def) {
+        if (def == null) return;
+
+        // Recursos
+        player.setEquipmentBonusMaxHp(player.getEquipmentBonusMaxHp() + def.getBonusMaxHp());
+        player.setEquipmentBonusMaxMana(player.getEquipmentBonusMaxMana() + def.getBonusMaxMana());
+        player.setEquipmentBonusMaxStamina(player.getEquipmentBonusMaxStamina() + def.getBonusMaxStamina());
+
+        // Regeneração
+        player.setEquipmentBonusHpRegen(player.getEquipmentBonusHpRegen() + def.getBonusHpRegen());
+        player.setEquipmentBonusManaRegen(player.getEquipmentBonusManaRegen() + def.getBonusManaRegen());
+        player.setEquipmentBonusStaminaRegen(player.getEquipmentBonusStaminaRegen() + def.getBonusStaminaRegen());
+
+        // Defesas
+        player.setEquipmentBonusPhysicalDefense(player.getEquipmentBonusPhysicalDefense() + def.getBonusPhysicalDefense());
+        player.setEquipmentBonusMagicDefense(player.getEquipmentBonusMagicDefense() + def.getBonusMagicDefense());
+
+        // Poder de Dano
+        player.setEquipmentBonusPhysicalPower(player.getEquipmentBonusPhysicalPower() + def.getBonusPhysicalPower());
+        player.setEquipmentBonusRangedPower(player.getEquipmentBonusRangedPower() + def.getBonusRangedPower());
+        player.setEquipmentBonusMagicPower(player.getEquipmentBonusMagicPower() + def.getBonusMagicPower());
+
+        // Chance e Multiplicadores
+        player.setEquipmentBonusCriticalChance(player.getEquipmentBonusCriticalChance() + def.getBonusCriticalChance());
+        player.setEquipmentBonusCriticalDamage(player.getEquipmentBonusCriticalDamage() + def.getBonusCriticalDamage());
+        player.setEquipmentBonusDodgeChance(player.getEquipmentBonusDodgeChance() + def.getBonusDodgeChance());
+
+        // Velocidades
+        player.setEquipmentBonusAttackSpeed(player.getEquipmentBonusAttackSpeed() + def.getBonusAttackSpeed());
+        player.setEquipmentBonusMovementSpeed(player.getEquipmentBonusMovementSpeed() + def.getBonusMovementSpeed());
+
+        // Utilidades
+        player.setEquipmentBonusCooldownReduction(player.getEquipmentBonusCooldownReduction() + def.getBonusCooldownReduction());
+        player.setEquipmentBonusLifeSteal(player.getEquipmentBonusLifeSteal() + def.getBonusLifeSteal());
+        player.setEquipmentBonusManaSteal(player.getEquipmentBonusManaSteal() + def.getBonusManaSteal());
+        player.setEquipmentBonusTenacity(player.getEquipmentBonusTenacity() + def.getBonusTenacity());
+
+        // Sorte
+        player.setEquipmentBonusLuck(player.getEquipmentBonusLuck() + def.getBonusLuck());
+
+        // Resistências Elementais
+        player.setEquipmentBonusFireResistance(player.getEquipmentBonusFireResistance() + def.getBonusFireResistance());
+        player.setEquipmentBonusIceResistance(player.getEquipmentBonusIceResistance() + def.getBonusIceResistance());
+        player.setEquipmentBonusLightningResistance(player.getEquipmentBonusLightningResistance() + def.getBonusLightningResistance());
+        player.setEquipmentBonusPoisonResistance(player.getEquipmentBonusPoisonResistance() + def.getBonusPoisonResistance());
+        player.setEquipmentBonusHolyResistance(player.getEquipmentBonusHolyResistance() + def.getBonusHolyResistance());
+        player.setEquipmentBonusDarkResistance(player.getEquipmentBonusDarkResistance() + def.getBonusDarkResistance());
+
+        logger.debug("Applied equipment bonus: {} - +{} HP, +{} Physical Power",
+                def.getName(), def.getBonusMaxHp(), def.getBonusPhysicalPower());
+    }
+
+    /**
+     * Remove os bônus de um item do jogador
+     * CORRIGIDO: Usa os campos equipmentBonusXxx
+     */
+    private void removeEquipmentBonus(Player player, ItemDefinition def) {
+        if (def == null) return;
+
+        // Recursos
+        player.setEquipmentBonusMaxHp(player.getEquipmentBonusMaxHp() - def.getBonusMaxHp());
+        player.setEquipmentBonusMaxMana(player.getEquipmentBonusMaxMana() - def.getBonusMaxMana());
+        player.setEquipmentBonusMaxStamina(player.getEquipmentBonusMaxStamina() - def.getBonusMaxStamina());
+
+        // Regeneração
+        player.setEquipmentBonusHpRegen(player.getEquipmentBonusHpRegen() - def.getBonusHpRegen());
+        player.setEquipmentBonusManaRegen(player.getEquipmentBonusManaRegen() - def.getBonusManaRegen());
+        player.setEquipmentBonusStaminaRegen(player.getEquipmentBonusStaminaRegen() - def.getBonusStaminaRegen());
+
+        // Defesas
+        player.setEquipmentBonusPhysicalDefense(player.getEquipmentBonusPhysicalDefense() - def.getBonusPhysicalDefense());
+        player.setEquipmentBonusMagicDefense(player.getEquipmentBonusMagicDefense() - def.getBonusMagicDefense());
+
+        // Poder de Dano
+        player.setEquipmentBonusPhysicalPower(player.getEquipmentBonusPhysicalPower() - def.getBonusPhysicalPower());
+        player.setEquipmentBonusRangedPower(player.getEquipmentBonusRangedPower() - def.getBonusRangedPower());
+        player.setEquipmentBonusMagicPower(player.getEquipmentBonusMagicPower() - def.getBonusMagicPower());
+
+        // Chance e Multiplicadores
+        player.setEquipmentBonusCriticalChance(player.getEquipmentBonusCriticalChance() - def.getBonusCriticalChance());
+        player.setEquipmentBonusCriticalDamage(player.getEquipmentBonusCriticalDamage() - def.getBonusCriticalDamage());
+        player.setEquipmentBonusDodgeChance(player.getEquipmentBonusDodgeChance() - def.getBonusDodgeChance());
+
+        // Velocidades
+        player.setEquipmentBonusAttackSpeed(player.getEquipmentBonusAttackSpeed() - def.getBonusAttackSpeed());
+        player.setEquipmentBonusMovementSpeed(player.getEquipmentBonusMovementSpeed() - def.getBonusMovementSpeed());
+
+        // Utilidades
+        player.setEquipmentBonusCooldownReduction(player.getEquipmentBonusCooldownReduction() - def.getBonusCooldownReduction());
+        player.setEquipmentBonusLifeSteal(player.getEquipmentBonusLifeSteal() - def.getBonusLifeSteal());
+        player.setEquipmentBonusManaSteal(player.getEquipmentBonusManaSteal() - def.getBonusManaSteal());
+        player.setEquipmentBonusTenacity(player.getEquipmentBonusTenacity() - def.getBonusTenacity());
+
+        // Sorte
+        player.setEquipmentBonusLuck(player.getEquipmentBonusLuck() - def.getBonusLuck());
+
+        // Resistências Elementais
+        player.setEquipmentBonusFireResistance(player.getEquipmentBonusFireResistance() - def.getBonusFireResistance());
+        player.setEquipmentBonusIceResistance(player.getEquipmentBonusIceResistance() - def.getBonusIceResistance());
+        player.setEquipmentBonusLightningResistance(player.getEquipmentBonusLightningResistance() - def.getBonusLightningResistance());
+        player.setEquipmentBonusPoisonResistance(player.getEquipmentBonusPoisonResistance() - def.getBonusPoisonResistance());
+        player.setEquipmentBonusHolyResistance(player.getEquipmentBonusHolyResistance() - def.getBonusHolyResistance());
+        player.setEquipmentBonusDarkResistance(player.getEquipmentBonusDarkResistance() - def.getBonusDarkResistance());
+
+        logger.debug("Removed equipment bonus: {}", def.getName());
     }
 
     private void unequipToInventory(String equipSlot) {

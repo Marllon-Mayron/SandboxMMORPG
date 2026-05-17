@@ -401,15 +401,34 @@ public class GameWorldRenderer implements Screen {
             boolean isSelf = (currentPlayer != null && packet.playerId.equals(currentPlayer.getId()));
 
             if (isSelf) {
-                // ATUALIZAR APENAS POSICAO E DIRECAO
+                // Sempre atualizar posição e direção
                 currentPlayer.setX(packet.x);
                 currentPlayer.setY(packet.y);
                 currentPlayer.setDirection(packet.direction);
 
-                // NAO ATUALIZAR OUTROS CAMPOS PARA NAO SOBRESCREVER OS UPGRADES LOCAIS
-                // O servidor pode ter valores desatualizados
+                // SE FOR FULL SYNC, atualizar TODOS os atributos (login, equip, unequip)
+                if (packet.fullSync) {
+                    // Confiar nos valores que o servidor já calculou
+                    currentPlayer.setCurrentHp(packet.currentHp);
+                    currentPlayer.setCurrentMana(packet.currentMana);
+                    currentPlayer.setCurrentStamina(packet.currentStamina);
+
+                    // Para que getMaxHp() retorne o valor correto, precisamos atualizar equipmentBonusMaxHp
+                    // Calculamos quanto de bônus de equipamento está ativo
+                    int baseHp = 100 + currentPlayer.getBonusMaxHp() + ((currentPlayer.getLevel() - 1) * 10);
+                    int equipmentBonus = packet.maxHp - baseHp;
+                    currentPlayer.setEquipmentBonusMaxHp(equipmentBonus);
+
+                    // Atualizar UI
+                    if (playerUI != null) {
+                        playerUI.setHealth(packet.currentHp, packet.maxHp);
+                        playerUI.setMana(packet.currentMana, packet.maxMana);
+                        playerUI.setStamina(packet.currentStamina, packet.maxStamina);
+                        playerUI.setGold(packet.gold);
+                    }
+                }
             } else {
-                // Outro jogador
+                // Outro jogador - atualizar tudo (sempre)
                 Player existing = otherPlayers.get(packet.playerId);
 
                 if (existing != null) {

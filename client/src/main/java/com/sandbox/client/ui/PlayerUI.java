@@ -43,12 +43,12 @@ public class PlayerUI {
 
     private Player currentPlayer;
 
-    private int currentHp = 100;
-    private int maxHp = 100;
-    private int currentMana = 50;
-    private int maxMana = 50;
-    private int currentStamina = 100;
-    private int maxStamina = 100;
+    private int currentHp = 0;
+    private int maxHp = 0;
+    private int currentMana = 0;
+    private int maxMana = 0;
+    private int currentStamina = 0;
+    private int maxStamina = 0;
 
     private int currentGold = 0;
     private float terrainSpeed = 1.0f;
@@ -463,6 +463,55 @@ public class PlayerUI {
         if (privateChatWindow != null) {
             privateChatWindow.hide();
         }
+    }
+    public void refreshAttributes() {
+        ensureAttributesWindowCreated();
+        if (attributesWindow != null && currentPlayer != null) {
+            attributesWindow.update(currentPlayer);
+        }
+    }
+
+    /**
+     * Força a atualização completa da UI com os dados atuais do player
+     * Chamado após receber fullSync do servidor
+     */
+    public void forceUIUpdate() {
+        if (currentPlayer == null) return;
+
+        // Atualizar valores locais
+        this.currentHp = currentPlayer.getCurrentHp();
+        this.maxHp = currentPlayer.getMaxHp();
+        this.currentMana = currentPlayer.getCurrentMana();
+        this.maxMana = currentPlayer.getMaxMana();
+        this.currentStamina = currentPlayer.getCurrentStamina();
+        this.maxStamina = currentPlayer.getMaxStamina();
+
+        // Atualizar labels
+        if (healthValueLabel != null) {
+            healthValueLabel.setText(currentHp + "/" + maxHp);
+        }
+        if (manaValueLabel != null) {
+            manaValueLabel.setText(currentMana + "/" + maxMana);
+        }
+        if (staminaValueLabel != null) {
+            staminaValueLabel.setText(currentStamina + "/" + maxStamina);
+        }
+        if (goldLabel != null) {
+            goldLabel.setText("Gold: " + currentPlayer.getGold());
+        }
+        if (levelLabel != null) {
+            levelLabel.setText("Level: " + currentPlayer.getLevel());
+        }
+
+        // Atualizar janelas abertas
+        if (attributesWindow != null && attributesWindow.isVisible()) {
+            attributesWindow.update(currentPlayer);
+        }
+        if (inventoryWindow != null && inventoryWindow.isVisible()) {
+            inventoryWindow.updateInventory(currentPlayer.getInventory(), currentPlayer.getGold());
+        }
+
+        logger.info("UI force updated - HP: {}/{}", currentHp, maxHp);
     }
 
     public void setChatInputProcessor(Consumer<String> callback) {

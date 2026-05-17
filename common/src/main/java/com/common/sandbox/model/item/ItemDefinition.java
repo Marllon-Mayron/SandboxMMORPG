@@ -1,52 +1,108 @@
 package com.common.sandbox.model.item;
 
+import com.common.sandbox.model.enums.ArmorSet;
+
 import java.io.Serializable;
 
 public class ItemDefinition implements Serializable {
-    private static final long serialVersionUID = 1L;
+    private static final long serialVersionUID = 2L;
 
+    // ==================== DADOS BÁSICOS ====================
     private String id;
     private String name;
-    private String category;     // "weapon", "consumable", "armor", "quest"
+    private String description;  // NOVO CAMPO
+    private String category;     // "weapon", "consumable", "armor", "equipment", "quest"
     private String spritesheet;
     private int tileX;
     private int tileY;
     private int width = 32;
     private int height = 32;
 
-    // Propriedades de combate
+    // ==================== SISTEMA DE CONJUNTOS ====================
+    private String setId;
+    private transient ArmorSet armorSet;
+    private String armorSlot;  // "helmet", "chest", "legs", "boots", null para outros itens
+
+    // ==================== PROPRIEDADES DE COMBATE ====================
     private int damage;
     private int healAmount;
     private int duration;
 
-    // Sistema de ataques
-    private String attackId;           // ID do ataque que este item usa
-    private String attackAnimation;    // Nome da animação
-    private float attackSpeed = 1.0f;  // Velocidade de ataque (ataques por segundo)
-    private float attackCooldown = 1.0f; //  Cooldown em segundos (calculado ou definido manualmente)
-    private boolean isRanged = false;  // Se é arma de longo alcance
+    // ==================== SISTEMA DE ATAQUES ====================
+    private String attackId;
+    private String attackAnimation;
+    private float attackSpeed = 1.0f;
+    private float attackCooldown = 1.0f;
+    private boolean isRanged = false;
+    private boolean isMagic = false;
 
-    // Para armas de longo alcance (projéteis)
-    private String projectileId;       // "arrow", "fireball", "bullet", "ice_shard"
-    private float projectileSpeed = 600f; // Velocidade do projétil (pixels/segundo)
-    private float projectileRange = 400f; // Alcance máximo do projétil
+    // ==================== PARA ARMAS DE LONGO ALCANCE ====================
+    private String projectileId;
+    private float projectileSpeed = 600f;
+    private float projectileRange = 400f;
+    private String projectileAnimationId;
+    private float hitboxDuration = 0.25f;
 
-    private String projectileAnimationId; // ID da animação do projétil ("arrow", "fireball", etc.)
-    private float hitboxDuration = 0.25f; // Duração da hitbox em segundos
-    // Estatísticas adicionais
-    private int strengthBonus = 0;
-    private int agilityBonus = 0;
-    private int wisdomBonus = 0;
+    // ==================== BÔNUS DE ATRIBUTOS ====================
+    // Recursos
+    private int bonusMaxHp = 0;
+    private int bonusMaxMana = 0;
+    private int bonusMaxStamina = 0;
 
+    // Regeneração
+    private int bonusHpRegen = 0;
+    private int bonusManaRegen = 0;
+    private int bonusStaminaRegen = 0;
+
+    // Defesas
+    private int bonusPhysicalDefense = 0;
+    private int bonusMagicDefense = 0;
+
+    // Poder de Dano
+    private int bonusPhysicalPower = 0;
+    private int bonusRangedPower = 0;
+    private int bonusMagicPower = 0;
+
+    // Chance e Multiplicadores
+    private float bonusCriticalChance = 0f;
+    private float bonusCriticalDamage = 0f;
+    private float bonusDodgeChance = 0f;
+
+    // Velocidades
+    private float bonusAttackSpeed = 0f;
+    private float bonusMovementSpeed = 0f;
+
+    // Utilidades
+    private float bonusCooldownReduction = 0f;
+    private float bonusLifeSteal = 0f;
+    private float bonusManaSteal = 0f;
+    private float bonusTenacity = 0f;
+
+    // Sorte
+    private int bonusLuck = 0;
+
+    // Resistências Elementais
+    private int bonusFireResistance = 0;
+    private int bonusIceResistance = 0;
+    private int bonusLightningResistance = 0;
+    private int bonusPoisonResistance = 0;
+    private int bonusHolyResistance = 0;
+    private int bonusDarkResistance = 0;
+
+    // ==================== CONSTRUTOR ====================
     public ItemDefinition() {}
 
     // ==================== GETTERS E SETTERS ====================
 
+    // Dados básicos
     public String getId() { return id; }
     public void setId(String id) { this.id = id; }
 
     public String getName() { return name; }
     public void setName(String name) { this.name = name; }
+
+    public String getDescription() { return description; }
+    public void setDescription(String description) { this.description = description; }
 
     public String getCategory() { return category; }
     public void setCategory(String category) { this.category = category; }
@@ -66,6 +122,26 @@ public class ItemDefinition implements Serializable {
     public int getHeight() { return height; }
     public void setHeight(int height) { this.height = height; }
 
+    // Sistema de conjuntos
+    public String getSetId() { return setId; }
+    public void setSetId(String setId) {
+        this.setId = setId;
+        this.armorSet = null;
+    }
+
+    public ArmorSet getArmorSet() {
+        if (armorSet == null && setId != null) {
+            armorSet = ArmorSet.fromId(setId);
+        }
+        return armorSet;
+    }
+
+    public void setArmorSet(ArmorSet set) {
+        this.armorSet = set;
+        this.setId = set != null ? set.getId() : null;
+    }
+
+    // Propriedades de combate
     public int getDamage() { return damage; }
     public void setDamage(int damage) { this.damage = damage; }
 
@@ -75,6 +151,7 @@ public class ItemDefinition implements Serializable {
     public int getDuration() { return duration; }
     public void setDuration(int duration) { this.duration = duration; }
 
+    // Sistema de ataques
     public String getAttackId() { return attackId; }
     public void setAttackId(String attackId) { this.attackId = attackId; }
 
@@ -84,8 +161,6 @@ public class ItemDefinition implements Serializable {
     public float getAttackSpeed() { return attackSpeed; }
     public void setAttackSpeed(float attackSpeed) {
         this.attackSpeed = attackSpeed;
-        // Calcular cooldown automaticamente baseado no attackSpeed
-        // Cooldown = 1 / AttackSpeed
         if (attackSpeed > 0) {
             this.attackCooldown = 1.0f / attackSpeed;
         }
@@ -94,7 +169,6 @@ public class ItemDefinition implements Serializable {
     public float getAttackCooldown() { return attackCooldown; }
     public void setAttackCooldown(float attackCooldown) {
         this.attackCooldown = attackCooldown;
-        // Se definir cooldown manualmente, recalcular attackSpeed
         if (attackCooldown > 0) {
             this.attackSpeed = 1.0f / attackCooldown;
         }
@@ -103,6 +177,10 @@ public class ItemDefinition implements Serializable {
     public boolean isRanged() { return isRanged; }
     public void setRanged(boolean ranged) { isRanged = ranged; }
 
+    public boolean isMagic() { return isMagic; }
+    public void setMagic(boolean magic) { isMagic = magic; }
+
+    // Projéteis
     public String getProjectileId() { return projectileId; }
     public void setProjectileId(String projectileId) { this.projectileId = projectileId; }
 
@@ -112,19 +190,139 @@ public class ItemDefinition implements Serializable {
     public float getProjectileRange() { return projectileRange; }
     public void setProjectileRange(float projectileRange) { this.projectileRange = projectileRange; }
 
-    public int getStrengthBonus() { return strengthBonus; }
-    public void setStrengthBonus(int strengthBonus) { this.strengthBonus = strengthBonus; }
-
-    public int getAgilityBonus() { return agilityBonus; }
-    public void setAgilityBonus(int agilityBonus) { this.agilityBonus = agilityBonus; }
-
-    public int getWisdomBonus() { return wisdomBonus; }
-    public void setWisdomBonus(int wisdomBonus) { this.wisdomBonus = wisdomBonus; }
-
     public String getProjectileAnimationId() { return projectileAnimationId; }
     public void setProjectileAnimationId(String projectileAnimationId) { this.projectileAnimationId = projectileAnimationId; }
 
     public float getHitboxDuration() { return hitboxDuration; }
     public void setHitboxDuration(float hitboxDuration) { this.hitboxDuration = hitboxDuration; }
 
+    // ==================== BÔNUS DE ATRIBUTOS ====================
+
+    // Recursos
+    public int getBonusMaxHp() { return bonusMaxHp; }
+    public void setBonusMaxHp(int bonusMaxHp) { this.bonusMaxHp = bonusMaxHp; }
+
+    public int getBonusMaxMana() { return bonusMaxMana; }
+    public void setBonusMaxMana(int bonusMaxMana) { this.bonusMaxMana = bonusMaxMana; }
+
+    public int getBonusMaxStamina() { return bonusMaxStamina; }
+    public void setBonusMaxStamina(int bonusMaxStamina) { this.bonusMaxStamina = bonusMaxStamina; }
+
+    // Regeneração
+    public int getBonusHpRegen() { return bonusHpRegen; }
+    public void setBonusHpRegen(int bonusHpRegen) { this.bonusHpRegen = bonusHpRegen; }
+
+    public int getBonusManaRegen() { return bonusManaRegen; }
+    public void setBonusManaRegen(int bonusManaRegen) { this.bonusManaRegen = bonusManaRegen; }
+
+    public int getBonusStaminaRegen() { return bonusStaminaRegen; }
+    public void setBonusStaminaRegen(int bonusStaminaRegen) { this.bonusStaminaRegen = bonusStaminaRegen; }
+
+    // Defesas
+    public int getBonusPhysicalDefense() { return bonusPhysicalDefense; }
+    public void setBonusPhysicalDefense(int bonusPhysicalDefense) { this.bonusPhysicalDefense = bonusPhysicalDefense; }
+
+    public int getBonusMagicDefense() { return bonusMagicDefense; }
+    public void setBonusMagicDefense(int bonusMagicDefense) { this.bonusMagicDefense = bonusMagicDefense; }
+
+    // Poder de Dano
+    public int getBonusPhysicalPower() { return bonusPhysicalPower; }
+    public void setBonusPhysicalPower(int bonusPhysicalPower) { this.bonusPhysicalPower = bonusPhysicalPower; }
+
+    public int getBonusRangedPower() { return bonusRangedPower; }
+    public void setBonusRangedPower(int bonusRangedPower) { this.bonusRangedPower = bonusRangedPower; }
+
+    public int getBonusMagicPower() { return bonusMagicPower; }
+    public void setBonusMagicPower(int bonusMagicPower) { this.bonusMagicPower = bonusMagicPower; }
+
+    // Chance e Multiplicadores
+    public float getBonusCriticalChance() { return bonusCriticalChance; }
+    public void setBonusCriticalChance(float bonusCriticalChance) { this.bonusCriticalChance = bonusCriticalChance; }
+
+    public float getBonusCriticalDamage() { return bonusCriticalDamage; }
+    public void setBonusCriticalDamage(float bonusCriticalDamage) { this.bonusCriticalDamage = bonusCriticalDamage; }
+
+    public float getBonusDodgeChance() { return bonusDodgeChance; }
+    public void setBonusDodgeChance(float bonusDodgeChance) { this.bonusDodgeChance = bonusDodgeChance; }
+
+    // Velocidades
+    public float getBonusAttackSpeed() { return bonusAttackSpeed; }
+    public void setBonusAttackSpeed(float bonusAttackSpeed) { this.bonusAttackSpeed = bonusAttackSpeed; }
+
+    public float getBonusMovementSpeed() { return bonusMovementSpeed; }
+    public void setBonusMovementSpeed(float bonusMovementSpeed) { this.bonusMovementSpeed = bonusMovementSpeed; }
+
+    // Utilidades
+    public float getBonusCooldownReduction() { return bonusCooldownReduction; }
+    public void setBonusCooldownReduction(float bonusCooldownReduction) { this.bonusCooldownReduction = bonusCooldownReduction; }
+
+    public float getBonusLifeSteal() { return bonusLifeSteal; }
+    public void setBonusLifeSteal(float bonusLifeSteal) { this.bonusLifeSteal = bonusLifeSteal; }
+
+    public float getBonusManaSteal() { return bonusManaSteal; }
+    public void setBonusManaSteal(float bonusManaSteal) { this.bonusManaSteal = bonusManaSteal; }
+
+    public float getBonusTenacity() { return bonusTenacity; }
+    public void setBonusTenacity(float bonusTenacity) { this.bonusTenacity = bonusTenacity; }
+
+    // Sorte
+    public int getBonusLuck() { return bonusLuck; }
+    public void setBonusLuck(int bonusLuck) { this.bonusLuck = bonusLuck; }
+
+    // Resistências Elementais
+    public int getBonusFireResistance() { return bonusFireResistance; }
+    public void setBonusFireResistance(int bonusFireResistance) { this.bonusFireResistance = bonusFireResistance; }
+
+    public int getBonusIceResistance() { return bonusIceResistance; }
+    public void setBonusIceResistance(int bonusIceResistance) { this.bonusIceResistance = bonusIceResistance; }
+
+    public int getBonusLightningResistance() { return bonusLightningResistance; }
+    public void setBonusLightningResistance(int bonusLightningResistance) { this.bonusLightningResistance = bonusLightningResistance; }
+
+    public int getBonusPoisonResistance() { return bonusPoisonResistance; }
+    public void setBonusPoisonResistance(int bonusPoisonResistance) { this.bonusPoisonResistance = bonusPoisonResistance; }
+
+    public int getBonusHolyResistance() { return bonusHolyResistance; }
+    public void setBonusHolyResistance(int bonusHolyResistance) { this.bonusHolyResistance = bonusHolyResistance; }
+
+    public int getBonusDarkResistance() { return bonusDarkResistance; }
+    public void setBonusDarkResistance(int bonusDarkResistance) { this.bonusDarkResistance = bonusDarkResistance; }
+
+    public String getArmorSlot() { return armorSlot; }
+    public void setArmorSlot(String armorSlot) { this.armorSlot = armorSlot; }
+    // ==================== MÉTODOS ÚTEIS ====================
+
+    public boolean isEquippable() {
+        return "weapon".equals(category) || "armor".equals(category) || "equipment".equals(category);
+    }
+
+    public boolean isConsumable() {
+        return "consumable".equals(category);
+    }
+
+    public boolean isMeleeWeapon() {
+        return "weapon".equals(category) && !isRanged && !isMagic;
+    }
+
+    public boolean isRangedWeapon() {
+        return "weapon".equals(category) && isRanged;
+    }
+
+    public boolean isMagicWeapon() {
+        return "weapon".equals(category) && isMagic;
+    }
+
+    public boolean isArmor() {
+        return "armor".equals(category);
+    }
+
+    public boolean hasSet() {
+        return setId != null && !setId.isEmpty();
+    }
+
+    @Override
+    public String toString() {
+        return String.format("ItemDefinition{id='%s', name='%s', category='%s', setId='%s', damage=%d}",
+                id, name, category, setId, damage);
+    }
 }

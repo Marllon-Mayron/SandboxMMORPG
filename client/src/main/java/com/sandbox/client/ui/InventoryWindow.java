@@ -273,10 +273,27 @@ public class InventoryWindow {
         section.add(equipmentTable).padBottom(10);
         section.row();
 
+        // MELHORADO: Aumentar fonte e padding
         statsLabel = new Label("", skin, "stats");
-        statsLabel.setFontScale(0.75f);
+        statsLabel.setFontScale(0.9f);  // Aumentado de 0.75f para 0.9f
         statsLabel.setColor(Color.LIGHT_GRAY);
-        section.add(statsLabel).center().padTop(5);
+        statsLabel.setWrap(true);
+        statsLabel.setAlignment(Align.center);
+
+        // Adicionar um container com fundo para destacar
+        Table statsContainer = new Table();
+        statsContainer.setBackground(createSlotBackground());
+        statsContainer.pad(8);
+        statsContainer.add(statsLabel).width(260).pad(5);
+
+        section.add(statsContainer).center().padTop(8).width(280);
+        section.row();
+
+        // Adicionar linha de separação visual
+        Label separator = new Label("────────────────────", skin, "stats");
+        separator.setColor(Color.DARK_GRAY);
+        separator.setFontScale(0.6f);
+        section.add(separator).center().padTop(5);
 
         return section;
     }
@@ -457,19 +474,17 @@ public class InventoryWindow {
         if (def == null) return null;
 
         String category = def.getCategory();
-        String name = def.getName().toLowerCase();
 
-        switch (category) {
-            case "weapon": return "weapon";
-            case "armor":
-                if (name.contains("helmet") || name.contains("cap")) return "helmet";
-                if (name.contains("chest") || name.contains("tunic")) return "chest";
-                if (name.contains("legs") || name.contains("pants")) return "legs";
-                if (name.contains("boots")) return "boots";
-                return "chest";
-            case "equipment": return "weapon";
-            default: return null;
+        if ("weapon".equals(category)) {
+            return "weapon";
         }
+
+        if ("armor".equals(category)) {
+            // Usar diretamente o campo armorSlot
+            return def.getArmorSlot();
+        }
+
+        return null;
     }
 
     public void updateInventory(Inventory inventory, int gold) {
@@ -499,26 +514,97 @@ public class InventoryWindow {
         if (statsLabel == null || currentInventory == null) return;
 
         StringBuilder stats = new StringBuilder();
-        int totalStr = 0;
-        int totalAgi = 0;
-        int totalWis = 0;
+        int totalMaxHp = 0;
+        int totalMaxMana = 0;
+        int totalMaxStamina = 0;
+        int totalPhysicalPower = 0;
+        int totalRangedPower = 0;
+        int totalMagicPower = 0;
+        int totalPhysicalDefense = 0;
+        int totalMagicDefense = 0;
+        float totalCriticalChance = 0;
+        float totalMovementSpeed = 0;
+        float totalCooldownReduction = 0;
+        float totalAttackSpeed = 0;
+        float totalLifeSteal = 0;
+        float totalManaSteal = 0;
+        float totalDodgeChance = 0;
+        int totalLuck = 0;
 
         for (String itemId : currentInventory.getEquipped().values()) {
             if (itemId != null && !itemId.isEmpty()) {
                 ItemDefinition def = itemDefinitions.get(itemId);
                 if (def != null) {
-                    totalStr += def.getStrengthBonus();
-                    totalAgi += def.getAgilityBonus();
-                    totalWis += def.getWisdomBonus();
+                    totalMaxHp += def.getBonusMaxHp();
+                    totalMaxMana += def.getBonusMaxMana();
+                    totalMaxStamina += def.getBonusMaxStamina();
+                    totalPhysicalPower += def.getBonusPhysicalPower();
+                    totalRangedPower += def.getBonusRangedPower();
+                    totalMagicPower += def.getBonusMagicPower();
+                    totalPhysicalDefense += def.getBonusPhysicalDefense();
+                    totalMagicDefense += def.getBonusMagicDefense();
+                    totalCriticalChance += def.getBonusCriticalChance();
+                    totalMovementSpeed += def.getBonusMovementSpeed();
+                    totalCooldownReduction += def.getBonusCooldownReduction();
+                    totalAttackSpeed += def.getBonusAttackSpeed();
+                    totalLifeSteal += def.getBonusLifeSteal();
+                    totalManaSteal += def.getBonusManaSteal();
+                    totalDodgeChance += def.getBonusDodgeChance();
+                    totalLuck += def.getBonusLuck();
                 }
             }
         }
 
-        stats.append("STR: +").append(totalStr).append("   ");
-        stats.append("AGI: +").append(totalAgi).append("   ");
-        stats.append("WIS: +").append(totalWis);
+        // Estilo com formatação e cores
+        stats.append("[ EQUIPMENT BONUS ]\n");
+
+        // Recursos
+        if (totalMaxHp > 0) stats.append("  HP: +").append(totalMaxHp).append("\n");
+        if (totalMaxMana > 0) stats.append("  Mana: +").append(totalMaxMana).append("\n");
+        if (totalMaxStamina > 0) stats.append("  Stamina: +").append(totalMaxStamina).append("\n");
+
+        // Poder de Dano
+        if (totalPhysicalPower > 0) stats.append("  Physical Power: +").append(totalPhysicalPower).append("\n");
+        if (totalRangedPower > 0) stats.append("  Ranged Power: +").append(totalRangedPower).append("\n");
+        if (totalMagicPower > 0) stats.append("  Magic Power: +").append(totalMagicPower).append("\n");
+
+        // Defesas
+        if (totalPhysicalDefense > 0) stats.append("  Physical Defense: +").append(totalPhysicalDefense).append("\n");
+        if (totalMagicDefense > 0) stats.append("  Magic Defense: +").append(totalMagicDefense).append("\n");
+
+        // Chance e multiplicadores
+        if (totalCriticalChance > 0) stats.append("  Critical Chance: +").append((int)(totalCriticalChance * 100)).append("%\n");
+        if (totalDodgeChance > 0) stats.append("  Dodge Chance: +").append((int)(totalDodgeChance * 100)).append("%\n");
+
+        // Velocidades
+        if (totalAttackSpeed > 0) stats.append("  Attack Speed: +").append((int)(totalAttackSpeed * 100)).append("%\n");
+        if (totalMovementSpeed > 0) stats.append("  Movement Speed: +").append((int)totalMovementSpeed).append("\n");
+
+        // Utilidades
+        if (totalCooldownReduction > 0) stats.append("  Cooldown Reduction: +").append((int)(totalCooldownReduction * 100)).append("%\n");
+        if (totalLifeSteal > 0) stats.append("  Life Steal: +").append((int)(totalLifeSteal * 100)).append("%\n");
+        if (totalManaSteal > 0) stats.append("  Mana Steal: +").append((int)(totalManaSteal * 100)).append("%\n");
+
+        // Sorte
+        if (totalLuck > 0) stats.append("  Luck: +").append(totalLuck).append("\n");
+
+        // Se não houver nenhum bônus
+        if (stats.toString().equals("[ EQUIPMENT BONUS ]\n")) {
+            stats.append("  No active bonuses");
+        }
 
         statsLabel.setText(stats.toString());
+
+        // Aplicar cores baseadas nos valores
+        if (totalMaxHp > 0 || totalPhysicalDefense > 0) {
+            statsLabel.setColor(Color.GREEN);
+        } else if (totalPhysicalPower > 0) {
+            statsLabel.setColor(Color.ORANGE);
+        } else if (totalMagicPower > 0) {
+            statsLabel.setColor(Color.CYAN);
+        } else {
+            statsLabel.setColor(Color.LIGHT_GRAY);
+        }
     }
 
     private void refreshDisplay() {

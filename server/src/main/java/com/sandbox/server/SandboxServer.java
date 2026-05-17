@@ -53,7 +53,7 @@ public class SandboxServer {
             logger.info("----------------------------------------");
             logger.info("Spawando itens mundiais...");
             itemManager.spawnWorldItems();
-            logger.info("✅ Itens mundiais spawnados: {} itens", itemManager.getItemCount());
+            logger.info("✅ Itens mundiais spawnados: {} itens", itemManager.getGroundItemCount());
             logger.info("----------------------------------------");
 
             ProjectileManager.getInstance();
