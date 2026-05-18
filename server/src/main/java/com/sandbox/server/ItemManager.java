@@ -23,6 +23,7 @@ public class ItemManager {
     private final Map<String, ItemDefinition> armors;
     private final Map<String, ItemDefinition> consumables;
     private final Map<String, ItemDefinition> allItems;
+    private final Map<String, ItemDefinition> accessories;
 
     // Itens no chão do mundo
     private final Map<String, GroundItem> groundItems;
@@ -37,6 +38,7 @@ public class ItemManager {
         this.consumables = new ConcurrentHashMap<>();
         this.allItems = new ConcurrentHashMap<>();
         this.groundItems = new ConcurrentHashMap<>();
+        this.accessories = new ConcurrentHashMap<>();
         this.chunkItems = new ConcurrentHashMap<>();
         this.scheduler = Executors.newSingleThreadScheduledExecutor();
 
@@ -55,10 +57,10 @@ public class ItemManager {
         ItemDataLoader loader = new ItemDataLoader();
         loader.loadAllItems();
 
-        // Carregar os dados organizados
         weapons.putAll(loader.getWeapons());
         armors.putAll(loader.getArmors());
         consumables.putAll(loader.getConsumables());
+        accessories.putAll(loader.getAccessories());
         allItems.putAll(loader.getAllItems());
 
         printSummary();
@@ -71,6 +73,7 @@ public class ItemManager {
         logger.info("Weapons:     {}", weapons.size());
         logger.info("Armors:      {}", armors.size());
         logger.info("Consumables: {}", consumables.size());
+        logger.info("Accessories: {}", accessories.size());
         logger.info("----------------------------------------");
         logger.info("Total:       {}", allItems.size());
         logger.info("========================================");
@@ -204,6 +207,10 @@ public class ItemManager {
 
     public Map<String, ItemDefinition> getConsumables() {
         return new HashMap<>(consumables);
+    }
+
+    public Map<String, ItemDefinition> getAccessories() {
+        return new HashMap<>(accessories);
     }
 
     public ItemDefinition getItemDefinition(String itemId) {

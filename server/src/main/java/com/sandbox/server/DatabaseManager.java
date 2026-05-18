@@ -240,7 +240,7 @@ public class DatabaseManager {
                 if (BCrypt.checkpw(password, hashedPassword)) {
                     Player player = new Player();
 
-                    // ==================== DADOS BÁSICOS ====================
+                    // ==================== 1. DADOS BÁSICOS ====================
                     player.setId(rs.getObject("id").toString());
                     player.setUsername(rs.getString("username"));
                     player.setEmail(rs.getString("email"));
@@ -248,48 +248,55 @@ public class DatabaseManager {
                     player.setY(rs.getFloat("y"));
                     player.setDirection(rs.getString("direction") != null ? rs.getString("direction") : "DOWN");
 
-                    // ==================== PROGRESSÃO ====================
+                    // ==================== 2. PROGRESSÃO ====================
                     player.setLevel(rs.getInt("level"));
                     player.setExperience(rs.getInt("experience"));
                     player.setGold(rs.getInt("gold"));
                     player.setAttributePoints(rs.getInt("attribute_points"));
                     player.setSkillPoints(rs.getInt("skill_points"));
 
-                    // ==================== STATUS ATUAIS ====================
-                    player.setCurrentHp(rs.getInt("current_hp"));
-                    player.setCurrentMana(rs.getInt("current_mana"));
-                    player.setCurrentStamina(rs.getInt("current_stamina"));
+                    // ==================== 3. BÔNUS DE ATRIBUTOS (UPADOS PELO JOGADOR) ====================
+                    // IMPORTANTE: Carregar TODOS os bônus ANTES dos status atuais
+                    // para que getMaxHp() retorne o valor correto quando setCurrentHp for chamado
 
-                    // ==================== BÔNUS DE ATRIBUTOS (UPADOS PELO JOGADOR) ====================
+                    // Recursos
                     player.setBonusMaxHp(rs.getInt("bonus_max_hp"));
                     player.setBonusMaxMana(rs.getInt("bonus_max_mana"));
                     player.setBonusMaxStamina(rs.getInt("bonus_max_stamina"));
 
+                    // Regeneração
                     player.setBonusHpRegen(rs.getInt("bonus_hp_regen"));
                     player.setBonusManaRegen(rs.getInt("bonus_mana_regen"));
                     player.setBonusStaminaRegen(rs.getInt("bonus_stamina_regen"));
 
+                    // Defesas
                     player.setBonusPhysicalDefense(rs.getInt("bonus_physical_defense"));
                     player.setBonusMagicDefense(rs.getInt("bonus_magic_defense"));
 
+                    // Poder de Dano
                     player.setBonusPhysicalPower(rs.getInt("bonus_physical_power"));
                     player.setBonusRangedPower(rs.getInt("bonus_ranged_power"));
                     player.setBonusMagicPower(rs.getInt("bonus_magic_power"));
 
+                    // Chance e Multiplicadores
                     player.setBonusCriticalChance(rs.getFloat("bonus_critical_chance"));
                     player.setBonusCriticalDamage(rs.getFloat("bonus_critical_damage"));
                     player.setBonusDodgeChance(rs.getFloat("bonus_dodge_chance"));
 
+                    // Velocidades
                     player.setBonusAttackSpeed(rs.getFloat("bonus_attack_speed"));
                     player.setBonusMovementSpeed(rs.getFloat("bonus_movement_speed"));
 
+                    // Utilidades
                     player.setBonusCooldownReduction(rs.getFloat("bonus_cooldown_reduction"));
                     player.setBonusLifeSteal(rs.getFloat("bonus_life_steal"));
                     player.setBonusManaSteal(rs.getFloat("bonus_mana_steal"));
                     player.setBonusTenacity(rs.getFloat("bonus_tenacity"));
 
+                    // Sorte
                     player.setBonusLuck(rs.getInt("bonus_luck"));
 
+                    // Resistências Elementais
                     player.setBonusFireResistance(rs.getInt("bonus_fire_resistance"));
                     player.setBonusIceResistance(rs.getInt("bonus_ice_resistance"));
                     player.setBonusLightningResistance(rs.getInt("bonus_lightning_resistance"));
@@ -297,7 +304,13 @@ public class DatabaseManager {
                     player.setBonusHolyResistance(rs.getInt("bonus_holy_resistance"));
                     player.setBonusDarkResistance(rs.getInt("bonus_dark_resistance"));
 
-                    // ==================== INVENTÁRIO ====================
+                    // ==================== 4. STATUS ATUAIS (DEPOIS dos bônus!) ====================
+                    // Agora getMaxHp() retorna o valor correto porque os bônus já foram carregados
+                    player.setCurrentHp(rs.getInt("current_hp"));
+                    player.setCurrentMana(rs.getInt("current_mana"));
+                    player.setCurrentStamina(rs.getInt("current_stamina"));
+
+                    // ==================== 5. INVENTÁRIO ====================
                     String inventoryJson = rs.getString("inventory");
                     if (inventoryJson != null && !inventoryJson.isEmpty()) {
                         try {

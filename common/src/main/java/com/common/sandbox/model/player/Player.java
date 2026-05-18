@@ -770,8 +770,10 @@ public class Player implements Serializable {
     public void setInventory(Inventory inventory) { this.inventory = inventory; }
 
     public int getCurrentHp() { return currentHp; }
+
     public void setCurrentHp(int currentHp) {
-        this.currentHp = Math.min(getMaxHp(), Math.max(0, currentHp));
+        // Não valida aqui - só define o valor bruto
+        this.currentHp = currentHp;
         notifyStatusChanged();
     }
 

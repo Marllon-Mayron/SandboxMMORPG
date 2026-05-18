@@ -262,6 +262,18 @@ public class ItemTooltip {
             return Color.WHITE;
         } else if ("consumable".equals(item.getCategory())) {
             return new Color(0.3f, 0.8f, 0.3f, 1f);
+        } else if ("armor".equals(item.getCategory())) {
+            // Armaduras com bônus mais altos tem cor diferente
+            if (item.getBonusMaxHp() > 30 || item.getBonusPhysicalDefense() > 15) {
+                return new Color(0.7f, 0.4f, 0.8f, 1f); // Roxo para raras
+            }
+            if (item.getBonusMaxHp() > 0 || item.getBonusPhysicalDefense() > 0) {
+                return new Color(0.3f, 0.6f, 0.9f, 1f); // Azul para mágicas
+            }
+            return Color.WHITE;
+        } else if ("accessory".equals(item.getCategory())) {
+            // Acessórios têm cor dourada
+            return new Color(0.9f, 0.7f, 0.2f, 1f); // Dourado
         }
         return Color.WHITE;
     }
@@ -271,6 +283,7 @@ public class ItemTooltip {
             case "weapon": return "Weapon";
             case "consumable": return "Consumable";
             case "armor": return "Armor";
+            case "accessory": return "Accessory";
             case "quest": return "Quest Item";
             default: return "Item";
         }
@@ -292,7 +305,29 @@ public class ItemTooltip {
         } else if ("consumable".equals(item.getCategory())) {
             return "Restaura " + item.getHealAmount() + " pontos de vida quando consumido.";
         } else if ("armor".equals(item.getCategory())) {
+            String slot = item.getArmorSlot();
+            if (slot != null) {
+                switch (slot) {
+                    case "helmet": return "Um capacete que protege a cabeça e concede bônus de atributos.";
+                    case "chest": return "Uma armadura de peito que oferece proteção e bônus de atributos.";
+                    case "legs": return "Perneiras que protegem as pernas e concedem bônus de atributos.";
+                    case "boots": return "Botas que protegem os pés e concedem bônus de velocidade.";
+                    default: return "Uma peça de armadura que oferece proteção e bônus de atributos.";
+                }
+            }
             return "Uma peça de armadura que oferece proteção e bônus de atributos.";
+        } else if ("accessory".equals(item.getCategory())) {
+            String slot = item.getAccessorySlot();
+            if (slot != null) {
+                switch (slot) {
+                    case "ring": return "Um anel mágico que concede bônus de atributos.";
+                    case "necklace": return "Um colar encantado que concede bônus de atributos.";
+                    case "cloak": return "Uma capa que aumenta agilidade e concede bônus de esquiva.";
+                    case "trinket": return "Um acessório misterioso que concede bônus especiais.";
+                    default: return "Um acessório que concede bônus de atributos.";
+                }
+            }
+            return "Um acessório que concede bônus de atributos.";
         }
 
         return "Um item misterioso de origem desconhecida.";

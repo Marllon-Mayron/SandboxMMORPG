@@ -1590,12 +1590,24 @@ public class GameWorldRenderer implements Screen {
                     case 2: equipSlot = "chest"; break;
                     case 3: equipSlot = "legs"; break;
                     case 4: equipSlot = "boots"; break;
-                    default: equipSlot = "weapon"; break;
+                    case 5: equipSlot = "ring1"; break;
+                    case 6: equipSlot = "ring2"; break;
+                    case 7: equipSlot = "necklace"; break;
+                    case 8: equipSlot = "cloak"; break;
+                    case 9: equipSlot = "trinket1"; break;
+                    case 10: equipSlot = "trinket2"; break;
+                    case 11: equipSlot = "trinket3"; break;
+                    default: equipSlot = null; break;
                 }
-                InventoryUpdatePacket packet = new InventoryUpdatePacket();
-                packet.action = "UNEQUIP";
-                packet.equipSlot = equipSlot;
-                game.getNetworkClient().sendPacket(packet);
+
+                if (equipSlot != null) {
+                    InventoryUpdatePacket packet = new InventoryUpdatePacket();
+                    packet.action = "UNEQUIP";
+                    packet.equipSlot = equipSlot;
+                    game.getNetworkClient().sendPacket(packet);
+                } else {
+                    logger.warn("Unknown equipment slot index: {}", slotIndex);
+                }
             }
         });
 

@@ -14,12 +14,14 @@ public class ItemDataLoader {
     private final Map<String, ItemDefinition> weapons;
     private final Map<String, ItemDefinition> armors;
     private final Map<String, ItemDefinition> consumables;
+    private final Map<String, ItemDefinition> accessories;
     private final Map<String, ItemDefinition> allItems;
 
     public ItemDataLoader() {
         this.weapons = new HashMap<>();
         this.armors = new HashMap<>();
         this.consumables = new HashMap<>();
+        this.accessories = new HashMap<>();
         this.allItems = new HashMap<>();
     }
 
@@ -31,10 +33,11 @@ public class ItemDataLoader {
         loadWeapons();
         loadArmors();
         loadConsumables();
+        loadAccessories();
 
         logger.info("========================================");
-        logger.info("Total items loaded: {} (Weapons: {}, Armors: {}, Consumables: {})",
-                allItems.size(), weapons.size(), armors.size(), consumables.size());
+        logger.info("Total items loaded: {} (Weapons: {}, Armors: {}, Consumables: {}, Accessories: {})",
+                allItems.size(), weapons.size(), armors.size(), consumables.size(), accessories.size());
         logger.info("========================================");
     }
 
@@ -136,7 +139,7 @@ public class ItemDataLoader {
         helmet.setName("Gorro do Camponês");
         helmet.setDescription("Um gorro simples de pano, usado pelos camponeses para se proteger do sol.");
         helmet.setCategory("armor");
-        helmet.setArmorSlot("helmet");  // <-- ADICIONAR
+        helmet.setArmorSlot("helmet");
         helmet.setSpritesheet("itens/spritesheet_itens.png");
         helmet.setTileX(4);
         helmet.setTileY(0);
@@ -153,7 +156,7 @@ public class ItemDataLoader {
         chest.setName("Gibão de Couro Cru");
         chest.setDescription("Peitoral de couro rústico que oferece proteção básica.");
         chest.setCategory("armor");
-        chest.setArmorSlot("chest");   // <-- ADICIONAR
+        chest.setArmorSlot("chest");
         chest.setSpritesheet("itens/spritesheet_itens.png");
         chest.setTileX(5);
         chest.setTileY(0);
@@ -170,7 +173,7 @@ public class ItemDataLoader {
         legs.setName("Perneiras de Couro Firme");
         legs.setDescription("Perneiras de couro que protegem as pernas sem sacrificar a mobilidade.");
         legs.setCategory("armor");
-        legs.setArmorSlot("legs");    // <-- ADICIONAR
+        legs.setArmorSlot("legs");
         legs.setSpritesheet("itens/spritesheet_itens.png");
         legs.setTileX(6);
         legs.setTileY(0);
@@ -187,7 +190,7 @@ public class ItemDataLoader {
         boots.setName("Alpercatas de Couro Rústico");
         boots.setDescription("Botas de couro confortáveis, ideais para longas caminhadas.");
         boots.setCategory("armor");
-        boots.setArmorSlot("boots");   // <-- ADICIONAR
+        boots.setArmorSlot("boots");
         boots.setSpritesheet("itens/spritesheet_itens.png");
         boots.setTileX(7);
         boots.setTileY(0);
@@ -206,7 +209,7 @@ public class ItemDataLoader {
         hood.setName("Capuz do Aprendiz");
         hood.setDescription("Capuz azul que aumenta a concentração e o fluxo de mana.");
         hood.setCategory("armor");
-        hood.setArmorSlot("helmet");   // <-- ADICIONAR
+        hood.setArmorSlot("helmet");
         hood.setSpritesheet("itens/spritesheet_itens.png");
         hood.setTileX(4);
         hood.setTileY(1);
@@ -223,7 +226,7 @@ public class ItemDataLoader {
         robe.setName("Túnica do Aprendiz");
         robe.setDescription("Túnica de tecido encantado que amplifica poderes arcanos.");
         robe.setCategory("armor");
-        robe.setArmorSlot("chest");    // <-- ADICIONAR
+        robe.setArmorSlot("chest");
         robe.setSpritesheet("itens/spritesheet_itens.png");
         robe.setTileX(5);
         robe.setTileY(1);
@@ -241,7 +244,7 @@ public class ItemDataLoader {
         pants.setName("Calças do Aprendiz");
         pants.setDescription("Calças leves que não atrapalham os movimentos durante conjurações.");
         pants.setCategory("armor");
-        pants.setArmorSlot("legs");    // <-- ADICIONAR
+        pants.setArmorSlot("legs");
         pants.setSpritesheet("itens/spritesheet_itens.png");
         pants.setTileX(6);
         pants.setTileY(1);
@@ -258,7 +261,7 @@ public class ItemDataLoader {
         boots.setName("Botas do Aprendiz");
         boots.setDescription("Botas macias que permitem silêncio e agilidade.");
         boots.setCategory("armor");
-        boots.setArmorSlot("boots");   // <-- ADICIONAR
+        boots.setArmorSlot("boots");
         boots.setSpritesheet("itens/spritesheet_itens.png");
         boots.setTileX(7);
         boots.setTileY(1);
@@ -300,6 +303,119 @@ public class ItemDataLoader {
         logger.info("Loaded {} consumables", consumables.size());
     }
 
+    private void loadAccessories() {
+        logger.info("Loading accessories...");
+
+        // Anel de Força
+        ItemDefinition strengthRing = new ItemDefinition();
+        strengthRing.setId("ring_of_strength");
+        strengthRing.setName("Anel de Força");
+        strengthRing.setDescription("Um anel de ferro que aumenta o poder físico.");
+        strengthRing.setCategory("accessory");
+        strengthRing.setAccessorySlot("ring");
+        strengthRing.setSpritesheet("itens/spritesheet_itens.png");
+        strengthRing.setTileX(0);
+        strengthRing.setTileY(2);
+        strengthRing.setBonusPhysicalPower(5);
+        strengthRing.setBonusMaxHp(20);
+        accessories.put(strengthRing.getId(), strengthRing);
+        allItems.put(strengthRing.getId(), strengthRing);
+
+        // Anel de Magia
+        ItemDefinition magicRing = new ItemDefinition();
+        magicRing.setId("ring_of_magic");
+        magicRing.setName("Anel de Magia");
+        magicRing.setDescription("Um anel com uma gema azul que amplifica poderes arcanos.");
+        magicRing.setCategory("accessory");
+        magicRing.setAccessorySlot("ring");
+        magicRing.setSpritesheet("itens/spritesheet_itens.png");
+        magicRing.setTileX(1);
+        magicRing.setTileY(2);
+        magicRing.setBonusMagicPower(5);
+        magicRing.setBonusMaxMana(30);
+        accessories.put(magicRing.getId(), magicRing);
+        allItems.put(magicRing.getId(), magicRing);
+
+        // Colar de Vida
+        ItemDefinition lifeNecklace = new ItemDefinition();
+        lifeNecklace.setId("necklace_of_life");
+        lifeNecklace.setName("Colar de Vida");
+        lifeNecklace.setDescription("Um colar que concede vitalidade extra.");
+        lifeNecklace.setCategory("accessory");
+        lifeNecklace.setAccessorySlot("necklace");
+        lifeNecklace.setSpritesheet("itens/spritesheet_itens.png");
+        lifeNecklace.setTileX(2);
+        lifeNecklace.setTileY(2);
+        lifeNecklace.setBonusMaxHp(50);
+        lifeNecklace.setBonusHpRegen(2);
+        accessories.put(lifeNecklace.getId(), lifeNecklace);
+        allItems.put(lifeNecklace.getId(), lifeNecklace);
+
+        // Capa das Sombras
+        ItemDefinition shadowCloak = new ItemDefinition();
+        shadowCloak.setId("cloak_of_shadows");
+        shadowCloak.setName("Capa das Sombras");
+        shadowCloak.setDescription("Uma capa escura que aumenta a agilidade e esquiva.");
+        shadowCloak.setCategory("accessory");
+        shadowCloak.setAccessorySlot("cloak");
+        shadowCloak.setSpritesheet("itens/spritesheet_itens.png");
+        shadowCloak.setTileX(3);
+        shadowCloak.setTileY(2);
+        shadowCloak.setBonusMovementSpeed(25);
+        shadowCloak.setBonusDodgeChance(0.03f);
+        shadowCloak.setBonusAttackSpeed(0.05f);
+        accessories.put(shadowCloak.getId(), shadowCloak);
+        allItems.put(shadowCloak.getId(), shadowCloak);
+
+        // Amuleto de Velocidade (Trinket)
+        ItemDefinition speedTrinket = new ItemDefinition();
+        speedTrinket.setId("trinket_of_speed");
+        speedTrinket.setName("Amuleto de Velocidade");
+        speedTrinket.setDescription("Um amuleto que aumenta a velocidade de ataque.");
+        speedTrinket.setCategory("accessory");
+        speedTrinket.setAccessorySlot("trinket");
+        speedTrinket.setSpritesheet("itens/spritesheet_itens.png");
+        speedTrinket.setTileX(4);
+        speedTrinket.setTileY(2);
+        speedTrinket.setBonusAttackSpeed(0.10f);
+        speedTrinket.setBonusMovementSpeed(15);
+        accessories.put(speedTrinket.getId(), speedTrinket);
+        allItems.put(speedTrinket.getId(), speedTrinket);
+
+        // Cristal de Mana (Trinket)
+        ItemDefinition manaTrinket = new ItemDefinition();
+        manaTrinket.setId("crystal_of_mana");
+        manaTrinket.setName("Cristal de Mana");
+        manaTrinket.setDescription("Um cristal que aumenta a regeneração de mana.");
+        manaTrinket.setCategory("accessory");
+        manaTrinket.setAccessorySlot("trinket");
+        manaTrinket.setSpritesheet("itens/spritesheet_itens.png");
+        manaTrinket.setTileX(5);
+        manaTrinket.setTileY(2);
+        manaTrinket.setBonusMaxMana(50);
+        manaTrinket.setBonusManaRegen(3);
+        manaTrinket.setBonusCooldownReduction(0.05f);
+        accessories.put(manaTrinket.getId(), manaTrinket);
+        allItems.put(manaTrinket.getId(), manaTrinket);
+
+        // Brinco de Precisão (Trinket)
+        ItemDefinition precisionEarring = new ItemDefinition();
+        precisionEarring.setId("earring_of_precision");
+        precisionEarring.setName("Brinco de Precisão");
+        precisionEarring.setDescription("Um brinco que aumenta a chance crítica.");
+        precisionEarring.setCategory("accessory");
+        precisionEarring.setAccessorySlot("trinket");
+        precisionEarring.setSpritesheet("itens/spritesheet_itens.png");
+        precisionEarring.setTileX(6);
+        precisionEarring.setTileY(2);
+        precisionEarring.setBonusCriticalChance(0.05f);
+        precisionEarring.setBonusCriticalDamage(0.10f);
+        accessories.put(precisionEarring.getId(), precisionEarring);
+        allItems.put(precisionEarring.getId(), precisionEarring);
+
+        logger.info("Loaded {} accessories", accessories.size());
+    }
+
     // ==================== GETTERS ====================
 
     public Map<String, ItemDefinition> getWeapons() {
@@ -312,6 +428,10 @@ public class ItemDataLoader {
 
     public Map<String, ItemDefinition> getConsumables() {
         return new HashMap<>(consumables);
+    }
+
+    public Map<String, ItemDefinition> getAccessories() {
+        return new HashMap<>(accessories);
     }
 
     public Map<String, ItemDefinition> getAllItems() {

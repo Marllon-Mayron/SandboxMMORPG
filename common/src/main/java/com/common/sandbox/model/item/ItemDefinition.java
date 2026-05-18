@@ -10,18 +10,21 @@ public class ItemDefinition implements Serializable {
     // ==================== DADOS BÁSICOS ====================
     private String id;
     private String name;
-    private String description;  // NOVO CAMPO
-    private String category;     // "weapon", "consumable", "armor", "equipment", "quest"
+    private String description;
+    private String category;     // "weapon", "consumable", "armor", "accessory", "equipment", "quest"
     private String spritesheet;
     private int tileX;
     private int tileY;
     private int width = 32;
     private int height = 32;
 
+    // ==================== SISTEMA DE SLOTS ====================
+    private String armorSlot;        // "helmet", "chest", "legs", "boots"
+    private String accessorySlot;    // "ring", "necklace", "cloak", "trinket"
+
     // ==================== SISTEMA DE CONJUNTOS ====================
     private String setId;
     private transient ArmorSet armorSet;
-    private String armorSlot;  // "helmet", "chest", "legs", "boots", null para outros itens
 
     // ==================== PROPRIEDADES DE COMBATE ====================
     private int damage;
@@ -121,6 +124,13 @@ public class ItemDefinition implements Serializable {
 
     public int getHeight() { return height; }
     public void setHeight(int height) { this.height = height; }
+
+    // Sistema de slots
+    public String getArmorSlot() { return armorSlot; }
+    public void setArmorSlot(String armorSlot) { this.armorSlot = armorSlot; }
+
+    public String getAccessorySlot() { return accessorySlot; }
+    public void setAccessorySlot(String accessorySlot) { this.accessorySlot = accessorySlot; }
 
     // Sistema de conjuntos
     public String getSetId() { return setId; }
@@ -288,16 +298,26 @@ public class ItemDefinition implements Serializable {
     public int getBonusDarkResistance() { return bonusDarkResistance; }
     public void setBonusDarkResistance(int bonusDarkResistance) { this.bonusDarkResistance = bonusDarkResistance; }
 
-    public String getArmorSlot() { return armorSlot; }
-    public void setArmorSlot(String armorSlot) { this.armorSlot = armorSlot; }
     // ==================== MÉTODOS ÚTEIS ====================
 
     public boolean isEquippable() {
-        return "weapon".equals(category) || "armor".equals(category) || "equipment".equals(category);
+        return "weapon".equals(category) || "armor".equals(category) || "accessory".equals(category) || "equipment".equals(category);
     }
 
     public boolean isConsumable() {
         return "consumable".equals(category);
+    }
+
+    public boolean isWeapon() {
+        return "weapon".equals(category);
+    }
+
+    public boolean isArmor() {
+        return "armor".equals(category);
+    }
+
+    public boolean isAccessory() {
+        return "accessory".equals(category);
     }
 
     public boolean isMeleeWeapon() {
@@ -312,17 +332,29 @@ public class ItemDefinition implements Serializable {
         return "weapon".equals(category) && isMagic;
     }
 
-    public boolean isArmor() {
-        return "armor".equals(category);
-    }
-
     public boolean hasSet() {
         return setId != null && !setId.isEmpty();
     }
 
+    public boolean isRing() {
+        return "accessory".equals(category) && "ring".equals(accessorySlot);
+    }
+
+    public boolean isNecklace() {
+        return "accessory".equals(category) && "necklace".equals(accessorySlot);
+    }
+
+    public boolean isCloak() {
+        return "accessory".equals(category) && "cloak".equals(accessorySlot);
+    }
+
+    public boolean isTrinket() {
+        return "accessory".equals(category) && "trinket".equals(accessorySlot);
+    }
+
     @Override
     public String toString() {
-        return String.format("ItemDefinition{id='%s', name='%s', category='%s', setId='%s', damage=%d}",
-                id, name, category, setId, damage);
+        return String.format("ItemDefinition{id='%s', name='%s', category='%s', armorSlot='%s', accessorySlot='%s', damage=%d}",
+                id, name, category, armorSlot, accessorySlot, damage);
     }
 }

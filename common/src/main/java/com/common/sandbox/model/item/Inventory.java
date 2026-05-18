@@ -10,7 +10,33 @@ import java.util.Map;
 public class Inventory implements Serializable {
     private static final long serialVersionUID = 1L;
     private static final Logger logger = LoggerFactory.getLogger(Inventory.class);
-    public static final int TOTAL_SLOTS = 20;
+
+    // Total de slots no inventário
+    public static final int TOTAL_SLOTS = 27;
+
+    // Slots de equipamento - Armaduras
+    public static final String SLOT_WEAPON = "weapon";
+    public static final String SLOT_HELMET = "helmet";
+    public static final String SLOT_CHEST = "chest";
+    public static final String SLOT_LEGS = "legs";
+    public static final String SLOT_BOOTS = "boots";
+
+    // Slots de equipamento - Acessórios
+    public static final String SLOT_RING_1 = "ring1";
+    public static final String SLOT_RING_2 = "ring2";
+    public static final String SLOT_NECKLACE = "necklace";
+    public static final String SLOT_CLOAK = "cloak";
+    public static final String SLOT_TRINKET_1 = "trinket1";
+    public static final String SLOT_TRINKET_2 = "trinket2";
+    public static final String SLOT_TRINKET_3 = "trinket3";
+
+    // Lista de todos os slots para iteração
+    public static final String[] ALL_EQUIPMENT_SLOTS = {
+            SLOT_WEAPON, SLOT_HELMET, SLOT_CHEST, SLOT_LEGS, SLOT_BOOTS,
+            SLOT_RING_1, SLOT_RING_2, SLOT_NECKLACE, SLOT_CLOAK,
+            SLOT_TRINKET_1, SLOT_TRINKET_2, SLOT_TRINKET_3
+    };
+
     public static final int MAX_STACK_SIZE = getMaxStackForCategory("common");
 
     private Map<Integer, ItemStack> slots;

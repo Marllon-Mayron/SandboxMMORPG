@@ -149,90 +149,137 @@ public class GameServerHandler extends SimpleChannelInboundHandler<Object> {
             if (player != null) {
                 logger.info("Login Sucesso - Usuario: {}", request.username);
 
-                // SALVAR O CURRENT HP DO BANCO ANTES DE QUALQUER CÁLCULO
+                // ========== PASSO 1: SALVAR VALORES ORIGINAIS DO BANCO ==========
                 int savedCurrentHp = player.getCurrentHp();
                 int savedCurrentMana = player.getCurrentMana();
                 int savedCurrentStamina = player.getCurrentStamina();
+                int savedLevel = player.getLevel();
 
-                logger.info("BEFORE recalculation - Saved HP from DB: {}/{}", savedCurrentHp, player.getMaxHp());
+                logger.info("========================================");
+                logger.info("LOGIN SEQUENCE STARTED FOR: {}", request.username);
+                logger.info("LOADED FROM DB:");
+                logger.info("  - HP: {}/{}", savedCurrentHp, player.getMaxHp());
+                logger.info("  - Mana: {}/{}", savedCurrentMana, player.getMaxMana());
+                logger.info("  - Stamina: {}/{}", savedCurrentStamina, player.getMaxStamina());
+                logger.info("  - Level: {}", savedLevel);
+                logger.info("  - Attribute Points: {}", player.getAttributePoints());
+                logger.info("  - Equipped items: {}", player.getInventory().getEquipped());
+                logger.info("========================================");
 
                 currentPlayer = player;
 
-                // PASSO 1: RECALCULAR BÔNUS DOS EQUIPAMENTOS (aumenta maxHp)
+                // ========== PASSO 2: RESETAR TODOS OS BÔNUS DE EQUIPAMENTO ==========
+                // Garantir que começamos do zero (equipmentBonusXxx = 0)
+                currentPlayer.resetEquipmentBonuses();
+                logger.info("STEP 2 - Equipment bonuses reset");
+
+                // ========== PASSO 3: RECALCULAR BÔNUS DOS EQUIPAMENTOS EQUIPADOS ==========
                 recalculateEquipmentBonuses(currentPlayer);
+                logger.info("STEP 3 - After equipment recalculation:");
+                logger.info("  - EquipmentBonusMaxHp: {}", currentPlayer.getEquipmentBonusMaxHp());
+                logger.info("  - MaxHP: {}", currentPlayer.getMaxHp());
 
-                logger.info("AFTER equipment bonus - MaxHP: {}, Saved HP: {}",
-                        currentPlayer.getMaxHp(), savedCurrentHp);
-
-                // PASSO 2: APLICAR BÔNUS DE CONJUNTO
+                // ========== PASSO 4: APLICAR BÔNUS DE CONJUNTO (SETS) ==========
                 SetManager.getInstance().applySetBonuses(currentPlayer);
+                logger.info("STEP 4 - After set bonuses:");
+                logger.info("  - MaxHP: {}", currentPlayer.getMaxHp());
 
-                logger.info("AFTER set bonus - MaxHP: {}, Saved HP: {}",
-                        currentPlayer.getMaxHp(), savedCurrentHp);
+                // ========== PASSO 5: VALIDAR E CORRIGIR STATUS ATUAIS ==========
+                currentPlayer.validateCurrentStats();
+                logger.info("STEP 5 - After validation:");
+                logger.info("  - MaxHP final: {}", currentPlayer.getMaxHp());
 
-                // PASSO 3: RESTAURAR O CURRENT HP SALVO DO BANCO
-                // Mas garantir que não ultrapasse o novo maxHp
+                // ========== PASSO 6: RESTAURAR CURRENT HP/MANA/STAMINA ==========
+                // Usar o menor entre o valor salvo e o novo maxHp
                 int finalCurrentHp = Math.min(savedCurrentHp, currentPlayer.getMaxHp());
+                int finalCurrentMana = Math.min(savedCurrentMana, currentPlayer.getMaxMana());
+                int finalCurrentStamina = Math.min(savedCurrentStamina, currentPlayer.getMaxStamina());
+
+                // Se o player morreu antes de deslogar, garantir que não loga com HP 0
+                if (finalCurrentHp <= 0) {
+                    finalCurrentHp = currentPlayer.getMaxHp();
+                    logger.warn("Player logged with 0 HP! Restoring to full: {}", finalCurrentHp);
+                }
+
                 currentPlayer.setCurrentHp(finalCurrentHp);
-                currentPlayer.setCurrentMana(Math.min(savedCurrentMana, currentPlayer.getMaxMana()));
-                currentPlayer.setCurrentStamina(Math.min(savedCurrentStamina, currentPlayer.getMaxStamina()));
+                currentPlayer.setCurrentMana(finalCurrentMana);
+                currentPlayer.setCurrentStamina(finalCurrentStamina);
 
-                logger.info("FINAL STATE - HP: {}/{} (Saved: {}, Max: {})",
-                        currentPlayer.getCurrentHp(), currentPlayer.getMaxHp(),
-                        savedCurrentHp, currentPlayer.getMaxHp());
+                logger.info("STEP 6 - Restored current values:");
+                logger.info("  - CurrentHP: {}/{}", currentPlayer.getCurrentHp(), currentPlayer.getMaxHp());
+                logger.info("  - CurrentMana: {}/{}", currentPlayer.getCurrentMana(), currentPlayer.getMaxMana());
+                logger.info("  - CurrentStamina: {}/{}", currentPlayer.getCurrentStamina(), currentPlayer.getMaxStamina());
 
-                // PASSO 4: ADICIONAR PLAYER AO MUNDO
+                // ========== PASSO 7: ADICIONAR PLAYER AO MUNDO ==========
                 GameWorld.getInstance().addPlayer(currentPlayer, channelId);
 
-                // PASSO 5: CRIAR RESPOSTA DE LOGIN
+                // ========== PASSO 8: CRIAR RESPOSTA DE LOGIN ==========
                 LoginResponse response = new LoginResponse(true, "Login bem-sucedido!", currentPlayer);
                 response.nearbyPlayers = new java.util.HashMap<>();
 
-                // PASSO 6: ENVIAR TODOS OS OUTROS PLAYERS PARA O NOVO JOGADOR
+                // ========== PASSO 9: ENVIAR TODOS OS OUTROS PLAYERS PARA O NOVO JOGADOR ==========
+                int otherPlayersCount = 0;
                 for (Player p : GameWorld.getInstance().getAllPlayers()) {
                     if (!p.getId().equals(currentPlayer.getId())) {
                         PlayerStatePacket statePacket = new PlayerStatePacket(p);
                         statePacket.fullSync = true;
                         sendPacket(ctx, statePacket);
+                        otherPlayersCount++;
                     }
                 }
+                logger.info("STEP 7 - Sent {} existing players to {}", otherPlayersCount, currentPlayer.getUsername());
 
-                // PASSO 7: ENVIAR RESPOSTA DE LOGIN
+                // ========== PASSO 10: ENVIAR RESPOSTA DE LOGIN ==========
                 sendPacket(ctx, response);
 
-                // PASSO 8: BROADCAST DO NOVO JOGADOR
+                // ========== PASSO 11: BROADCAST DO NOVO JOGADOR ==========
                 PlayerStatePacket newPlayerState = new PlayerStatePacket(currentPlayer);
                 newPlayerState.fullSync = true;
                 broadcastToAllExcept(newPlayerState, ctx.channel().id().asLongText());
+                logger.info("STEP 8 - Broadcasted new player to all others");
 
-                // PASSO 9: MENSAGEM DE ENTRADA
+                // ========== PASSO 12: MENSAGEM DE ENTRADA ==========
                 ChatMessage joinMsg = new ChatMessage(currentPlayer.getId(), "SISTEMA",
                         currentPlayer.getUsername() + " entrou no mundo!");
                 broadcastToAll(joinMsg);
 
-                // PASSO 10: ENVIAR MAPA, ITENS, ETC.
+                // ========== PASSO 13: ENVIAR MAPA ==========
                 sendMapToPlayer(ctx, currentPlayer);
+
+                // ========== PASSO 14: ENVIAR TODOS OS ITENS DO CHÃO ==========
                 sendAllExistingItemsToPlayer(ctx, currentPlayer);
+
+                // ========== PASSO 15: ENVIAR LISTA DE AMIGOS ==========
                 sendFriendListToPlayer(ctx, currentPlayer);
 
-                // PASSO 11: ANIMAÇÕES E DEFINIÇÕES
+                // ========== PASSO 16: ENVIAR ANIMAÇÕES E DEFINIÇÕES DE ITENS ==========
                 AnimationSyncPacket animSync = new AnimationSyncPacket(AnimationManager.getInstance().getAllProjectileAnimations());
                 ItemDefinitionSyncPacket itemSync = new ItemDefinitionSyncPacket(ItemManager.getInstance().getAllItemDefinitions());
-
                 sendPacket(ctx, animSync);
                 sendPacket(ctx, itemSync);
+                logger.info("STEP 9 - Sent animations and item definitions");
 
-                logger.info("Login complete for {} - Final HP: {}/{}",
-                        currentPlayer.getUsername(),
-                        currentPlayer.getCurrentHp(),
-                        currentPlayer.getMaxHp());
+                // ========== PASSO 17: LOG FINAL ==========
+                logger.info("========================================");
+                logger.info("LOGIN COMPLETE FOR: {}", currentPlayer.getUsername());
+                logger.info("FINAL STATE:");
+                logger.info("  - HP: {}/{}", currentPlayer.getCurrentHp(), currentPlayer.getMaxHp());
+                logger.info("  - Mana: {}/{}", currentPlayer.getCurrentMana(), currentPlayer.getMaxMana());
+                logger.info("  - Stamina: {}/{}", currentPlayer.getCurrentStamina(), currentPlayer.getMaxStamina());
+                logger.info("  - Level: {} | AP: {}", currentPlayer.getLevel(), currentPlayer.getAttributePoints());
+                logger.info("  - Physical Power: {}", currentPlayer.getPhysicalPower());
+                logger.info("  - Movement Speed: {}", currentPlayer.getMovementSpeed());
+                logger.info("========================================");
+
             } else {
                 logger.warn("Login Falhou - Usuario: {}", request.username);
-                LoginResponse response = new LoginResponse(false, "Usuario ou senha invalidos!", null);
+                LoginResponse response = new LoginResponse(false, "Usuário ou senha inválidos!", null);
                 sendPacket(ctx, response);
             }
         } catch (Exception e) {
             logger.error("Erro handleLogin: {}", e.getMessage(), e);
+            LoginResponse response = new LoginResponse(false, "Erro interno no servidor!", null);
+            sendPacket(ctx, response);
         }
     }
 
@@ -1173,7 +1220,7 @@ public class GameServerHandler extends SimpleChannelInboundHandler<Object> {
     }
 
     private boolean isEquippableCategory(String category) {
-        return "weapon".equals(category) || "armor".equals(category) || "equipment".equals(category);
+        return "weapon".equals(category) || "armor".equals(category) || "accessory".equals(category) || "equipment".equals(category);
     }
 
     private void handleAttributeUpgrade(ChannelHandlerContext ctx, AttributeUpgradePacket packet) {

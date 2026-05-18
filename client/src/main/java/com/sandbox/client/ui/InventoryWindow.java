@@ -260,27 +260,53 @@ public class InventoryWindow {
         equipmentTable.setBackground(createSlotBackground());
         equipmentTable.pad(10);
 
+        // Primeira linha: Arma e Capacete
+        addEquipmentSlot("weapon", "Weapon");
         addEquipmentSlot("helmet", "Helmet");
         equipmentTable.row();
-        addEquipmentSlot("weapon", "Weapon");
+
+        // Segunda linha: Peitoral
         addEquipmentSlot("chest", "Chest");
         equipmentTable.row();
+
+        // Terceira linha: Calças e Botas
         addEquipmentSlot("legs", "Legs");
         addEquipmentSlot("boots", "Boots");
+        equipmentTable.row();
+
+        addSeparatorLine(equipmentTable);
+
+        // Quarta linha: Anel 1 e Anel 2
+        addEquipmentSlot("ring1", "Ring 1");
+        addEquipmentSlot("ring2", "Ring 2");
+        equipmentTable.row();
+
+        // Quinta linha: Colar e Capa
+        addEquipmentSlot("necklace", "Necklace");
+        addEquipmentSlot("cloak", "Cloak");
+        equipmentTable.row();
+
+        addSeparatorLine(equipmentTable);
+
+        // Sexta linha: Acessórios (Trinkets)
+        addEquipmentSlot("trinket1", "Trinket 1");
+        addEquipmentSlot("trinket2", "Trinket 2");
+        equipmentTable.row();
+        addEquipmentSlot("trinket3", "Trinket 3");
+        equipmentTable.row();
 
         section.add(equipLabel).center().padBottom(12);
         section.row();
         section.add(equipmentTable).padBottom(10);
         section.row();
 
-        // MELHORADO: Aumentar fonte e padding
+        // Stats container
         statsLabel = new Label("", skin, "stats");
-        statsLabel.setFontScale(0.9f);  // Aumentado de 0.75f para 0.9f
+        statsLabel.setFontScale(0.85f);
         statsLabel.setColor(Color.LIGHT_GRAY);
         statsLabel.setWrap(true);
         statsLabel.setAlignment(Align.center);
 
-        // Adicionar um container com fundo para destacar
         Table statsContainer = new Table();
         statsContainer.setBackground(createSlotBackground());
         statsContainer.pad(8);
@@ -289,13 +315,20 @@ public class InventoryWindow {
         section.add(statsContainer).center().padTop(8).width(280);
         section.row();
 
-        // Adicionar linha de separação visual
         Label separator = new Label("────────────────────", skin, "stats");
         separator.setColor(Color.DARK_GRAY);
         separator.setFontScale(0.6f);
         section.add(separator).center().padTop(5);
 
         return section;
+    }
+
+    private void addSeparatorLine(Table table) {
+        Label separator = new Label("──────────────────", skin, "stats");
+        separator.setColor(Color.DARK_GRAY);
+        separator.setFontScale(0.5f);
+        table.add(separator).colspan(2).center().padTop(8).padBottom(8);
+        table.row();
     }
 
     private Table createInventorySection() {
@@ -466,7 +499,7 @@ public class InventoryWindow {
         ItemDefinition def = itemDefinitions.get(itemId);
         if (def == null) return false;
         String category = def.getCategory();
-        return "weapon".equals(category) || "armor".equals(category) || "equipment".equals(category);
+        return "weapon".equals(category) || "armor".equals(category) || "accessory".equals(category) || "equipment".equals(category);
     }
 
     private String getEquipmentSlotForItem(String itemId) {
@@ -476,12 +509,36 @@ public class InventoryWindow {
         String category = def.getCategory();
 
         if ("weapon".equals(category)) {
-            return "weapon";
+            return Inventory.SLOT_WEAPON;
         }
 
         if ("armor".equals(category)) {
-            // Usar diretamente o campo armorSlot
-            return def.getArmorSlot();
+            String armorSlot = def.getArmorSlot();
+            if (armorSlot != null) {
+                return armorSlot;
+            }
+            return null;
+        }
+
+        if ("accessory".equals(category)) {
+            String accessorySlot = def.getAccessorySlot();
+            if (accessorySlot != null) {
+                // Para anéis, podemos alternar entre ring1 e ring2
+                if ("ring".equals(accessorySlot)) {
+                    // Verificar qual slot está vazio
+                    String currentRing1 = currentInventory.getEquipped().get(Inventory.SLOT_RING_1);
+                    String currentRing2 = currentInventory.getEquipped().get(Inventory.SLOT_RING_2);
+                    if (currentRing1 == null || currentRing1.isEmpty()) {
+                        return Inventory.SLOT_RING_1;
+                    } else if (currentRing2 == null || currentRing2.isEmpty()) {
+                        return Inventory.SLOT_RING_2;
+                    }
+                    // Ambos ocupados, substituir o primeiro
+                    return Inventory.SLOT_RING_1;
+                }
+                return accessorySlot;
+            }
+            return null;
         }
 
         return null;
@@ -952,6 +1009,13 @@ public class InventoryWindow {
                         case "chest": return 2;
                         case "legs": return 3;
                         case "boots": return 4;
+                        case "ring1": return 5;
+                        case "ring2": return 6;
+                        case "necklace": return 7;
+                        case "cloak": return 8;
+                        case "trinket1": return 9;
+                        case "trinket2": return 10;
+                        case "trinket3": return 11;
                         default: return 0;
                     }
                 }
