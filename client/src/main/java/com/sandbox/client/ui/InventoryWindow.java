@@ -16,6 +16,7 @@ import com.badlogic.gdx.scenes.scene2d.utils.DragAndDrop.Target;
 import com.badlogic.gdx.scenes.scene2d.utils.Drawable;
 import com.badlogic.gdx.scenes.scene2d.utils.TextureRegionDrawable;
 import com.badlogic.gdx.utils.Align;
+import com.common.sandbox.model.enums.Rarity;
 import com.common.sandbox.model.item.Inventory;
 import com.common.sandbox.model.item.ItemDefinition;
 import com.common.sandbox.model.item.ItemStack;
@@ -60,6 +61,17 @@ public class InventoryWindow {
     private TextureRegion titleDecoration;
 
     private Callbacks callbacks;
+
+    // Cores por raridade
+    private static final Map<Rarity, Color> RARITY_COLORS = new ConcurrentHashMap<>();
+    static {
+        RARITY_COLORS.put(Rarity.COMMON, new Color(0.8f, 0.8f, 0.8f, 1f));      // Branco
+        RARITY_COLORS.put(Rarity.UNCOMMON, new Color(0.3f, 0.8f, 0.3f, 1f));    // Verde
+        RARITY_COLORS.put(Rarity.RARE, new Color(0.3f, 0.5f, 0.9f, 1f));        // Azul
+        RARITY_COLORS.put(Rarity.EPIC, new Color(0.7f, 0.3f, 0.8f, 1f));        // Roxo
+        RARITY_COLORS.put(Rarity.LEGENDARY, new Color(0.9f, 0.7f, 0.2f, 1f));   // Dourado
+        RARITY_COLORS.put(Rarity.MYTHIC, new Color(0.9f, 0.3f, 0.5f, 1f));      // Vermelho/Rosa
+    }
 
     public InventoryWindow(Skin skin, Stage stage) {
         this.skin = skin;
@@ -469,14 +481,37 @@ public class InventoryWindow {
         }
     }
 
+    // Método para obter cor baseada na raridade do item
+    private Color getRarityColor(ItemDefinition item) {
+        if (item == null) return Color.WHITE;
+        Rarity rarity = item.getRarity();
+        Color color = RARITY_COLORS.get(rarity);
+        return color != null ? color : Color.WHITE;
+    }
+
+    // Método para obter string da raridade
+    private String getRarityDisplayName(ItemDefinition item) {
+        if (item == null) return "";
+        Rarity rarity = item.getRarity();
+        switch (rarity) {
+            case COMMON: return "COMMON";
+            case UNCOMMON: return "UNCOMMON";
+            case RARE: return "RARE";
+            case EPIC: return "EPIC";
+            case LEGENDARY: return "LEGENDARY";
+            case MYTHIC: return "MYTHIC";
+            default: return "";
+        }
+    }
+
     public void registerItemTexture(String itemId, TextureRegion region, ItemDefinition definition) {
         if (itemId == null || definition == null) {
             logger.warn("Cannot register item with null ID or definition");
             return;
         }
 
-        logger.info("Registering item in InventoryWindow - ID: {}, Name: {}, Category: {}",
-                itemId, definition.getName(), definition.getCategory());
+        logger.info("Registering item in InventoryWindow - ID: {}, Name: {}, Category: {}, Rarity: {}",
+                itemId, definition.getName(), definition.getCategory(), definition.getRarity());
 
         itemDefinitions.put(itemId, definition);
         itemTextures.put(itemId, region != null ? region : defaultIcon);
@@ -493,6 +528,10 @@ public class InventoryWindow {
     private String getItemName(String itemId) {
         ItemDefinition def = itemDefinitions.get(itemId);
         return def != null ? def.getName() : itemId;
+    }
+
+    private ItemDefinition getItemDefinition(String itemId) {
+        return itemDefinitions.get(itemId);
     }
 
     private boolean isEquippable(String itemId) {
@@ -892,6 +931,15 @@ public class InventoryWindow {
                 String itemName = getItemName(itemId);
                 String displayName = itemName.length() > 12 ? itemName.substring(0, 10) + ".." : itemName;
                 nameLabel.setText(displayName);
+
+                // Aplicar cor do nome baseada na raridade do item
+                ItemDefinition def = getItemDefinition(itemId);
+                if (def != null) {
+                    nameLabel.setColor(getRarityColor(def));
+                } else {
+                    nameLabel.setColor(Color.WHITE);
+                }
+
                 nameLabel.setVisible(true);
 
                 if (stack.getQuantity() > 1) {
@@ -1055,6 +1103,15 @@ public class InventoryWindow {
                 String itemName = getItemName(itemId);
                 String displayName = itemName.length() > 12 ? itemName.substring(0, 10) + ".." : itemName;
                 itemLabel.setText(displayName);
+
+                // Aplicar cor do nome baseada na raridade do item
+                ItemDefinition def = getItemDefinition(itemId);
+                if (def != null) {
+                    itemLabel.setColor(getRarityColor(def));
+                } else {
+                    itemLabel.setColor(Color.CYAN);
+                }
+
                 itemLabel.setVisible(true);
             } else {
                 itemImage.setDrawable(new TextureRegionDrawable(emptySlotIcon));

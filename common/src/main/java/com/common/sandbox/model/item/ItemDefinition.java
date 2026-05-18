@@ -1,6 +1,7 @@
 package com.common.sandbox.model.item;
 
 import com.common.sandbox.model.enums.ArmorSet;
+import com.common.sandbox.model.enums.Rarity;
 
 import java.io.Serializable;
 
@@ -12,6 +13,8 @@ public class ItemDefinition implements Serializable {
     private String name;
     private String description;
     private String category;     // "weapon", "consumable", "armor", "accessory", "equipment", "quest"
+    private String rarityId = "common";
+    private transient Rarity rarity;
     private String spritesheet;
     private int tileX;
     private int tileY;
@@ -106,6 +109,25 @@ public class ItemDefinition implements Serializable {
 
     public String getDescription() { return description; }
     public void setDescription(String description) { this.description = description; }
+
+    public String getRarityId() { return rarityId; }
+
+    public void setRarityId(String rarityId) {
+        this.rarityId = rarityId;
+        this.rarity = null;
+    }
+
+    public Rarity getRarity() {
+        if (rarity == null && rarityId != null) {
+            rarity = Rarity.fromId(rarityId);
+        }
+        return rarity != null ? rarity : Rarity.COMMON;
+    }
+
+    public void setRarity(Rarity rarity) {
+        this.rarity = rarity;
+        this.rarityId = rarity != null ? rarity.getId() : "common";
+    }
 
     public String getCategory() { return category; }
     public void setCategory(String category) { this.category = category; }

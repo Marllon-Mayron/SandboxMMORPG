@@ -1,6 +1,7 @@
 package com.sandbox.server;
 
 import com.common.sandbox.model.enums.ArmorSet;
+import com.common.sandbox.model.enums.Rarity;
 import com.common.sandbox.model.item.ItemDefinition;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -74,6 +75,7 @@ public class ItemDataLoader {
         def.setId(id);
         def.setName(name);
         def.setDescription(description);
+        def.setRarity(Rarity.COMMON);
         def.setCategory("weapon");
         def.setSpritesheet("itens/spritesheet_itens.png");
         def.setTileX(tileX);

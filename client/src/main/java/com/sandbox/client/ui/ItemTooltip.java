@@ -9,6 +9,7 @@ import com.badlogic.gdx.scenes.scene2d.ui.*;
 import com.badlogic.gdx.scenes.scene2d.utils.Drawable;
 import com.badlogic.gdx.scenes.scene2d.utils.TextureRegionDrawable;
 import com.badlogic.gdx.utils.Align;
+import com.common.sandbox.model.enums.Rarity;
 import com.common.sandbox.model.item.ItemDefinition;
 
 public class ItemTooltip {
@@ -24,9 +25,21 @@ public class ItemTooltip {
 
     private Image itemIcon;
     private Label nameLabel;
+    private Label rarityLabel;
     private Label typeLabel;
     private Label statsLabel;
     private Label descriptionLabel;
+
+    // Cores por raridade
+    private static final java.util.Map<Rarity, Color> RARITY_COLORS = new java.util.concurrent.ConcurrentHashMap<>();
+    static {
+        RARITY_COLORS.put(Rarity.COMMON, new Color(0.8f, 0.8f, 0.8f, 1f));      // Branco
+        RARITY_COLORS.put(Rarity.UNCOMMON, new Color(0.3f, 0.8f, 0.3f, 1f));    // Verde
+        RARITY_COLORS.put(Rarity.RARE, new Color(0.3f, 0.5f, 0.9f, 1f));        // Azul
+        RARITY_COLORS.put(Rarity.EPIC, new Color(0.7f, 0.3f, 0.8f, 1f));        // Roxo
+        RARITY_COLORS.put(Rarity.LEGENDARY, new Color(0.9f, 0.7f, 0.2f, 1f));   // Dourado
+        RARITY_COLORS.put(Rarity.MYTHIC, new Color(0.9f, 0.3f, 0.5f, 1f));      // Vermelho/Rosa
+    }
 
     public ItemTooltip(Skin skin, Stage stage) {
         this.skin = skin;
@@ -53,14 +66,19 @@ public class ItemTooltip {
         Table infoTable = new Table();
         nameLabel = new Label("", skin, "default");
         nameLabel.setFontScale(1.3f);
-        nameLabel.setColor(Color.GOLD);
         nameLabel.setAlignment(Align.left);
         infoTable.add(nameLabel).left().padBottom(6);
         infoTable.row();
 
+        rarityLabel = new Label("", skin, "default");
+        rarityLabel.setFontScale(0.85f);
+        rarityLabel.setAlignment(Align.left);
+        infoTable.add(rarityLabel).left().padBottom(6);
+        infoTable.row();
+
         typeLabel = new Label("", skin, "default");
         typeLabel.setFontScale(0.9f);
-        typeLabel.setColor(Color.CYAN);
+        typeLabel.setAlignment(Align.left);
         infoTable.add(typeLabel).left();
 
         topRow.add(infoTable).left().expandX().fillX();
@@ -130,6 +148,24 @@ public class ItemTooltip {
         };
     }
 
+    private Color getRarityColor(Rarity rarity) {
+        Color color = RARITY_COLORS.get(rarity);
+        return color != null ? color : Color.WHITE;
+    }
+
+    private String getRarityDisplayName(Rarity rarity) {
+        if (rarity == null) return "";
+        switch (rarity) {
+            case COMMON: return "COMMON";
+            case UNCOMMON: return "UNCOMMON";
+            case RARE: return "RARE";
+            case EPIC: return "EPIC";
+            case LEGENDARY: return "LEGENDARY";
+            case MYTHIC: return "MYTHIC";
+            default: return "";
+        }
+    }
+
     public void show(ItemDefinition item, TextureRegion icon, float mouseX, float mouseY) {
         if (item == null) return;
 
@@ -145,10 +181,15 @@ public class ItemTooltip {
             itemIcon.setDrawable(new TextureRegionDrawable(texture));
         }
 
+        // Nome do item com cor da raridade
         nameLabel.setText(item.getName());
+        Color rarityColor = getRarityColor(item.getRarity());
+        nameLabel.setColor(rarityColor);
 
-        Color nameColor = getRarityColor(item);
-        nameLabel.setColor(nameColor);
+        // Label de raridade
+        String rarityText = getRarityDisplayName(item.getRarity());
+        rarityLabel.setText(rarityText);
+        rarityLabel.setColor(rarityColor.cpy().mul(0.8f, 0.8f, 0.8f, 1f)); // Cor um pouco mais escura para contraste
 
         typeLabel.setText(getCategoryDisplayName(item.getCategory()));
 
@@ -253,29 +294,6 @@ public class ItemTooltip {
         if (tooltipWindow != null) {
             tooltipWindow.toFront();
         }
-    }
-
-    private Color getRarityColor(ItemDefinition item) {
-        if ("weapon".equals(item.getCategory())) {
-            if (item.getDamage() >= 15) return Color.GOLD;
-            if (item.getDamage() >= 10) return new Color(0.7f, 0.4f, 0.8f, 1f);
-            return Color.WHITE;
-        } else if ("consumable".equals(item.getCategory())) {
-            return new Color(0.3f, 0.8f, 0.3f, 1f);
-        } else if ("armor".equals(item.getCategory())) {
-            // Armaduras com bônus mais altos tem cor diferente
-            if (item.getBonusMaxHp() > 30 || item.getBonusPhysicalDefense() > 15) {
-                return new Color(0.7f, 0.4f, 0.8f, 1f); // Roxo para raras
-            }
-            if (item.getBonusMaxHp() > 0 || item.getBonusPhysicalDefense() > 0) {
-                return new Color(0.3f, 0.6f, 0.9f, 1f); // Azul para mágicas
-            }
-            return Color.WHITE;
-        } else if ("accessory".equals(item.getCategory())) {
-            // Acessórios têm cor dourada
-            return new Color(0.9f, 0.7f, 0.2f, 1f); // Dourado
-        }
-        return Color.WHITE;
     }
 
     private String getCategoryDisplayName(String category) {
