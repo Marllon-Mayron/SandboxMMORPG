@@ -156,6 +156,9 @@ public class GameWorld {
         }
         DatabaseManager.getInstance().saveChatMessage(playerId, message);
     }
+    public Long getLastSaveTime(String playerId) {
+        return lastSaveTime.get(playerId);
+    }
 
     public Player getPlayer(String id) {
         return onlinePlayers.get(id);
