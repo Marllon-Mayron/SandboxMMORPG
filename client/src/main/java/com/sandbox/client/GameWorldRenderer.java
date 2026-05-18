@@ -1028,34 +1028,46 @@ public class GameWorldRenderer implements Screen {
     // ==================== MÉTODOS DE MOVIMENTO ====================
 
     private void handleInput(float delta) {
-        // Verificar se UI está bloqueando input
-        if (playerUI != null && (playerUI.isChatFocused() ||
+        // Verificar se UI está bloqueando INPUT (apenas movimento e ataque)
+        boolean uiBlockingInput = playerUI != null && (playerUI.isChatFocused() ||
                 playerUI.isFriendsWindowVisible() ||
                 playerUI.isAttributesVisible() ||
                 playerUI.isPrivateChatVisible() ||
-                playerUI.isInventoryVisible())) {
-            if (playerInputManager != null) {
-                playerInputManager.setInputBlocked(true);
-            }
-            return;
-        }
+                playerUI.isInventoryVisible());
 
+        // SEMPRE atualizar o InputManager (ele gerencia os estados das teclas)
         if (playerInputManager != null) {
-            playerInputManager.setInputBlocked(false);
             playerInputManager.update(delta);
+            playerInputManager.setInputBlocked(uiBlockingInput);
         }
 
+        // SEMPRE atualizar regeneração e animações, mesmo com janelas abertas!
         if (currentPlayer == null) return;
 
         // Atualizar regeneração
         currentPlayer.updateRegeneration(delta);
         currentPlayer.updateAttack(delta);
 
+        // Atualizar UI
         if (playerUI != null) {
             playerUI.setStamina(currentPlayer.getStaminaPercentage() * 100);
             playerUI.setHealth(currentPlayer.getHpPercentage() * 100);
             playerUI.setMana(currentPlayer.getManaPercentage() * 100);
+            playerUI.update(currentPlayer, getCurrentTerrainSpeed());
         }
+
+        // SE UI ESTÁ BLOQUEANDO INPUT, NÃO processar movimento/ataque
+        if (uiBlockingInput) {
+            // Ainda enviar estado periódico (para salvar regeneração, etc.)
+            long now = System.currentTimeMillis();
+            if ((now - lastStatusSyncTime) >= STATUS_SYNC_INTERVAL_MS) {
+                sendPlayerState();
+                lastStatusSyncTime = now;
+            }
+            return;  // Sai sem processar movimento/ataque
+        }
+
+        // ========== SÓ PROCESSAR MOVIMENTO/ATAQUE SE UI NÃO ESTIVER BLOQUEANDO ==========
 
         // Detectar clique esquerdo para atacar
         if (Gdx.input.isButtonJustPressed(Input.Buttons.LEFT)) {
@@ -1131,14 +1143,23 @@ public class GameWorldRenderer implements Screen {
 
         if (playerUI != null) {
             playerUI.setSpeedMultiplier(playerSpeedMultiplier);
-            playerUI.update(currentPlayer, getCurrentTerrainSpeed());
         }
     }
 
     private void sendPlayerState() {
         if (currentPlayer == null || game.getNetworkClient() == null) return;
 
+        // Garantir que os valores estão dentro dos limites
+        currentPlayer.validateCurrentStats();
+
         PlayerStatePacket packet = new PlayerStatePacket(currentPlayer);
+
+        // Log para debug
+        logger.debug("Sending player state - HP: {}/{}, Mana: {}/{}, Stamina: {}/{}",
+                packet.currentHp, packet.maxHp,
+                packet.currentMana, packet.maxMana,
+                packet.currentStamina, packet.maxStamina);
+
         game.getNetworkClient().sendPlayerState(packet);
     }
 

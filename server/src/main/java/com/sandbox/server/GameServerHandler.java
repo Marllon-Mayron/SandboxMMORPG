@@ -355,86 +355,89 @@ public class GameServerHandler extends SimpleChannelInboundHandler<Object> {
                 return;
             }
 
-            // NÃO enviar correção de volta a menos que seja absolutamente necessário
-            // O cliente já tem autoridade sobre sua própria posição
-            // Apenas validar se não está em área sólida EXTREMA (fora do mapa)
-            if (ChunkManager.getInstance().isSolid(packet.x, packet.y)) {
-                // Só corrigir se realmente estiver dentro de um bloco sólido
-                // Usar um pequeno offset para tentar recuperar
-                float correctedX = packet.x;
-                float correctedY = packet.y;
+            boolean hasChanges = false;
 
-                // Tentar encontrar uma posição válida próxima
-                float[][] offsets = {{0, 10}, {0, -10}, {10, 0}, {-10, 0}};
-                for (float[] offset : offsets) {
-                    if (!ChunkManager.getInstance().isSolid(packet.x + offset[0], packet.y + offset[1])) {
-                        correctedX = packet.x + offset[0];
-                        correctedY = packet.y + offset[1];
-                        break;
-                    }
+            // ========== POSIÇÃO ==========
+            if (Math.abs(player.getX() - packet.x) > 0.1f || Math.abs(player.getY() - packet.y) > 0.1f) {
+                if (!ChunkManager.getInstance().isSolid(packet.x, packet.y)) {
+                    player.setX(packet.x);
+                    player.setY(packet.y);
+                    hasChanges = true;
                 }
-
-                if (correctedX == packet.x && correctedY == packet.y) {
-                    logger.warn("Player {} stuck in solid tile at ({},{}), not moving", player.getUsername(), packet.x, packet.y);
-                    return;
-                }
-
-                packet.x = correctedX;
-                packet.y = correctedY;
-                logger.info("Corrected player position from ({},{}) to ({},{})",
-                        packet.x, packet.y, correctedX, correctedY);
             }
 
-            // Atualizar posição
-            player.setX(packet.x);
-            player.setY(packet.y);
-            player.setDirection(packet.direction);
+            // ========== DIREÇÃO ==========
+            if (!player.getDirection().equals(packet.direction)) {
+                player.setDirection(packet.direction);
+                hasChanges = true;
+            }
 
-            // NÃO atualizar HP/Mana/Stamina pelo movimento!
-            // O cliente pode enviar valores inconsistentes
-            // Apenas atualizar se for fullSync (login, equip, etc)
-            if (packet.fullSync) {
+            // ========== HP - SEMPRE atualizar ==========
+            int newHp = Math.min(packet.currentHp, player.getMaxHp());
+            if (newHp > 0 && player.getCurrentHp() != newHp) {
+                player.setCurrentHp(newHp);
+                hasChanges = true;
+                logger.debug("HP updated for {}: {} -> {}", player.getUsername(), player.getCurrentHp(), newHp);
+            }
+
+            // ========== MANA - SEMPRE atualizar ==========
+            int newMana = Math.min(packet.currentMana, player.getMaxMana());
+            if (newMana >= 0 && player.getCurrentMana() != newMana) {
+                player.setCurrentMana(newMana);
+                hasChanges = true;
+                logger.debug("Mana updated for {}: {} -> {}", player.getUsername(), player.getCurrentMana(), newMana);
+            }
+
+            // ========== STAMINA - SEMPRE atualizar ==========
+            int newStamina = Math.min(packet.currentStamina, player.getMaxStamina());
+            if (newStamina >= 0 && player.getCurrentStamina() != newStamina) {
+                player.setCurrentStamina(newStamina);
+                hasChanges = true;
+                logger.debug("Stamina updated for {}: {} -> {}", player.getUsername(), player.getCurrentStamina(), newStamina);
+            }
+
+            // ========== GOLD ==========
+            if (player.getGold() != packet.gold) {
                 player.setGold(packet.gold);
+                hasChanges = true;
+            }
+
+            // ========== EXPERIÊNCIA ==========
+            if (player.getExperience() != packet.experience) {
                 player.setExperience(packet.experience);
-
-                if (packet.level != player.getLevel()) {
-                    player.setLevel(packet.level);
-                }
+                hasChanges = true;
             }
 
-            if (packet.currentHp > 0 && packet.currentHp <= player.getMaxHp()) {
-                player.setCurrentHp(packet.currentHp);
-            }
-            if (packet.currentMana > 0 && packet.currentMana <= player.getMaxMana()) {
-                player.setCurrentMana(packet.currentMana);
-            }
-            if (packet.currentStamina > 0 && packet.currentStamina <= player.getMaxStamina()) {
-                player.setCurrentStamina(packet.currentStamina);
+            // ========== LEVEL ==========
+            if (player.getLevel() != packet.level) {
+                player.setLevel(packet.level);
+                hasChanges = true;
             }
 
-            // Validar limites
-            if (player.getCurrentHp() > player.getMaxHp()) {
-                player.setCurrentHp(player.getMaxHp());
-            }
-            if (player.getCurrentMana() > player.getMaxMana()) {
-                player.setCurrentMana(player.getMaxMana());
-            }
-            if (player.getCurrentStamina() > player.getMaxStamina()) {
-                player.setCurrentStamina(player.getMaxStamina());
+            // ========== ATTRIBUTE POINTS ==========
+            if (player.getAttributePoints() != packet.attributePoints) {
+                player.setAttributePoints(packet.attributePoints);
+                hasChanges = true;
             }
 
-            // Broadcast para OUTROS jogadores (NÃO para o próprio)
-            PlayerStatePacket broadcast = new PlayerStatePacket(player);
-            broadcast.currentAttackCooldown = player.getCurrentAttackCooldown();
-
-            // IMPORTANTE: NÃO enviar de volta para quem enviou
-            broadcastToAllExcept(broadcast, ctx.channel().id().asLongText());
-
-            // Salvar periodicamente (não a cada movimento)
-            long now = System.currentTimeMillis();
-            Long lastSave = GameWorld.getInstance().getLastSaveTime(player.getId());
-            if (lastSave == null || (now - lastSave) >= 5000) {
+            // ========== SALVAR SE HOUVE MUDANÇAS ==========
+            if (hasChanges) {
+                // Salvar no banco
                 GameWorld.getInstance().savePlayer(player);
+
+                // Log para debug
+                logger.info("Player {} saved - HP: {}/{}, Mana: {}/{}, Stamina: {}/{}, Gold: {}, Pos: ({},{})",
+                        player.getUsername(),
+                        player.getCurrentHp(), player.getMaxHp(),
+                        player.getCurrentMana(), player.getMaxMana(),
+                        player.getCurrentStamina(), player.getMaxStamina(),
+                        player.getGold(),
+                        player.getX(), player.getY());
+
+                // Broadcast para OUTROS jogadores (NÃO para o próprio)
+                PlayerStatePacket broadcast = new PlayerStatePacket(player);
+                broadcast.fullSync = false;
+                broadcastToAllExcept(broadcast, ctx.channel().id().asLongText());
             }
 
         } catch (Exception e) {
@@ -1010,14 +1013,23 @@ public class GameServerHandler extends SimpleChannelInboundHandler<Object> {
                         if (currentEquipped != null && !currentEquipped.isEmpty()) {
                             unequipToInventory(packet.equipSlot);
                         }
-                        currentPlayer.getInventory().equipItem(packet.slot, packet.equipSlot);
-                        logger.info("Player {} equipped {} to slot {}",
-                                currentPlayer.getUsername(), stack.getItemId(), packet.equipSlot);
 
-                        // RECALCULAR BÔNUS DOS EQUIPAMENTOS
+                        // SALVAR status ANTES de equipar
+                        int oldHp = currentPlayer.getCurrentHp();
+                        int oldMana = currentPlayer.getCurrentMana();
+                        int oldStamina = currentPlayer.getCurrentStamina();
+
+                        currentPlayer.getInventory().equipItem(packet.slot, packet.equipSlot);
+
+                        // RECALCULAR BÔNUS
                         recalculateEquipmentBonuses(currentPlayer);
 
-                        // ATUALIZAR BÔNUS DE CONJUNTO
+                        // RESTAURAR status (não deixar o recálculo mudar o current)
+                        // Mas garantir que não ultrapassem o novo max
+                        currentPlayer.setCurrentHp(Math.min(oldHp, currentPlayer.getMaxHp()));
+                        currentPlayer.setCurrentMana(Math.min(oldMana, currentPlayer.getMaxMana()));
+                        currentPlayer.setCurrentStamina(Math.min(oldStamina, currentPlayer.getMaxStamina()));
+
                         SetManager.getInstance().refreshSetBonuses(currentPlayer);
                     }
                 }
@@ -1026,18 +1038,26 @@ public class GameServerHandler extends SimpleChannelInboundHandler<Object> {
             case "UNEQUIP":
                 String equippedItemId = currentPlayer.getInventory().getEquipped().get(packet.equipSlot);
                 if (equippedItemId != null && !equippedItemId.isEmpty()) {
+                    // SALVAR status ANTES de desequipar
+                    int oldHp = currentPlayer.getCurrentHp();
+                    int oldMana = currentPlayer.getCurrentMana();
+                    int oldStamina = currentPlayer.getCurrentStamina();
+
                     currentPlayer.getInventory().unequipItem(packet.equipSlot);
                     ItemDefinition def = ItemManager.getInstance().getItemDefinition(equippedItemId);
                     if (def != null) {
                         currentPlayer.getInventory().addItem(equippedItemId, 1, def);
-                        logger.info("Unequipped {} back to inventory", equippedItemId);
-
-                        // RECALCULAR BÔNUS DOS EQUIPAMENTOS
-                        recalculateEquipmentBonuses(currentPlayer);
-
-                        // ATUALIZAR BÔNUS DE CONJUNTO
-                        SetManager.getInstance().refreshSetBonuses(currentPlayer);
                     }
+
+                    // RECALCULAR BÔNUS
+                    recalculateEquipmentBonuses(currentPlayer);
+
+                    // RESTAURAR status
+                    currentPlayer.setCurrentHp(Math.min(oldHp, currentPlayer.getMaxHp()));
+                    currentPlayer.setCurrentMana(Math.min(oldMana, currentPlayer.getMaxMana()));
+                    currentPlayer.setCurrentStamina(Math.min(oldStamina, currentPlayer.getMaxStamina()));
+
+                    SetManager.getInstance().refreshSetBonuses(currentPlayer);
                 }
                 break;
         }
@@ -1066,44 +1086,69 @@ public class GameServerHandler extends SimpleChannelInboundHandler<Object> {
         logger.info("========== RECALCULATING EQUIPMENT BONUSES ==========");
         logger.info("Player: {}", player.getUsername());
 
-        // Mostrar valores ANTES
-        logger.info("BEFORE - MaxHP: {}, BonusMaxHp: {}, EquipmentBonusMaxHp: {}",
-                player.getMaxHp(), player.getBonusMaxHp(), player.getEquipmentBonusMaxHp());
-        logger.info("BEFORE - PhysicalPower: {}, BonusPhysicalPower: {}, EquipmentBonusPhysicalPower: {}",
-                player.getPhysicalPower(), player.getBonusPhysicalPower(), player.getEquipmentBonusPhysicalPower());
+        // SALVAR valores atuais ANTES do recálculo
+        int oldCurrentHp = player.getCurrentHp();
+        int oldCurrentMana = player.getCurrentMana();
+        int oldCurrentStamina = player.getCurrentStamina();
+
+        int oldMaxHp = player.getMaxHp();
+        int oldMaxMana = player.getMaxMana();
+        int oldMaxStamina = player.getMaxStamina();
+
+        logger.info("BEFORE - HP: {}/{}, Mana: {}/{}, Stamina: {}/{}",
+                oldCurrentHp, oldMaxHp, oldCurrentMana, oldMaxMana, oldCurrentStamina, oldMaxStamina);
 
         // Resetar todos os bônus de equipamento
         player.resetEquipmentBonuses();
 
-        logger.info("AFTER RESET - EquipmentBonusMaxHp: {}", player.getEquipmentBonusMaxHp());
-
         // Somar bônus de todos os equipamentos equipados
         Map<String, String> equipped = player.getInventory().getEquipped();
-        logger.info("Equipped items: {}", equipped);
 
         for (Map.Entry<String, String> entry : equipped.entrySet()) {
-            String slot = entry.getKey();
             String itemId = entry.getValue();
             if (itemId != null && !itemId.isEmpty()) {
                 ItemDefinition def = ItemManager.getInstance().getItemDefinition(itemId);
                 if (def != null) {
-                    logger.info("  Adding bonus from {} (slot: {}): HP+{}, Power+{}",
-                            def.getName(), slot, def.getBonusMaxHp(), def.getBonusPhysicalPower());
+                    logger.info("  Adding bonus from: {}", def.getName());
                     player.addEquipmentBonus(def);
-                } else {
-                    logger.warn("  Item definition not found for: {}", itemId);
                 }
             }
         }
 
-        // Mostrar valores DEPOIS
-        logger.info("AFTER ADDING - EquipmentBonusMaxHp: {}", player.getEquipmentBonusMaxHp());
-        logger.info("AFTER - MaxHP: {}, PhysicalPower: {}", player.getMaxHp(), player.getPhysicalPower());
+        // Calcular novos máximos
+        int newMaxHp = player.getMaxHp();
+        int newMaxMana = player.getMaxMana();
+        int newMaxStamina = player.getMaxStamina();
 
-        // Validar stats
-        player.validateCurrentStats();
+        // MANTER os valores atuais, apenas ajustar se ultrapassarem o novo máximo
+        int newCurrentHp = Math.min(oldCurrentHp, newMaxHp);
+        int newCurrentMana = Math.min(oldCurrentMana, newMaxMana);
+        int newCurrentStamina = Math.min(oldCurrentStamina, newMaxStamina);
 
-        logger.info("FINAL - CurrentHP: {}/{}", player.getCurrentHp(), player.getMaxHp());
+        // Se o novo máximo aumentou, NÃO aumentar o current automaticamente
+        // (o jogador precisa regenerar ou usar poção)
+        // Se o novo máximo diminuiu, reduzir o current proporcionalmente
+        if (newMaxHp < oldMaxHp && newCurrentHp > newMaxHp) {
+            newCurrentHp = newMaxHp;
+            logger.info("HP adjusted down due to max reduction: {} -> {}", oldCurrentHp, newCurrentHp);
+        }
+        if (newMaxMana < oldMaxMana && newCurrentMana > newMaxMana) {
+            newCurrentMana = newMaxMana;
+            logger.info("Mana adjusted down due to max reduction: {} -> {}", oldCurrentMana, newCurrentMana);
+        }
+        if (newMaxStamina < oldMaxStamina && newCurrentStamina > newMaxStamina) {
+            newCurrentStamina = newMaxStamina;
+            logger.info("Stamina adjusted down due to max reduction: {} -> {}", oldCurrentStamina, newCurrentStamina);
+        }
+
+        player.setCurrentHp(newCurrentHp);
+        player.setCurrentMana(newCurrentMana);
+        player.setCurrentStamina(newCurrentStamina);
+
+        logger.info("AFTER - HP: {}/{}, Mana: {}/{}, Stamina: {}/{}",
+                player.getCurrentHp(), player.getMaxHp(),
+                player.getCurrentMana(), player.getMaxMana(),
+                player.getCurrentStamina(), player.getMaxStamina());
         logger.info("======================================================");
     }
 
