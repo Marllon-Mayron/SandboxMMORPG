@@ -20,7 +20,8 @@ public class GameWorld {
 
     private final ScheduledExecutorService scheduler;
     private static final int SAVE_INTERVAL_SECONDS = 30;
-    private final Map<String, Long> lastSaveTime;
+    public final Map<String, Long> lastSaveTime;
+
 
     private GameWorld() {
         this.onlinePlayers = new ConcurrentHashMap<>();

@@ -355,35 +355,57 @@ public class GameServerHandler extends SimpleChannelInboundHandler<Object> {
                 return;
             }
 
-            logger.info("SERVER received PlayerState from {}:", player.getUsername());
-            logger.info("   HP from client: {}/{}", packet.currentHp, packet.maxHp);
-            logger.info("   Mana from client: {}/{}", packet.currentMana, packet.maxMana);
-            logger.info("   Stamina from client: {}/{}", packet.currentStamina, packet.maxStamina);
-            logger.info("   Pos from client: ({}, {})", packet.x, packet.y);
-            logger.info("   Server current HP: {}/{}", player.getCurrentHp(), player.getMaxHp());
-
+            // NÃO enviar correção de volta a menos que seja absolutamente necessário
+            // O cliente já tem autoridade sobre sua própria posição
+            // Apenas validar se não está em área sólida EXTREMA (fora do mapa)
             if (ChunkManager.getInstance().isSolid(packet.x, packet.y)) {
-                PlayerStatePacket correction = new PlayerStatePacket(player);
-                sendPacket(ctx, correction);
-                logger.info("Collision detected, sending correction");
-                return;
+                // Só corrigir se realmente estiver dentro de um bloco sólido
+                // Usar um pequeno offset para tentar recuperar
+                float correctedX = packet.x;
+                float correctedY = packet.y;
+
+                // Tentar encontrar uma posição válida próxima
+                float[][] offsets = {{0, 10}, {0, -10}, {10, 0}, {-10, 0}};
+                for (float[] offset : offsets) {
+                    if (!ChunkManager.getInstance().isSolid(packet.x + offset[0], packet.y + offset[1])) {
+                        correctedX = packet.x + offset[0];
+                        correctedY = packet.y + offset[1];
+                        break;
+                    }
+                }
+
+                if (correctedX == packet.x && correctedY == packet.y) {
+                    logger.warn("Player {} stuck in solid tile at ({},{}), not moving", player.getUsername(), packet.x, packet.y);
+                    return;
+                }
+
+                packet.x = correctedX;
+                packet.y = correctedY;
+                logger.info("Corrected player position from ({},{}) to ({},{})",
+                        packet.x, packet.y, correctedX, correctedY);
             }
 
+            // Atualizar posição
             player.setX(packet.x);
             player.setY(packet.y);
             player.setDirection(packet.direction);
 
-            player.setCurrentHp(packet.currentHp);
-            player.setCurrentMana(packet.currentMana);
-            player.setCurrentStamina(packet.currentStamina);
+            // NÃO atualizar HP/Mana/Stamina pelo movimento!
+            // O cliente pode enviar valores inconsistentes
+            // Apenas atualizar se for fullSync (login, equip, etc)
+            if (packet.fullSync) {
+                player.setCurrentHp(packet.currentHp);
+                player.setCurrentMana(packet.currentMana);
+                player.setCurrentStamina(packet.currentStamina);
+                player.setGold(packet.gold);
+                player.setExperience(packet.experience);
 
-            player.setGold(packet.gold);
-            player.setExperience(packet.experience);
-
-            if (packet.level != player.getLevel()) {
-                player.setLevel(packet.level);
+                if (packet.level != player.getLevel()) {
+                    player.setLevel(packet.level);
+                }
             }
 
+            // Validar limites
             if (player.getCurrentHp() > player.getMaxHp()) {
                 player.setCurrentHp(player.getMaxHp());
             }
@@ -394,16 +416,19 @@ public class GameServerHandler extends SimpleChannelInboundHandler<Object> {
                 player.setCurrentStamina(player.getMaxStamina());
             }
 
-            logger.info("After update - Server HP: {}/{}, Mana: {}/{}, Stamina: {}/{}",
-                    player.getCurrentHp(), player.getMaxHp(),
-                    player.getCurrentMana(), player.getMaxMana(),
-                    player.getCurrentStamina(), player.getMaxStamina());
-
+            // Broadcast para OUTROS jogadores (NÃO para o próprio)
             PlayerStatePacket broadcast = new PlayerStatePacket(player);
             broadcast.currentAttackCooldown = player.getCurrentAttackCooldown();
-            broadcastToAll(broadcast);
 
-            GameWorld.getInstance().savePlayer(player);
+            // IMPORTANTE: NÃO enviar de volta para quem enviou
+            broadcastToAllExcept(broadcast, ctx.channel().id().asLongText());
+
+            // Salvar periodicamente (não a cada movimento)
+            long now = System.currentTimeMillis();
+            Long lastSave = GameWorld.getInstance().getLastSaveTime(player.getId());
+            if (lastSave == null || (now - lastSave) >= 5000) {
+                GameWorld.getInstance().savePlayer(player);
+            }
 
         } catch (Exception e) {
             logger.error("Erro handlePlayerState: {}", e.getMessage(), e);
