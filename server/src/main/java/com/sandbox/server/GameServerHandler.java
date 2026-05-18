@@ -394,15 +394,22 @@ public class GameServerHandler extends SimpleChannelInboundHandler<Object> {
             // O cliente pode enviar valores inconsistentes
             // Apenas atualizar se for fullSync (login, equip, etc)
             if (packet.fullSync) {
-                player.setCurrentHp(packet.currentHp);
-                player.setCurrentMana(packet.currentMana);
-                player.setCurrentStamina(packet.currentStamina);
                 player.setGold(packet.gold);
                 player.setExperience(packet.experience);
 
                 if (packet.level != player.getLevel()) {
                     player.setLevel(packet.level);
                 }
+            }
+
+            if (packet.currentHp > 0 && packet.currentHp <= player.getMaxHp()) {
+                player.setCurrentHp(packet.currentHp);
+            }
+            if (packet.currentMana > 0 && packet.currentMana <= player.getMaxMana()) {
+                player.setCurrentMana(packet.currentMana);
+            }
+            if (packet.currentStamina > 0 && packet.currentStamina <= player.getMaxStamina()) {
+                player.setCurrentStamina(packet.currentStamina);
             }
 
             // Validar limites
