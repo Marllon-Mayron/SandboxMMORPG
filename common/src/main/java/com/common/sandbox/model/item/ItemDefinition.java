@@ -1,6 +1,8 @@
 package com.common.sandbox.model.item;
 
+import com.common.sandbox.model.combat.AttackDefinition;
 import com.common.sandbox.model.enums.ArmorSet;
+import com.common.sandbox.model.enums.AttackHitboxType;
 import com.common.sandbox.model.enums.Rarity;
 
 import java.io.Serializable;
@@ -404,5 +406,53 @@ public class ItemDefinition implements Serializable {
     public String toString() {
         return String.format("ItemDefinition{id='%s', name='%s', category='%s', armorSlot='%s', accessorySlot='%s', damage=%d}",
                 id, name, category, armorSlot, accessorySlot, damage);
+    }
+    
+    public AttackDefinition toAttackDefinition() {
+        AttackDefinition def = new AttackDefinition();
+
+        // Dados básicos
+        def.setId(this.attackId != null ? this.attackId : "melee_" + this.id);
+        def.setName(this.name);
+        def.setAttackAnimation(this.attackAnimation);
+        def.setRanged(this.isRanged);
+        def.setMagic(this.isMagic);
+
+        // Custos (vindo direto do item)
+        def.setManaCost(this.manaCost);
+        def.setStaminaCost(this.staminaCost);
+
+        // Configurações de cooldown
+        def.setCooldownSeconds(this.attackCooldown);
+
+        // Configurações de dano
+        def.setDamageMultiplier(this.damage / 10.0f);
+
+        // Configurações de knockback
+        def.setKnockbackPower(30f);
+
+        // Número máximo de alvos
+        def.setMaxTargets(this.isRanged ? 1 : 3);
+
+        if (this.isRanged) {
+            // Configurações para ranged
+            def.setHitboxType(AttackHitboxType.CIRCLE);
+            def.setRange(this.projectileRange);
+            def.setRadius(24f);
+            def.setProjectileId(this.projectileId);
+            def.setProjectileSpeed(this.projectileSpeed);
+            def.setHitboxDuration(0.3f);
+        } else {
+            // Configurações para melee
+            def.setHitboxType(AttackHitboxType.RECTANGLE);
+            def.setRange(64f);
+            def.setWidth(48f);
+            def.setHeight(32f);
+            def.setProjectileId(this.projectileId != null ? this.projectileId : "slash");
+            def.setProjectileSpeed(this.projectileSpeed > 0 ? this.projectileSpeed : 3000f);
+            def.setHitboxDuration(0.3f);
+        }
+
+        return def;
     }
 }

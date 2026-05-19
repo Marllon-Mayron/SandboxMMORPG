@@ -1,5 +1,6 @@
 package com.sandbox.server;
 
+import com.common.sandbox.model.combat.AttackDefinition;
 import com.common.sandbox.model.item.ItemDefinition;
 import com.common.sandbox.model.item.GroundItem;
 import com.common.sandbox.network.packets.inventory.ItemSpawnPacket;
@@ -211,6 +212,32 @@ public class ItemManager {
 
     public Map<String, ItemDefinition> getAccessories() {
         return new HashMap<>(accessories);
+    }
+
+    public AttackDefinition getAttackDefinitionForWeapon(String weaponId) {
+        ItemDefinition weapon = allItems.get(weaponId);
+        if (weapon == null) {
+            logger.warn("Weapon not found for attack definition: {}", weaponId);
+            return null;
+        }
+
+        if (!weapon.isWeapon()) {
+            logger.warn("Item {} is not a weapon, cannot create attack definition", weaponId);
+            return null;
+        }
+
+        return weapon.toAttackDefinition();
+    }
+
+    public AttackDefinition getUnarmedAttackDefinition() {
+        AttackDefinition def = AttackDefinition.createMeleeSword();
+        def.setId("unarmed");
+        def.setName("Soco");
+        def.setDamageMultiplier(0.5f);
+        def.setManaCost(0);
+        def.setStaminaCost(5);
+        def.setCooldownSeconds(0.8f);
+        return def;
     }
 
     public ItemDefinition getItemDefinition(String itemId) {

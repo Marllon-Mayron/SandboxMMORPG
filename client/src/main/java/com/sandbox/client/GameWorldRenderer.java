@@ -101,7 +101,7 @@ public class GameWorldRenderer implements Screen {
     private long lastPickupCheck = 0;
     private static final long PICKUP_CHECK_INTERVAL_MS = 500;
     private final Map<String, ItemDefinition> itemDefinitionCache = new ConcurrentHashMap<>();
-
+    private final Map<String, AttackDefinition> attackDefinitionCache = new ConcurrentHashMap<>();
     // ==================== SISTEMA DE COMBATE ====================
     private long lastAttackTime = 0;
     private AttackHitboxRenderer attackHitboxRenderer;
@@ -898,16 +898,20 @@ public class GameWorldRenderer implements Screen {
         if (weaponId != null && !weaponId.isEmpty()) {
             ItemDefinition weaponDef = getItemDefinition(weaponId);
             if (weaponDef != null) {
+                // NOVO: Usar o método que verifica o cache primeiro
                 attackDef = createAttackDefinitionFromWeapon(weaponDef);
             } else {
                 attackDef = AttackDefinition.createMeleeSword();
             }
         } else {
+            // Ataque desarmado (soco)
             attackDef = AttackDefinition.createMeleeSword();
+            attackDef.setId("unarmed");
             attackDef.setName("Soco");
             attackDef.setDamageMultiplier(0.5f);
+            attackDef.setManaCost(0);
+            attackDef.setStaminaCost(5);
         }
-
 
         // Enviar para o servidor
         AttackInfo attackInfo = new AttackInfo(
@@ -927,15 +931,26 @@ public class GameWorldRenderer implements Screen {
         }
     }
 
+    // Em GameWorldRenderer.java
     private AttackDefinition createAttackDefinitionFromWeapon(ItemDefinition weaponDef) {
-        AttackDefinition def = new AttackDefinition();
+        // PRIMEIRO: Tentar pegar do cache do servidor
+        AttackDefinition cachedDef = attackDefinitionCache.get(weaponDef.getId());
+        if (cachedDef != null) {
+            logger.debug("Using cached AttackDefinition for weapon: {}", weaponDef.getId());
+            return cachedDef;
+        }
 
-        def.setId(weaponDef.getAttackId());
+        // SEGUNDO: Fallback - criar localmente (caso o servidor não tenha enviado)
+        logger.warn("AttackDefinition not found in cache for {}, creating locally", weaponDef.getId());
+
+        AttackDefinition def = new AttackDefinition();
+        def.setId(weaponDef.getAttackId() != null ? weaponDef.getAttackId() : "melee_" + weaponDef.getId());
         def.setName(weaponDef.getName());
         def.setAttackAnimation(weaponDef.getAttackAnimation());
         def.setRanged(weaponDef.isRanged());
+        def.setMagic(weaponDef.isMagic());
 
-        // Usar os custos definidos no item
+        // Custos da arma
         def.setManaCost(weaponDef.getManaCost());
         def.setStaminaCost(weaponDef.getStaminaCost());
 
@@ -943,8 +958,8 @@ public class GameWorldRenderer implements Screen {
             def.setHitboxType(AttackHitboxType.CIRCLE);
             def.setRange(weaponDef.getProjectileRange());
             def.setRadius(24f);
-            def.setDamageMultiplier(1.0f);
-            def.setCooldownSeconds(1.0f / weaponDef.getAttackSpeed());
+            def.setDamageMultiplier(weaponDef.getDamage() / 10.0f);
+            def.setCooldownSeconds(weaponDef.getAttackCooldown());
             def.setMaxTargets(1);
             def.setKnockbackPower(15f);
             def.setProjectileId(weaponDef.getProjectileId());
@@ -955,10 +970,14 @@ public class GameWorldRenderer implements Screen {
             def.setWidth(48f);
             def.setHeight(32f);
             def.setDamageMultiplier(weaponDef.getDamage() / 10.0f);
-            def.setCooldownSeconds(1.0f / weaponDef.getAttackSpeed());
+            def.setCooldownSeconds(weaponDef.getAttackCooldown());
             def.setMaxTargets(3);
             def.setKnockbackPower(30f);
+            def.setProjectileId(weaponDef.getProjectileId() != null ? weaponDef.getProjectileId() : "slash");
+            def.setProjectileSpeed(weaponDef.getProjectileSpeed() > 0 ? weaponDef.getProjectileSpeed() : 3000f);
         }
+
+        def.setHitboxDuration(0.3f);
 
         return def;
     }
@@ -1046,6 +1065,13 @@ public class GameWorldRenderer implements Screen {
 
             itemDefinitionCache.clear();
             itemDefinitionCache.putAll(packet.itemDefinitions);
+
+            // NOVO: Cache dos AttackDefinitions
+            if (packet.attackDefinitions != null) {
+                attackDefinitionCache.clear();
+                attackDefinitionCache.putAll(packet.attackDefinitions);
+                logger.info("Cached {} attack definitions from server", attackDefinitionCache.size());
+            }
 
             logger.info("Cached {} item definitions from server", itemDefinitionCache.size());
 

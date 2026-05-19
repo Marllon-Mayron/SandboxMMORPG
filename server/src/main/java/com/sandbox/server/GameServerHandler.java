@@ -42,6 +42,7 @@ import org.slf4j.LoggerFactory;
 
 import java.sql.SQLException;
 import java.util.Collection;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -255,10 +256,25 @@ public class GameServerHandler extends SimpleChannelInboundHandler<Object> {
 
                 // ========== PASSO 16: ENVIAR ANIMAÇÕES E DEFINIÇÕES DE ITENS ==========
                 AnimationSyncPacket animSync = new AnimationSyncPacket(AnimationManager.getInstance().getAllProjectileAnimations());
-                ItemDefinitionSyncPacket itemSync = new ItemDefinitionSyncPacket(ItemManager.getInstance().getAllItemDefinitions());
+
+                Map<String, AttackDefinition> attackDefinitions = new HashMap<>();
+                for (ItemDefinition item : ItemManager.getInstance().getAllItemDefinitions().values()) {
+                    if (item.isWeapon()) {
+                        AttackDefinition attackDef = item.toAttackDefinition();
+                        if (attackDef != null) {
+                            attackDefinitions.put(item.getId(), attackDef);
+                        }
+                    }
+                }
+
+                ItemDefinitionSyncPacket itemSync = new ItemDefinitionSyncPacket(ItemManager.getInstance().getAllItemDefinitions(),
+                        attackDefinitions );
                 sendPacket(ctx, animSync);
                 sendPacket(ctx, itemSync);
                 logger.info("STEP 9 - Sent animations and item definitions");
+
+
+
 
                 // ========== PASSO 17: LOG FINAL ==========
                 logger.info("========================================");
@@ -1479,7 +1495,6 @@ public class GameServerHandler extends SimpleChannelInboundHandler<Object> {
 
         // Verificar cooldown
         if (!currentPlayer.canAttack()) {
-            // Enviar mensagem de erro para o cliente
             ChatMessage cooldownMsg = new ChatMessage("SISTEMA", "SISTEMA",
                     "Arma recarregando! Aguarde " +
                             String.format("%.1f", getRemainingCooldown(currentPlayer)) + "s");
@@ -1487,57 +1502,69 @@ public class GameServerHandler extends SimpleChannelInboundHandler<Object> {
             return;
         }
 
-        // Obter a definição do ataque baseado na arma
-        AttackDefinition attackDef = getAttackDefinition(attackInfo.attackId);
+        // ========== OBTER ARMA EQUIPADA E SEU ATTACK DEFINITION ==========
+        String equippedWeaponId = currentPlayer.getInventory() != null ?
+                currentPlayer.getInventory().getEquipped().get("weapon") : null;
+
+        AttackDefinition attackDef = null;
+        ItemDefinition weaponDef = null;
+
+        if (equippedWeaponId != null && !equippedWeaponId.isEmpty()) {
+            weaponDef = ItemManager.getInstance().getItemDefinition(equippedWeaponId);
+            if (weaponDef != null && weaponDef.isWeapon()) {
+                attackDef = ItemManager.getInstance().getAttackDefinitionForWeapon(equippedWeaponId);
+            }
+        }
+
+        // Fallback para ataque desarmado
         if (attackDef == null) {
-            logger.warn("Unknown attack definition: {}", attackInfo.attackId);
-            return;
+            attackDef = ItemManager.getInstance().getUnarmedAttackDefinition();
+            logger.info("{} attacking unarmed", currentPlayer.getUsername());
+        } else {
+            logger.info("{} attacking with weapon: {} (ManaCost: {}, StaminaCost: {})",
+                    currentPlayer.getUsername(), weaponDef.getName(),
+                    attackDef.getManaCost(), attackDef.getStaminaCost());
         }
 
         // ========== VERIFICAR MANA ==========
         if (attackDef.getManaCost() > 0 && currentPlayer.getCurrentMana() < attackDef.getManaCost()) {
             ChatMessage manaMsg = new ChatMessage("SISTEMA", "SISTEMA",
-                    "Mana insuficiente! Necessário: " + (int)attackDef.getManaCost() +
-                            " | Atual: " + currentPlayer.getCurrentMana() + "/" + currentPlayer.getMaxMana());
+                    String.format("Mana insuficiente! Necessário: %.0f | Atual: %d/%d",
+                            attackDef.getManaCost(),
+                            currentPlayer.getCurrentMana(),
+                            currentPlayer.getMaxMana()));
             sendPacket(ctx, manaMsg);
-            logger.info("Attack blocked - Insufficient mana for {}: need {}, have {}/{}",
-                    currentPlayer.getUsername(), attackDef.getManaCost(),
-                    currentPlayer.getCurrentMana(), currentPlayer.getMaxMana());
             return;
         }
 
         // ========== VERIFICAR STAMINA ==========
         if (attackDef.getStaminaCost() > 0 && currentPlayer.getCurrentStamina() < attackDef.getStaminaCost()) {
             ChatMessage staminaMsg = new ChatMessage("SISTEMA", "SISTEMA",
-                    "Stamina insuficiente! Necessário: " + (int)attackDef.getStaminaCost() +
-                            " | Atual: " + currentPlayer.getCurrentStamina() + "/" + currentPlayer.getMaxStamina());
+                    String.format("Stamina insuficiente! Necessário: %.0f | Atual: %d/%d",
+                            attackDef.getStaminaCost(),
+                            currentPlayer.getCurrentStamina(),
+                            currentPlayer.getMaxStamina()));
             sendPacket(ctx, staminaMsg);
-            logger.info("Attack blocked - Insufficient stamina for {}: need {}, have {}/{}",
-                    currentPlayer.getUsername(), attackDef.getStaminaCost(),
-                    currentPlayer.getCurrentStamina(), currentPlayer.getMaxStamina());
             return;
         }
 
-        // ========== CONSUMIR MANA ==========
+        // ========== CONSUMIR RECURSOS ==========
         if (attackDef.getManaCost() > 0) {
             int newMana = currentPlayer.getCurrentMana() - (int) attackDef.getManaCost();
             currentPlayer.setCurrentMana(newMana);
-            logger.info("Mana consumed by {}: {} -> {}/{} (cost: {})",
+            logger.info("Mana consumed by {}: {} -> {}/{}",
                     currentPlayer.getUsername(),
                     currentPlayer.getCurrentMana() + (int) attackDef.getManaCost(),
-                    newMana, currentPlayer.getMaxMana(),
-                    attackDef.getManaCost());
+                    newMana, currentPlayer.getMaxMana());
         }
 
-        // ========== CONSUMIR STAMINA ==========
         if (attackDef.getStaminaCost() > 0) {
             int newStamina = currentPlayer.getCurrentStamina() - (int) attackDef.getStaminaCost();
             currentPlayer.setCurrentStamina(newStamina);
-            logger.info("Stamina consumed by {}: {} -> {}/{} (cost: {})",
+            logger.info("Stamina consumed by {}: {} -> {}/{}",
                     currentPlayer.getUsername(),
                     currentPlayer.getCurrentStamina() + (int) attackDef.getStaminaCost(),
-                    newStamina, currentPlayer.getMaxStamina(),
-                    attackDef.getStaminaCost());
+                    newStamina, currentPlayer.getMaxStamina());
         }
 
         // ========== CALCULAR DANO ==========
@@ -1546,33 +1573,28 @@ public class GameServerHandler extends SimpleChannelInboundHandler<Object> {
         int damage = stats.getBaseDamage() + stats.getWeaponDamageBonus() + stats.getStrengthBonus();
         damage = (int) (damage * attackDef.getDamageMultiplier());
 
-        boolean wasCritical = (int)(Math.random() * 100) < stats.getCriticalChance();
+        // Chance crítica (usando stats do jogador)
+        boolean wasCritical = Math.random() * 100 < currentPlayer.getCriticalChance() * 100;
         if (wasCritical) {
-            damage = (int)(damage * stats.getCriticalDamage() / 100);
+            damage = (int) (damage * currentPlayer.getCriticalDamage());
         }
         damage = Math.max(1, damage);
 
-        // Log do ataque
-        logger.info("⚔️ {} attacking with {} | Damage: {}{} | Mana: {}/{} | Stamina: {}/{}",
-                currentPlayer.getUsername(), attackDef.getName(), damage,
-                wasCritical ? " (CRITICAL!)" : "",
-                currentPlayer.getCurrentMana(), currentPlayer.getMaxMana(),
-                currentPlayer.getCurrentStamina(), currentPlayer.getMaxStamina());
-
         // ========== INICIAR COOLDOWN ==========
         currentPlayer.executeAttack();
+        // Ajustar cooldown baseado na arma
+        currentPlayer.setCurrentAttackCooldown(attackDef.getCooldownSeconds());
 
         // ========== SPAWN DO PROJÉTIL ==========
-        float projectileSpeed = attackDef.isRanged() ? attackDef.getProjectileSpeed() : 3000f;
-        float projectileRange = attackDef.getRange();
-        String projectileType = attackDef.getProjectileId() != null ? attackDef.getProjectileId() :
-                (attackDef.isRanged() ? "arrow" : "melee_slash");
-
         ProjectileManager.getInstance().spawnProjectile(
-                currentPlayer, projectileType,
+                currentPlayer,
+                attackDef.getProjectileId() != null ? attackDef.getProjectileId() :
+                        (attackDef.isRanged() ? "arrow" : "slash"),
                 attackInfo.targetX, attackInfo.targetY,
                 damage, wasCritical,
-                projectileSpeed, projectileRange, attackDef.isRanged()
+                attackDef.getProjectileSpeed(),
+                attackDef.getRange(),
+                attackDef.isRanged()
         );
 
         // ========== BROADCAST DO EFEITO VISUAL ==========
@@ -1586,20 +1608,19 @@ public class GameServerHandler extends SimpleChannelInboundHandler<Object> {
         effect.attackDef = attackDef;
         GameServerHandler.broadcastToAll(effect);
 
-        // ========== SINCRONIZAR ESTADO DO JOGADOR ==========
+        // ========== SINCRONIZAR ESTADO ==========
         PlayerStatePacket stateUpdate = new PlayerStatePacket(currentPlayer);
         stateUpdate.currentAttackCooldown = currentPlayer.getCurrentAttackCooldown();
         stateUpdate.fullSync = false;
         sendPacket(ctx, stateUpdate);
 
-        logger.debug("State update sent to {} - HP: {}/{}, Mana: {}/{}, Stamina: {}/{}",
-                currentPlayer.getUsername(),
-                stateUpdate.currentHp, stateUpdate.maxHp,
-                stateUpdate.currentMana, stateUpdate.maxMana,
-                stateUpdate.currentStamina, stateUpdate.maxStamina);
-
-        // ========== SALVAR NO BANCO ==========
+        // Salvar no banco
         GameWorld.getInstance().savePlayer(currentPlayer);
+
+        logger.info(" Attack complete - {}: Damage={}{}, Mana={}/{}, Stamina={}/{}",
+                currentPlayer.getUsername(), damage, wasCritical ? " CRIT!" : "",
+                currentPlayer.getCurrentMana(), currentPlayer.getMaxMana(),
+                currentPlayer.getCurrentStamina(), currentPlayer.getMaxStamina());
     }
 
     private float getRemainingCooldown(Player player) {
