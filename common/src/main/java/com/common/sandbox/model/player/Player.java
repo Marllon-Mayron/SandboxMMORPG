@@ -779,13 +779,13 @@ public class Player implements Serializable {
 
     public int getCurrentMana() { return currentMana; }
     public void setCurrentMana(int currentMana) {
-        this.currentMana = Math.min(getMaxMana(), Math.max(0, currentMana));
+        this.currentMana = currentMana;
         notifyStatusChanged();
     }
 
     public int getCurrentStamina() { return currentStamina; }
     public void setCurrentStamina(int currentStamina) {
-        this.currentStamina = Math.min(getMaxStamina(), Math.max(0, currentStamina));
+        this.currentStamina = currentStamina;
         notifyStatusChanged();
     }
 

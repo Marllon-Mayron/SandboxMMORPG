@@ -12,7 +12,6 @@ import com.badlogic.gdx.scenes.scene2d.utils.Drawable;
 import com.badlogic.gdx.scenes.scene2d.utils.TextureRegionDrawable;
 import com.common.sandbox.model.player.Player;
 import com.common.sandbox.network.packets.player.AttributeUpgradePacket;
-import com.common.sandbox.network.packets.player.PlayerStatePacket;
 import com.sandbox.client.NetworkClient;
 import com.sandbox.client.SandboxClient;
 import org.slf4j.Logger;
@@ -49,8 +48,6 @@ public class AttributesWindow {
     private TextButton saveButton;
     private TextButton resetButton;
 
-    private AttributeSaveCallback saveCallback;
-
     public interface AttributeSaveCallback {
         void onSave(Map<String, Integer> upgrades);
     }
@@ -72,10 +69,6 @@ public class AttributesWindow {
         createWindow();
     }
 
-    public void setSaveCallback(AttributeSaveCallback callback) {
-        this.saveCallback = callback;
-    }
-
     private void createWindow() {
         Pixmap pixmap = new Pixmap(1, 1, Pixmap.Format.RGBA8888);
         pixmap.setColor(0.05f, 0.05f, 0.08f, 0.98f);
@@ -90,24 +83,6 @@ public class AttributesWindow {
         Texture borderTexture = new Texture(borderPixmap);
         borderPixmap.dispose();
         Drawable borderDrawable = new TextureRegionDrawable(borderTexture);
-
-        Pixmap barBgPixmap = new Pixmap(1, 1, Pixmap.Format.RGBA8888);
-        barBgPixmap.setColor(0.15f, 0.10f, 0.05f, 1f);
-        barBgPixmap.fill();
-        Texture barBgTexture = new Texture(barBgPixmap);
-        barBgPixmap.dispose();
-        Drawable barBg = new TextureRegionDrawable(barBgTexture);
-
-        Pixmap barFillPixmap = new Pixmap(1, 1, Pixmap.Format.RGBA8888);
-        barFillPixmap.setColor(0.85f, 0.65f, 0.15f, 1f);
-        barFillPixmap.fill();
-        Texture barFillTexture = new Texture(barFillPixmap);
-        barFillPixmap.dispose();
-        Drawable barFill = new TextureRegionDrawable(barFillTexture);
-
-        ProgressBar.ProgressBarStyle progressStyle = new ProgressBar.ProgressBarStyle();
-        progressStyle.background = barBg;
-        progressStyle.knobBefore = barFill;
 
         BitmapFont font = skin.getFont("default-font");
 
@@ -317,6 +292,50 @@ public class AttributesWindow {
         return label;
     }
 
+    // ==================== MÉTODOS CORRIGIDOS ====================
+
+    private int getIncrementValue(String attributeId) {
+        float increment = Player.getAttributeIncrement(attributeId);
+        logger.info("getIncrementValue for {}: increment={}", attributeId, increment);
+        if (increment < 1 && increment > 0) {
+            return 1;
+        }
+        return (int) increment;  // max_hp increment = 10f, retorna 10
+    }
+
+    private int getMaxAttributeLimit(String attributeId) {
+        switch (attributeId) {
+            case "max_hp": return 500;
+            case "max_mana": return 500;
+            case "max_stamina": return 500;
+            case "hp_regen": return 50;
+            case "mana_regen": return 50;
+            case "stamina_regen": return 50;
+            case "physical_defense": return 100;
+            case "magic_defense": return 100;
+            case "physical_power": return 100;
+            case "ranged_power": return 100;
+            case "magic_power": return 100;
+            case "critical_chance": return 50;
+            case "critical_damage": return 100;
+            case "dodge_chance": return 30;
+            case "attack_speed": return 100;
+            case "movement_speed": return 200;
+            case "cooldown_reduction": return 50;
+            case "life_steal": return 30;
+            case "mana_steal": return 30;
+            case "tenacity": return 50;
+            case "luck": return 100;
+            case "fire_resistance": return 75;
+            case "ice_resistance": return 75;
+            case "lightning_resistance": return 75;
+            case "poison_resistance": return 75;
+            case "holy_resistance": return 75;
+            case "dark_resistance": return 75;
+            default: return 100;
+        }
+    }
+
     private void addPointToAttribute(String attributeId) {
         if (currentPlayer == null) return;
 
@@ -326,19 +345,18 @@ public class AttributesWindow {
             return;
         }
 
-        float increment = Player.getAttributeIncrement(attributeId);
-        int currentPending = pendingUpgrades.getOrDefault(attributeId, 0);
+        int currentValue = getCurrentAttributeValue(attributeId);
+        int pendingValue = pendingUpgrades.getOrDefault(attributeId, 0);
+        int incrementValue = getIncrementValue(attributeId);
+        int totalAfterAdd = currentValue + pendingValue + incrementValue;
 
-        // Adicionar o valor de incremento
-        int incrementValue;
-        if (increment < 1 && increment > 0) {
-            // Atributos percentuais: armazenamos como pontos percentuais (1 = 1%)
-            incrementValue = (int)(increment * 100);
-        } else {
-            incrementValue = (int)increment;
+        int maxLimit = getMaxAttributeLimit(attributeId);
+        if (totalAfterAdd > maxLimit) {
+            showFeedback("Maximum limit reached for this attribute! Max: " + maxLimit, Color.RED);
+            return;
         }
 
-        pendingUpgrades.put(attributeId, currentPending + incrementValue);
+        pendingUpgrades.put(attributeId, pendingValue + incrementValue);
 
         updateAttributeDisplay(attributeId);
         updatePointsDisplay();
@@ -356,10 +374,9 @@ public class AttributesWindow {
         int pendingValue = pendingUpgrades.getOrDefault(attributeId, 0);
         int totalValue = currentValue + pendingValue;
 
-        // Para atributos percentuais, mostrar como percentual
         if (isPercentAttribute(attributeId)) {
-            float percentValue = totalValue / 100f;
-            valueLabel.setText(String.format("%.1f%%", percentValue * 100));
+            // Mostrar como percentual
+            valueLabel.setText(totalValue + "%");
         } else {
             valueLabel.setText(String.valueOf(totalValue));
         }
@@ -372,13 +389,17 @@ public class AttributesWindow {
 
         Label pendingLabel = attributePendingLabels.get(attributeId);
         if (pendingLabel != null) {
-            if (isPercentAttribute(attributeId)) {
-                float pendingPercent = pendingValue / 100f;
-                pendingLabel.setText(String.format("(+%.1f%%)", pendingPercent * 100));
+            if (pendingValue > 0) {
+                if (isPercentAttribute(attributeId)) {
+                    pendingLabel.setText("(+" + pendingValue + "%)");
+                } else {
+                    pendingLabel.setText("(+" + pendingValue + ")");
+                }
+                pendingLabel.setColor(Color.GREEN);
             } else {
-                pendingLabel.setText("(+" + pendingValue + ")");
+                pendingLabel.setText("(+0)");
+                pendingLabel.setColor(Color.DARK_GRAY);
             }
-            pendingLabel.setColor(pendingValue > 0 ? Color.GREEN : Color.DARK_GRAY);
         }
     }
 
@@ -402,176 +423,6 @@ public class AttributesWindow {
             default:
                 return false;
         }
-    }
-
-    private int getPointCostForAttribute(String attributeId, int pendingValue) {
-        float increment = Player.getAttributeIncrement(attributeId);
-        int incrementValue = (increment < 1 && increment > 0) ? (int)(increment * 100) : (int)increment;
-
-        if (incrementValue == 0) return pendingValue;
-        return pendingValue / incrementValue;
-    }
-
-    private void savePendingUpgrades() {
-        if (pendingUpgrades.isEmpty()) {
-            showFeedback("No pending upgrades to save", Color.YELLOW);
-            return;
-        }
-
-        int totalPointsUsed = getTotalPendingPoints();
-        if (totalPointsUsed > currentPlayer.getAttributePoints()) {
-            showFeedback("Not enough attribute points!", Color.RED);
-            return;
-        }
-
-        logger.info("Saving {} attribute upgrades, using {} points", pendingUpgrades.size(), totalPointsUsed);
-
-        // APLICAR OS UPGRADES LOCALMENTE PRIMEIRO
-        for (Map.Entry<String, Integer> entry : pendingUpgrades.entrySet()) {
-            String attributeId = entry.getKey();
-            int value = entry.getValue();
-            applyUpgradeToPlayer(attributeId, value);
-        }
-
-        // REMOVER OS PONTOS GASTOS
-        currentPlayer.setAttributePoints(currentPlayer.getAttributePoints() - totalPointsUsed);
-
-        // ATUALIZAR A UI IMEDIATAMENTE
-        updateAllAttributesDisplay();
-        updatePointsDisplay();
-
-        // ATUALIZAR HEALTH BAR E STATUS
-        if (currentPlayer.getOnStatusChanged() != null) {
-            currentPlayer.getOnStatusChanged().run();
-        }
-
-        // ENVIAR PARA O SERVIDOR (SALVAR NO BANCO)
-        if (networkClient != null) {
-            AttributeUpgradePacket packet = new AttributeUpgradePacket();
-            // Converter pendingUpgrades para o formato esperado pelo servidor (valores brutos)
-            Map<String, Integer> upgradesToSend = new HashMap<>();
-            for (Map.Entry<String, Integer> entry : pendingUpgrades.entrySet()) {
-                String attributeId = entry.getKey();
-                int value = entry.getValue();
-                float increment = Player.getAttributeIncrement(attributeId);
-                // Converter de volta para o valor bruto
-                int rawValue;
-                if (increment < 1 && increment > 0) {
-                    rawValue = (int)(value / (increment * 100));
-                } else {
-                    rawValue = value / (int)increment;
-                }
-                upgradesToSend.put(attributeId, rawValue);
-            }
-            packet.upgrades = upgradesToSend;
-            networkClient.sendPacket(packet);
-        }
-
-        // LIMPAR PENDING UPGRADES
-        pendingUpgrades.clear();
-
-        // ATUALIZAR DISPLAY NOVAMENTE PARA REMOVER OS (+) AMARELOS
-        for (String attributeId : attributeValueLabels.keySet()) {
-            updateAttributeDisplay(attributeId);
-        }
-
-        showFeedback("Points saved successfully!", Color.GREEN);
-    }
-
-    private void applyUpgradeToPlayer(String attributeId, int value) {
-        if (currentPlayer == null) return;
-
-        float increment = Player.getAttributeIncrement(attributeId);
-        int rawValue = (increment < 1 && increment > 0) ? (int)(value / (increment * 100)) : value / (int)increment;
-
-        switch (attributeId) {
-            case "max_hp":
-                currentPlayer.setBonusMaxHp(currentPlayer.getBonusMaxHp() + rawValue);
-                currentPlayer.setCurrentHp(currentPlayer.getMaxHp());
-                break;
-            case "max_mana":
-                currentPlayer.setBonusMaxMana(currentPlayer.getBonusMaxMana() + rawValue);
-                currentPlayer.setCurrentMana(currentPlayer.getMaxMana());
-                break;
-            case "max_stamina":
-                currentPlayer.setBonusMaxStamina(currentPlayer.getBonusMaxStamina() + rawValue);
-                currentPlayer.setCurrentStamina(currentPlayer.getMaxStamina());
-                break;
-            case "hp_regen":
-                currentPlayer.setBonusHpRegen(currentPlayer.getBonusHpRegen() + rawValue);
-                break;
-            case "mana_regen":
-                currentPlayer.setBonusManaRegen(currentPlayer.getBonusManaRegen() + rawValue);
-                break;
-            case "stamina_regen":
-                currentPlayer.setBonusStaminaRegen(currentPlayer.getBonusStaminaRegen() + rawValue);
-                break;
-            case "physical_defense":
-                currentPlayer.setBonusPhysicalDefense(currentPlayer.getBonusPhysicalDefense() + rawValue);
-                break;
-            case "magic_defense":
-                currentPlayer.setBonusMagicDefense(currentPlayer.getBonusMagicDefense() + rawValue);
-                break;
-            case "physical_power":
-                currentPlayer.setBonusPhysicalPower(currentPlayer.getBonusPhysicalPower() + rawValue);
-                break;
-            case "ranged_power":
-                currentPlayer.setBonusRangedPower(currentPlayer.getBonusRangedPower() + rawValue);
-                break;
-            case "magic_power":
-                currentPlayer.setBonusMagicPower(currentPlayer.getBonusMagicPower() + rawValue);
-                break;
-            case "critical_chance":
-                currentPlayer.setBonusCriticalChance(currentPlayer.getBonusCriticalChance() + (rawValue * increment));
-                break;
-            case "critical_damage":
-                currentPlayer.setBonusCriticalDamage(currentPlayer.getBonusCriticalDamage() + (rawValue * increment));
-                break;
-            case "dodge_chance":
-                currentPlayer.setBonusDodgeChance(currentPlayer.getBonusDodgeChance() + (rawValue * increment));
-                break;
-            case "attack_speed":
-                currentPlayer.setBonusAttackSpeed(currentPlayer.getBonusAttackSpeed() + (rawValue * increment));
-                break;
-            case "movement_speed":
-                currentPlayer.setBonusMovementSpeed(currentPlayer.getBonusMovementSpeed() + rawValue);
-                break;
-            case "cooldown_reduction":
-                currentPlayer.setBonusCooldownReduction(currentPlayer.getBonusCooldownReduction() + (rawValue * increment));
-                break;
-            case "life_steal":
-                currentPlayer.setBonusLifeSteal(currentPlayer.getBonusLifeSteal() + (rawValue * increment));
-                break;
-            case "mana_steal":
-                currentPlayer.setBonusManaSteal(currentPlayer.getBonusManaSteal() + (rawValue * increment));
-                break;
-            case "tenacity":
-                currentPlayer.setBonusTenacity(currentPlayer.getBonusTenacity() + (rawValue * increment));
-                break;
-            case "luck":
-                currentPlayer.setBonusLuck(currentPlayer.getBonusLuck() + rawValue);
-                break;
-            case "fire_resistance":
-                currentPlayer.setBonusFireResistance(currentPlayer.getBonusFireResistance() + rawValue);
-                break;
-            case "ice_resistance":
-                currentPlayer.setBonusIceResistance(currentPlayer.getBonusIceResistance() + rawValue);
-                break;
-            case "lightning_resistance":
-                currentPlayer.setBonusLightningResistance(currentPlayer.getBonusLightningResistance() + rawValue);
-                break;
-            case "poison_resistance":
-                currentPlayer.setBonusPoisonResistance(currentPlayer.getBonusPoisonResistance() + rawValue);
-                break;
-            case "holy_resistance":
-                currentPlayer.setBonusHolyResistance(currentPlayer.getBonusHolyResistance() + rawValue);
-                break;
-            case "dark_resistance":
-                currentPlayer.setBonusDarkResistance(currentPlayer.getBonusDarkResistance() + rawValue);
-                break;
-        }
-
-        currentPlayer.validateCurrentStats();
     }
 
     private int getCurrentAttributeValue(String attributeId) {
@@ -612,7 +463,9 @@ public class AttributesWindow {
     private int getTotalPendingPoints() {
         int total = 0;
         for (Map.Entry<String, Integer> entry : pendingUpgrades.entrySet()) {
-            total += getPointCostForAttribute(entry.getKey(), entry.getValue());
+            int incrementValue = getIncrementValue(entry.getKey());
+            int pointsUsed = entry.getValue() / incrementValue;
+            total += pointsUsed;
         }
         return total;
     }
@@ -648,17 +501,167 @@ public class AttributesWindow {
         showFeedback("Pending upgrades reset", Color.YELLOW);
     }
 
-    // Este metodo sera chamado quando o servidor confirmar com PlayerStatePacket
-    public void onUpgradesConfirmed() {
-        // Limpar pending upgrades
-        pendingUpgrades.clear();
-
-        for (String attributeId : attributeValueLabels.keySet()) {
-            updateAttributeDisplay(attributeId);
+    private void savePendingUpgrades() {
+        if (pendingUpgrades.isEmpty()) {
+            showFeedback("No pending upgrades to save", Color.YELLOW);
+            return;
         }
 
-        updatePointsDisplay();
-        showFeedback("Points applied successfully!", Color.GREEN);
+        int totalPointsUsed = getTotalPendingPoints();
+        if (totalPointsUsed > currentPlayer.getAttributePoints()) {
+            showFeedback("Not enough attribute points!", Color.RED);
+            return;
+        }
+
+        logger.info("=== SAVING PENDING UPGRADES ===");
+        logger.info("Total points used: {}", totalPointsUsed);
+
+        for (Map.Entry<String, Integer> entry : pendingUpgrades.entrySet()) {
+            String attributeId = entry.getKey();
+            int value = entry.getValue();
+            logger.info("  - {}: {} (pending value)", attributeId, value);
+        }
+
+        // APLICAR OS UPGRADES LOCALMENTE PRIMEIRO
+        for (Map.Entry<String, Integer> entry : pendingUpgrades.entrySet()) {
+            String attributeId = entry.getKey();
+            int value = entry.getValue();
+            applyUpgradeToPlayer(attributeId, value);
+
+            // Log após aplicar localmente
+            if ("max_hp".equals(attributeId)) {
+                logger.info("After local apply - BonusMaxHp: {}, MaxHp: {}, CurrentHp: {}",
+                        currentPlayer.getBonusMaxHp(),
+                        currentPlayer.getMaxHp(),
+                        currentPlayer.getCurrentHp());
+            }
+        }
+
+        // ENVIAR PARA O SERVIDOR
+        if (networkClient != null) {
+            AttributeUpgradePacket packet = new AttributeUpgradePacket();
+            Map<String, Integer> upgradesToSend = new HashMap<>();
+            for (Map.Entry<String, Integer> entry : pendingUpgrades.entrySet()) {
+                String attributeId = entry.getKey();
+                int value = entry.getValue();
+                int incrementValue = getIncrementValue(attributeId);
+                int rawValue = value / incrementValue;
+                upgradesToSend.put(attributeId, rawValue);
+                logger.info("Sending to server - {}: {} (rawValue = {} upgrades)", attributeId, value, rawValue);
+            }
+            packet.upgrades = upgradesToSend;
+            networkClient.sendPacket(packet);
+        }
+
+        // LIMPAR PENDING UPGRADES
+        pendingUpgrades.clear();
+    }
+
+    private void applyUpgradeToPlayer(String attributeId, int value) {
+        if (currentPlayer == null) return;
+
+        // value é o valor total pendente (ex: 10 para max_hp, 1 para critical_chance)
+        float increment = Player.getAttributeIncrement(attributeId);
+
+        // Para atributos percentuais, value já está em porcentagem (1 = 1%)
+        // Para atributos normais, value é o valor bruto (10 = +10 HP)
+        boolean isPercent = isPercentAttribute(attributeId);
+
+        logger.info("applyUpgradeToPlayer - {}: value={}, increment={}, isPercent={}",
+                attributeId, value, increment, isPercent);
+
+        switch (attributeId) {
+            case "max_hp":
+                // value já é 10, soma diretamente
+                currentPlayer.setBonusMaxHp(currentPlayer.getBonusMaxHp() + value);
+                currentPlayer.setCurrentHp(currentPlayer.getMaxHp());
+                break;
+            case "max_mana":
+                currentPlayer.setBonusMaxMana(currentPlayer.getBonusMaxMana() + value);
+                currentPlayer.setCurrentMana(currentPlayer.getMaxMana());
+                break;
+            case "max_stamina":
+                currentPlayer.setBonusMaxStamina(currentPlayer.getBonusMaxStamina() + value);
+                currentPlayer.setCurrentStamina(currentPlayer.getMaxStamina());
+                break;
+            case "hp_regen":
+                currentPlayer.setBonusHpRegen(currentPlayer.getBonusHpRegen() + value);
+                break;
+            case "mana_regen":
+                currentPlayer.setBonusManaRegen(currentPlayer.getBonusManaRegen() + value);
+                break;
+            case "stamina_regen":
+                currentPlayer.setBonusStaminaRegen(currentPlayer.getBonusStaminaRegen() + value);
+                break;
+            case "physical_defense":
+                currentPlayer.setBonusPhysicalDefense(currentPlayer.getBonusPhysicalDefense() + value);
+                break;
+            case "magic_defense":
+                currentPlayer.setBonusMagicDefense(currentPlayer.getBonusMagicDefense() + value);
+                break;
+            case "physical_power":
+                currentPlayer.setBonusPhysicalPower(currentPlayer.getBonusPhysicalPower() + value);
+                break;
+            case "ranged_power":
+                currentPlayer.setBonusRangedPower(currentPlayer.getBonusRangedPower() + value);
+                break;
+            case "magic_power":
+                currentPlayer.setBonusMagicPower(currentPlayer.getBonusMagicPower() + value);
+                break;
+            case "critical_chance":
+                // value é 1 (1%), increment = 0.005f (0.5%)
+                // Precisa converter: 1% = 0.01, mas cada upgrade dá 0.5%
+                // Então 1 upgrade = 0.005, 2 upgrades = 0.01
+                currentPlayer.setBonusCriticalChance(currentPlayer.getBonusCriticalChance() + (value * increment));
+                break;
+            case "critical_damage":
+                currentPlayer.setBonusCriticalDamage(currentPlayer.getBonusCriticalDamage() + (value * increment));
+                break;
+            case "dodge_chance":
+                currentPlayer.setBonusDodgeChance(currentPlayer.getBonusDodgeChance() + (value * increment));
+                break;
+            case "attack_speed":
+                currentPlayer.setBonusAttackSpeed(currentPlayer.getBonusAttackSpeed() + (value * increment));
+                break;
+            case "movement_speed":
+                currentPlayer.setBonusMovementSpeed(currentPlayer.getBonusMovementSpeed() + value);
+                break;
+            case "cooldown_reduction":
+                currentPlayer.setBonusCooldownReduction(currentPlayer.getBonusCooldownReduction() + (value * increment));
+                break;
+            case "life_steal":
+                currentPlayer.setBonusLifeSteal(currentPlayer.getBonusLifeSteal() + (value * increment));
+                break;
+            case "mana_steal":
+                currentPlayer.setBonusManaSteal(currentPlayer.getBonusManaSteal() + (value * increment));
+                break;
+            case "tenacity":
+                currentPlayer.setBonusTenacity(currentPlayer.getBonusTenacity() + (value * increment));
+                break;
+            case "luck":
+                currentPlayer.setBonusLuck(currentPlayer.getBonusLuck() + value);
+                break;
+            case "fire_resistance":
+                currentPlayer.setBonusFireResistance(currentPlayer.getBonusFireResistance() + value);
+                break;
+            case "ice_resistance":
+                currentPlayer.setBonusIceResistance(currentPlayer.getBonusIceResistance() + value);
+                break;
+            case "lightning_resistance":
+                currentPlayer.setBonusLightningResistance(currentPlayer.getBonusLightningResistance() + value);
+                break;
+            case "poison_resistance":
+                currentPlayer.setBonusPoisonResistance(currentPlayer.getBonusPoisonResistance() + value);
+                break;
+            case "holy_resistance":
+                currentPlayer.setBonusHolyResistance(currentPlayer.getBonusHolyResistance() + value);
+                break;
+            case "dark_resistance":
+                currentPlayer.setBonusDarkResistance(currentPlayer.getBonusDarkResistance() + value);
+                break;
+        }
+
+        currentPlayer.validateCurrentStats();
     }
 
     private void updateAllAttributesDisplay() {
@@ -692,26 +695,9 @@ public class AttributesWindow {
         this.currentPlayer = player;
         if (player == null) return;
 
-        if (levelValueLabel != null) {
-            levelValueLabel.setText(String.valueOf(player.getLevel()));
-        }
-
-        int currentExp = player.getExperience();
-        int nextLevelExp = player.getXpForNextLevel();
-        if (experienceValueLabel != null) {
-            experienceValueLabel.setText(currentExp + " / " + nextLevelExp);
-        }
-
-        float progress = player.getXpProgress();
-        if (experienceProgressLabel != null) {
-            experienceProgressLabel.setText(Math.round(progress * 100) + "%");
-        }
-
         updateAllAttributesDisplay();
         updatePointsDisplay();
 
-        logger.info("Attributes window updated for {} - Available points: {}",
-                player.getUsername(), player.getAttributePoints());
     }
 
     public void show() {

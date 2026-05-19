@@ -1303,18 +1303,34 @@ public class GameServerHandler extends SimpleChannelInboundHandler<Object> {
     private void handleAttributeUpgrade(ChannelHandlerContext ctx, AttributeUpgradePacket packet) {
         if (currentPlayer == null || packet.upgrades == null) return;
 
-        logger.info("Received attribute upgrades from {}: {} upgrades",
-                currentPlayer.getUsername(), packet.upgrades.size());
+        logger.info("=== HANDLE ATTRIBUTE UPGRADE ===");
+        logger.info("Player: {}", currentPlayer.getUsername());
+        logger.info("Upgrades received: {}", packet.upgrades);
 
         int totalPointsUsed = 0;
 
         for (Map.Entry<String, Integer> entry : packet.upgrades.entrySet()) {
             String attributeId = entry.getKey();
-            int value = entry.getValue();
+            int value = entry.getValue();  // Este é o número de upgrades (ex: 1)
+
+            logger.info("  - {}: {} upgrades", attributeId, value);
 
             totalPointsUsed += getPointCostForAttribute(attributeId, value);
+
+            // ANTES de aplicar
+            if ("max_hp".equals(attributeId)) {
+                logger.info("    BEFORE - BonusMaxHp: {}", currentPlayer.getBonusMaxHp());
+            }
+
             applyUpgradeToPlayer(attributeId, value);
+
+            // DEPOIS de aplicar
+            if ("max_hp".equals(attributeId)) {
+                logger.info("    AFTER - BonusMaxHp: {}", currentPlayer.getBonusMaxHp());
+            }
         }
+
+        logger.info("Total points used: {}", totalPointsUsed);
 
         if (totalPointsUsed > currentPlayer.getAttributePoints()) {
             logger.warn("Player {} tried to use more points than available!", currentPlayer.getUsername());
@@ -1322,24 +1338,19 @@ public class GameServerHandler extends SimpleChannelInboundHandler<Object> {
         }
 
         currentPlayer.setAttributePoints(currentPlayer.getAttributePoints() - totalPointsUsed);
-
-        // Validar stats após aplicar upgrades
         currentPlayer.validateCurrentStats();
 
-        // Salvar no banco
+        logger.info("FINAL - Player {} - HP: {}/{}, AP remaining: {}",
+                currentPlayer.getUsername(),
+                currentPlayer.getCurrentHp(), currentPlayer.getMaxHp(),
+                currentPlayer.getAttributePoints());
+
         DatabaseManager.getInstance().savePlayerAsync(currentPlayer);
 
-        // Enviar estado atualizado para o cliente (APENAS para quem enviou)
         PlayerStatePacket statePacket = new PlayerStatePacket(currentPlayer);
         statePacket.fullSync = true;
         sendPacket(ctx, statePacket);
-
-        // Também broadcast para outros players (para atualizar vida máxima visível)
         broadcastToAll(statePacket);
-
-        logger.info("Applied {} upgrades to {}, {} points remaining. New MaxHP: {}",
-                packet.upgrades.size(), currentPlayer.getUsername(),
-                currentPlayer.getAttributePoints(), currentPlayer.getMaxHp());
     }
 
     private int getPointCostForAttribute(String attributeId, int value) {
@@ -1376,90 +1387,86 @@ public class GameServerHandler extends SimpleChannelInboundHandler<Object> {
     }
 
     private void applyUpgradeToPlayer(String attributeId, int value) {
+        // value é o número de upgrades (ex: 1 upgrade)
+        float increment = Player.getAttributeIncrement(attributeId);  // max_hp = 10f
+        int bonusToAdd = (int)(value * increment);  // 1 * 10 = 10
+
+        logger.info("    Applying upgrade - {}: {} upgrades * {} increment = {} bonus",
+                attributeId, value, increment, bonusToAdd);
+
         switch (attributeId) {
             case "max_hp":
-                currentPlayer.setBonusMaxHp(currentPlayer.getBonusMaxHp() + value);
+                currentPlayer.setBonusMaxHp(currentPlayer.getBonusMaxHp() + bonusToAdd);
                 currentPlayer.setCurrentHp(currentPlayer.getMaxHp());
                 break;
             case "max_mana":
-                currentPlayer.setBonusMaxMana(currentPlayer.getBonusMaxMana() + value);
+                currentPlayer.setBonusMaxMana(currentPlayer.getBonusMaxMana() + bonusToAdd);
                 currentPlayer.setCurrentMana(currentPlayer.getMaxMana());
                 break;
             case "max_stamina":
-                currentPlayer.setBonusMaxStamina(currentPlayer.getBonusMaxStamina() + value);
+                currentPlayer.setBonusMaxStamina(currentPlayer.getBonusMaxStamina() + bonusToAdd);
                 currentPlayer.setCurrentStamina(currentPlayer.getMaxStamina());
                 break;
             case "hp_regen":
-                currentPlayer.setBonusHpRegen(currentPlayer.getBonusHpRegen() + value);
+                currentPlayer.setBonusHpRegen(currentPlayer.getBonusHpRegen() + bonusToAdd);
                 break;
             case "mana_regen":
-                currentPlayer.setBonusManaRegen(currentPlayer.getBonusManaRegen() + value);
+                currentPlayer.setBonusManaRegen(currentPlayer.getBonusManaRegen() + bonusToAdd);
                 break;
             case "stamina_regen":
-                currentPlayer.setBonusStaminaRegen(currentPlayer.getBonusStaminaRegen() + value);
+                currentPlayer.setBonusStaminaRegen(currentPlayer.getBonusStaminaRegen() + bonusToAdd);
                 break;
             case "physical_defense":
-                currentPlayer.setBonusPhysicalDefense(currentPlayer.getBonusPhysicalDefense() + value);
+                currentPlayer.setBonusPhysicalDefense(currentPlayer.getBonusPhysicalDefense() + bonusToAdd);
                 break;
             case "magic_defense":
-                currentPlayer.setBonusMagicDefense(currentPlayer.getBonusMagicDefense() + value);
+                currentPlayer.setBonusMagicDefense(currentPlayer.getBonusMagicDefense() + bonusToAdd);
                 break;
             case "physical_power":
-                currentPlayer.setBonusPhysicalPower(currentPlayer.getBonusPhysicalPower() + value);
+                currentPlayer.setBonusPhysicalPower(currentPlayer.getBonusPhysicalPower() + bonusToAdd);
                 break;
             case "ranged_power":
-                currentPlayer.setBonusRangedPower(currentPlayer.getBonusRangedPower() + value);
+                currentPlayer.setBonusRangedPower(currentPlayer.getBonusRangedPower() + bonusToAdd);
                 break;
             case "magic_power":
-                currentPlayer.setBonusMagicPower(currentPlayer.getBonusMagicPower() + value);
+                currentPlayer.setBonusMagicPower(currentPlayer.getBonusMagicPower() + bonusToAdd);
                 break;
             case "critical_chance":
-                currentPlayer.setBonusCriticalChance(currentPlayer.getBonusCriticalChance() + (value / 100f));
+                // increment = 0.005f, value * increment = 0.005 = 0.5%
+                currentPlayer.setBonusCriticalChance(currentPlayer.getBonusCriticalChance() + (value * increment));
                 break;
             case "critical_damage":
-                currentPlayer.setBonusCriticalDamage(currentPlayer.getBonusCriticalDamage() + (value / 100f));
+                currentPlayer.setBonusCriticalDamage(currentPlayer.getBonusCriticalDamage() + (value * increment));
                 break;
             case "dodge_chance":
-                currentPlayer.setBonusDodgeChance(currentPlayer.getBonusDodgeChance() + (value / 100f));
+                currentPlayer.setBonusDodgeChance(currentPlayer.getBonusDodgeChance() + (value * increment));
                 break;
             case "attack_speed":
-                currentPlayer.setBonusAttackSpeed(currentPlayer.getBonusAttackSpeed() + (value / 100f));
+                currentPlayer.setBonusAttackSpeed(currentPlayer.getBonusAttackSpeed() + (value * increment));
                 break;
             case "movement_speed":
-                currentPlayer.setBonusMovementSpeed(currentPlayer.getBonusMovementSpeed() + value);
+                currentPlayer.setBonusMovementSpeed(currentPlayer.getBonusMovementSpeed() + bonusToAdd);
                 break;
             case "cooldown_reduction":
-                currentPlayer.setBonusCooldownReduction(currentPlayer.getBonusCooldownReduction() + (value / 100f));
+                currentPlayer.setBonusCooldownReduction(currentPlayer.getBonusCooldownReduction() + (value * increment));
                 break;
             case "life_steal":
-                currentPlayer.setBonusLifeSteal(currentPlayer.getBonusLifeSteal() + (value / 100f));
+                currentPlayer.setBonusLifeSteal(currentPlayer.getBonusLifeSteal() + (value * increment));
                 break;
             case "mana_steal":
-                currentPlayer.setBonusManaSteal(currentPlayer.getBonusManaSteal() + (value / 100f));
+                currentPlayer.setBonusManaSteal(currentPlayer.getBonusManaSteal() + (value * increment));
                 break;
             case "tenacity":
-                currentPlayer.setBonusTenacity(currentPlayer.getBonusTenacity() + (value / 100f));
+                currentPlayer.setBonusTenacity(currentPlayer.getBonusTenacity() + (value * increment));
                 break;
             case "luck":
-                currentPlayer.setBonusLuck(currentPlayer.getBonusLuck() + value);
+                currentPlayer.setBonusLuck(currentPlayer.getBonusLuck() + bonusToAdd);
                 break;
-            case "fire_resistance":
-                currentPlayer.setBonusFireResistance(currentPlayer.getBonusFireResistance() + value);
-                break;
-            case "ice_resistance":
-                currentPlayer.setBonusIceResistance(currentPlayer.getBonusIceResistance() + value);
-                break;
-            case "lightning_resistance":
-                currentPlayer.setBonusLightningResistance(currentPlayer.getBonusLightningResistance() + value);
-                break;
-            case "poison_resistance":
-                currentPlayer.setBonusPoisonResistance(currentPlayer.getBonusPoisonResistance() + value);
-                break;
-            case "holy_resistance":
-                currentPlayer.setBonusHolyResistance(currentPlayer.getBonusHolyResistance() + value);
-                break;
-            case "dark_resistance":
-                currentPlayer.setBonusDarkResistance(currentPlayer.getBonusDarkResistance() + value);
+            default:
+                // Resistências
+                if (attributeId.endsWith("_resistance")) {
+                    currentPlayer.setBonusFireResistance(currentPlayer.getBonusFireResistance() + bonusToAdd);
+                }
                 break;
         }
 
