@@ -32,6 +32,8 @@ public class ItemDefinition implements Serializable {
     // ==================== PROPRIEDADES DE COMBATE ====================
     private int damage;
     private int healAmount;
+    private int staminaAmount;
+    private int manaAmount;
     private int duration;
 
     // ==================== SISTEMA DE ATAQUES ====================
@@ -41,6 +43,8 @@ public class ItemDefinition implements Serializable {
     private float attackCooldown = 1.0f;
     private boolean isRanged = false;
     private boolean isMagic = false;
+    private int manaCost;
+    private int staminaCost;
 
     // ==================== PARA ARMAS DE LONGO ALCANCE ====================
     private String projectileId;
@@ -180,6 +184,12 @@ public class ItemDefinition implements Serializable {
     public int getHealAmount() { return healAmount; }
     public void setHealAmount(int healAmount) { this.healAmount = healAmount; }
 
+    public int getManaAmount() { return manaAmount; }
+    public void setManaAmount(int manaAmount) { this.manaAmount = manaAmount; }
+
+    public int getStaminaAmount() { return staminaAmount; }
+    public void setStaminaAmount(int staminaAmount) { this.staminaAmount = staminaAmount; }
+
     public int getDuration() { return duration; }
     public void setDuration(int duration) { this.duration = duration; }
 
@@ -211,6 +221,22 @@ public class ItemDefinition implements Serializable {
 
     public boolean isMagic() { return isMagic; }
     public void setMagic(boolean magic) { isMagic = magic; }
+
+    public int getManaCost() {
+        return manaCost;
+    }
+
+    public void setManaCost(int manaCost) {
+        this.manaCost = manaCost;
+    }
+
+    public int getStaminaCost() {
+        return staminaCost;
+    }
+
+    public void setStaminaCost(int staminaCost) {
+        this.staminaCost = staminaCost;
+    }
 
     // Projéteis
     public String getProjectileId() { return projectileId; }

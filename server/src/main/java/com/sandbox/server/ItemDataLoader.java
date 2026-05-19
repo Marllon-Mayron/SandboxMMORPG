@@ -1,5 +1,6 @@
 package com.sandbox.server;
 
+import com.common.sandbox.model.enums.AnimationType;
 import com.common.sandbox.model.enums.ArmorSet;
 import com.common.sandbox.model.enums.Rarity;
 import com.common.sandbox.model.item.ItemDefinition;
@@ -17,6 +18,14 @@ public class ItemDataLoader {
     private final Map<String, ItemDefinition> consumables;
     private final Map<String, ItemDefinition> accessories;
     private final Map<String, ItemDefinition> allItems;
+
+    // Tipos de projéteis disponíveis
+    private static final String PROJECTILE_ARROW = "arrow";
+    private static final String PROJECTILE_SLASH = "slash";
+    private static final String PROJECTILE_FIREBALL = "fireball";
+    private static final String PROJECTILE_ICE_BOLT = "ice_bolt";
+    private static final String PROJECTILE_LIGHTNING = "lightning";
+    private static final String PROJECTILE_MAGIC_BOLT = "magic_bolt";
 
     public ItemDataLoader() {
         this.weapons = new HashMap<>();
@@ -36,41 +45,130 @@ public class ItemDataLoader {
         loadConsumables();
         loadAccessories();
 
+        validateItemAnimations();
         logger.info("========================================");
         logger.info("Total items loaded: {} (Weapons: {}, Armors: {}, Consumables: {}, Accessories: {})",
                 allItems.size(), weapons.size(), armors.size(), consumables.size(), accessories.size());
         logger.info("========================================");
     }
 
+    private void validateItemAnimations() {
+        logger.info("Validating item animations...");
+
+        for (ItemDefinition item : allItems.values()) {
+            if (item.isWeapon() && item.getProjectileAnimationId() != null) {
+                String animId = item.getProjectileAnimationId();
+                AnimationType animType = AnimationType.fromId(animId);
+
+                if (animType == null) {
+
+                    String defaultAnim = item.isRanged() ?
+                            AnimationType.getDefaultForRanged().getId() :
+                            AnimationType.getDefaultForMelee().getId();
+                    item.setProjectileAnimationId(defaultAnim);
+                    logger.warn("Weapon '{}' não possui animação '{}' e foi usado a '{}' como fallback", item.getId(), animId, defaultAnim);
+
+                } else {
+                    // Verificar compatibilidade
+                    if (item.isRanged() && !animType.isRanged()) {
+                        String defaultAnim = AnimationType.getDefaultForRanged().getId();
+                        item.setProjectileAnimationId(defaultAnim);
+                        logger.warn("Ranged Weapon '{}' não possui animação '{}' e foi usado a '{}' como fallback", item.getId(), animId, defaultAnim);
+
+                    } else if (!item.isRanged() && !item.isMagic() && !animType.isMelee()) {
+                        logger.warn("Melee weapon '{}' uses non-melee animation '{}'", item.getId(), animId);
+                        // Para melee, pode ser aceito, mas logamos warning
+                        logger.info("  → Keeping '{}' but may cause visual issues", animId);
+                    }
+                }
+            }
+        }
+    }
+
     private void loadWeapons() {
         logger.info("Loading weapons...");
 
-        addWeapon("simple_sword", "Espada Simples", 10, 1.0f, false, 1, 0,
-                "Uma espada básica de ferro forjada por aprendizes. Leve e equilibrada, ideal para iniciantes.");
+        // ========== ARMAS CORPO A CORPO (MELEE) ==========
+        // Formato: addMeleeWeapon(id, name, damage, cooldown, tileX, tileY, description, staminaCost, manaCost, projectileId)
 
-        addWeapon("iron_sword", "Espada de Ferro", 18, 1.25f, false, 1, 0,
-                "Espada forjada em ferro puro. Possui um bom equilíbrio entre peso e dano.");
+        addMeleeWeapon("simple_sword", "Espada Simples", 10, 1.0f, 1, 0,
+                "Uma espada básica de ferro forjada por aprendizes. Leve e equilibrada, ideal para iniciantes.",
+                99, 0, PROJECTILE_SLASH);
 
-        addWeapon("dagger", "Adaga", 6, 0.67f, false, 2, 0,
-                "Uma adaga rápida e discreta. Perfeita para ataques velozes e precisos.");
+        addMeleeWeapon("iron_sword", "Espada de Ferro", 18, 1.25f, 1, 0,
+                "Espada forjada em ferro puro. Possui um bom equilíbrio entre peso e dano.",
+                8, 0, PROJECTILE_SLASH);
 
-        addWeapon("simple_axe", "Machado Simples", 14, 1.43f, false, 3, 0,
-                "Machado de madeira com lâmina de ferro. Causa dano pesado, mas é mais lento.");
+        addMeleeWeapon("dagger", "Adaga", 6, 0.67f, 2, 0,
+                "Uma adaga rápida e discreta. Perfeita para ataques velozes e precisos.",
+                3, 0, PROJECTILE_SLASH);
+
+        addMeleeWeapon("simple_axe", "Machado Simples", 14, 1.43f, 3, 0,
+                "Machado de madeira com lâmina de ferro. Causa dano pesado, mas é mais lento.",
+                12, 0, PROJECTILE_SLASH);
+
+        addMeleeWeapon("great_sword", "Espadão", 25, 2.0f, 4, 0,
+                "Uma enorme espada de duas mãos. Extremamente pesada, mas devastadora.",
+                15, 0, PROJECTILE_SLASH);
+
+        addMeleeWeapon("war_hammer", "Martelo de Guerra", 22, 1.8f, 5, 0,
+                "Martelo pesado que esmaga armaduras. Alto dano, muito lento.",
+                18, 0, PROJECTILE_SLASH);
+
+        // ========== ARCOS (RANGED FÍSICO) ==========
+        // Formato: addRangedWeapon(id, name, damage, cooldown, tileX, tileY, projectileSpeed, projectileRange, description, staminaCost, manaCost, projectileId)
 
         addRangedWeapon("simple_bow", "Arco Simples", 8, 1.25f, 0, 1, 600f, 400f,
-                "Arco de madeira flexível. Ideal para caça e treinamento de precisão.");
+                "Arco de madeira flexível. Ideal para caça e treinamento de precisão.",
+                8, 0, PROJECTILE_ARROW);
 
         addRangedWeapon("long_bow", "Arco Longo", 15, 1.67f, 1, 1, 900f, 550f,
-                "Arco longo élfico com alcance superior. Perfeito para ataques à longa distância.");
+                "Arco longo élfico com alcance superior. Perfeito para ataques à longa distância.",
+                12, 0, PROJECTILE_ARROW);
 
         addRangedWeapon("quick_bow", "Arco Rápido", 6, 0.77f, 2, 1, 450f, 300f,
-                "Arco curto otimizado para disparos rápidos. Sacrifica dano por velocidade.");
+                "Arco curto otimizado para disparos rápidos. Sacrifica dano por velocidade.",
+                6, 0, PROJECTILE_ARROW);
+
+        addRangedWeapon("crossbow", "Besta", 20, 2.5f, 3, 1, 800f, 500f,
+                "Besta pesada de alto dano. Recarregamento lento, mas letal.",
+                15, 0, PROJECTILE_ARROW);
+
+        // ========== ARMAS MÁGICAS (RANGED MÁGICO) ==========
+        // Formato: addMagicWeapon(id, name, damage, cooldown, tileX, tileY, projectileSpeed, projectileRange, description, manaCost, staminaCost, projectileId)
+
+        addMagicWeapon("fire_wand", "Varinha de Fogo", 12, 1.2f, 3, 2, 400f, 800f,
+                "Varinha que lança bolas de fogo. Causa dano em área.",
+                49, 0, PROJECTILE_FIREBALL);
+
+        addMagicWeapon("ice_staff", "Cajado de Gelo", 10, 1.5f, 1, 3, 650f, 500f,
+                "Cajado que lança projéteis de gelo. Congela inimigos.",
+                12, 0, PROJECTILE_ICE_BOLT);
+
+        addMagicWeapon("lightning_rod", "Vara de Raios", 18, 2.0f, 2, 3, 800f, 600f,
+                "Vara que invoca raios. Alto dano, alto custo de mana.",
+                25, 0, PROJECTILE_LIGHTNING);
+
+        addMagicWeapon("magic_staff", "Cajado Arcano", 14, 1.3f, 3, 3, 750f, 550f,
+                "Cajado canalizador de energia arcana. Disparos mágicos puros.",
+                18, 0, PROJECTILE_MAGIC_BOLT);
+
+        addMagicWeapon("healing_staff", "Cajado de Cura", 5, 1.0f, 4, 3, 500f, 400f,
+                "Cajado que lança energia curativa. Cura aliados.",
+                10, 5, PROJECTILE_MAGIC_BOLT);
+
+        addMagicWeapon("necromancer_wand", "Varinha Necromante", 16, 1.8f, 5, 3, 600f, 450f,
+                "Varinha sombria que drena a vida dos inimigos.",
+                20, 0, PROJECTILE_MAGIC_BOLT);
 
         logger.info("Loaded {} weapons", weapons.size());
     }
 
-    private void addWeapon(String id, String name, int damage, float cooldown, boolean isRanged,
-                           int tileX, int tileY, String description) {
+    /**
+     * Adiciona uma arma corpo a corpo
+     */
+    private void addMeleeWeapon(String id, String name, int damage, float cooldown, int tileX, int tileY,
+                                String description, int staminaCost, int manaCost, String projectileId) {
         ItemDefinition def = new ItemDefinition();
         def.setId(id);
         def.setName(name);
@@ -81,45 +179,93 @@ public class ItemDataLoader {
         def.setTileX(tileX);
         def.setTileY(tileY);
         def.setDamage(damage);
-        def.setAttackId(isRanged ? "ranged_bow" : "melee_sword");
-        def.setAttackAnimation(isRanged ? "bow_shoot" : "sword_slash");
+        def.setAttackId("melee_" + id);
+        def.setAttackAnimation("sword_slash");
         def.setAttackCooldown(cooldown);
-        def.setRanged(isRanged);
+        def.setRanged(false);
         def.setHitboxDuration(0.5f);
 
-        if (isRanged) {
-            def.setProjectileId("arrow");
-            def.setProjectileSpeed(600f);
-            def.setProjectileRange(400f);
-            def.setProjectileAnimationId("arrow");
-        } else {
-            def.setProjectileAnimationId("slash");
-        }
+        // Definir custos
+        def.setStaminaCost(staminaCost);
+        def.setManaCost(manaCost);
+
+        // Projétil para efeito visual (slash)
+        def.setProjectileId(projectileId);
+        def.setProjectileSpeed(3000f);
+        def.setProjectileRange(100f);
+        def.setProjectileAnimationId(projectileId);
 
         weapons.put(id, def);
         allItems.put(id, def);
     }
 
+    /**
+     * Adiciona uma arma de longo alcance física (arcos, bestas)
+     */
     private void addRangedWeapon(String id, String name, int damage, float cooldown, int tileX, int tileY,
-                                 float projectileSpeed, float projectileRange, String description) {
+                                 float projectileSpeed, float projectileRange, String description,
+                                 int staminaCost, int manaCost, String projectileId) {
         ItemDefinition def = new ItemDefinition();
         def.setId(id);
         def.setName(name);
         def.setDescription(description);
+        def.setRarity(Rarity.COMMON);
         def.setCategory("weapon");
         def.setSpritesheet("itens/spritesheet_itens.png");
         def.setTileX(tileX);
         def.setTileY(tileY);
         def.setDamage(damage);
-        def.setAttackId("ranged_bow");
+        def.setAttackId("ranged_" + id);
         def.setAttackAnimation("bow_shoot");
         def.setAttackCooldown(cooldown);
         def.setRanged(true);
-        def.setProjectileId("arrow");
+        def.setHitboxDuration(0.5f);
+
+        // Definir custos
+        def.setStaminaCost(staminaCost);
+        def.setManaCost(manaCost);
+
+        // Configurações do projétil
+        def.setProjectileId(projectileId);
         def.setProjectileSpeed(projectileSpeed);
         def.setProjectileRange(projectileRange);
-        def.setProjectileAnimationId("arrow");
+        def.setProjectileAnimationId(projectileId);
+
+        weapons.put(id, def);
+        allItems.put(id, def);
+    }
+
+    /**
+     * Adiciona uma arma mágica (custo de mana)
+     */
+    private void addMagicWeapon(String id, String name, int damage, float cooldown, int tileX, int tileY,
+                                float projectileSpeed, float projectileRange, String description,
+                                int manaCost, int staminaCost, String projectileId) {
+        ItemDefinition def = new ItemDefinition();
+        def.setId(id);
+        def.setName(name);
+        def.setDescription(description);
+        def.setRarity(Rarity.UNCOMMON);
+        def.setCategory("weapon");
+        def.setSpritesheet("itens/spritesheet_itens.png");
+        def.setTileX(tileX);
+        def.setTileY(tileY);
+        def.setDamage(damage);
+        def.setAttackId("magic_" + id);
+        def.setAttackAnimation("cast");
+        def.setAttackCooldown(cooldown);
+        def.setRanged(true);
         def.setHitboxDuration(0.5f);
+
+        // Definir custos (mana prioritário)
+        def.setStaminaCost(staminaCost);
+        def.setManaCost(manaCost);
+
+        // Configurações do projétil
+        def.setProjectileId(projectileId);
+        def.setProjectileSpeed(projectileSpeed);
+        def.setProjectileRange(projectileRange);
+        def.setProjectileAnimationId(projectileId);
 
         weapons.put(id, def);
         allItems.put(id, def);
@@ -302,6 +448,30 @@ public class ItemDataLoader {
         consumables.put(healthPotion.getId(), healthPotion);
         allItems.put(healthPotion.getId(), healthPotion);
 
+        ItemDefinition manaPotion = new ItemDefinition();
+        manaPotion.setId("mana_potion");
+        manaPotion.setName("Poção de Mana");
+        manaPotion.setDescription("Poção azul que restaura 30 de Mana.");
+        manaPotion.setCategory("consumable");
+        manaPotion.setSpritesheet("itens/spritesheet_itens.png");
+        manaPotion.setTileX(4);
+        manaPotion.setTileY(1);
+        manaPotion.setManaAmount(30);
+        consumables.put(manaPotion.getId(), manaPotion);
+        allItems.put(manaPotion.getId(), manaPotion);
+
+        ItemDefinition staminaPotion = new ItemDefinition();
+        staminaPotion.setId("stamina_potion");
+        staminaPotion.setName("Poção de Stamina");
+        staminaPotion.setDescription("Poção verde que restaura 40 de Stamina.");
+        staminaPotion.setCategory("consumable");
+        staminaPotion.setSpritesheet("itens/spritesheet_itens.png");
+        staminaPotion.setTileX(5);
+        staminaPotion.setTileY(1);
+        staminaPotion.setStaminaAmount(40);
+        consumables.put(staminaPotion.getId(), staminaPotion);
+        allItems.put(staminaPotion.getId(), staminaPotion);
+
         logger.info("Loaded {} consumables", consumables.size());
     }
 
@@ -338,6 +508,22 @@ public class ItemDataLoader {
         accessories.put(magicRing.getId(), magicRing);
         allItems.put(magicRing.getId(), magicRing);
 
+        // Anel de Resistência
+        ItemDefinition resistanceRing = new ItemDefinition();
+        resistanceRing.setId("ring_of_resistance");
+        resistanceRing.setName("Anel de Resistência");
+        resistanceRing.setDescription("Anel que concede resistência elemental.");
+        resistanceRing.setCategory("accessory");
+        resistanceRing.setAccessorySlot("ring");
+        resistanceRing.setSpritesheet("itens/spritesheet_itens.png");
+        resistanceRing.setTileX(2);
+        resistanceRing.setTileY(2);
+        resistanceRing.setBonusFireResistance(10);
+        resistanceRing.setBonusIceResistance(10);
+        resistanceRing.setBonusLightningResistance(10);
+        accessories.put(resistanceRing.getId(), resistanceRing);
+        allItems.put(resistanceRing.getId(), resistanceRing);
+
         // Colar de Vida
         ItemDefinition lifeNecklace = new ItemDefinition();
         lifeNecklace.setId("necklace_of_life");
@@ -346,7 +532,7 @@ public class ItemDataLoader {
         lifeNecklace.setCategory("accessory");
         lifeNecklace.setAccessorySlot("necklace");
         lifeNecklace.setSpritesheet("itens/spritesheet_itens.png");
-        lifeNecklace.setTileX(2);
+        lifeNecklace.setTileX(3);
         lifeNecklace.setTileY(2);
         lifeNecklace.setBonusMaxHp(50);
         lifeNecklace.setBonusHpRegen(2);
@@ -361,7 +547,7 @@ public class ItemDataLoader {
         shadowCloak.setCategory("accessory");
         shadowCloak.setAccessorySlot("cloak");
         shadowCloak.setSpritesheet("itens/spritesheet_itens.png");
-        shadowCloak.setTileX(3);
+        shadowCloak.setTileX(4);
         shadowCloak.setTileY(2);
         shadowCloak.setBonusMovementSpeed(25);
         shadowCloak.setBonusDodgeChance(0.03f);
@@ -377,7 +563,7 @@ public class ItemDataLoader {
         speedTrinket.setCategory("accessory");
         speedTrinket.setAccessorySlot("trinket");
         speedTrinket.setSpritesheet("itens/spritesheet_itens.png");
-        speedTrinket.setTileX(4);
+        speedTrinket.setTileX(5);
         speedTrinket.setTileY(2);
         speedTrinket.setBonusAttackSpeed(0.10f);
         speedTrinket.setBonusMovementSpeed(15);
@@ -392,7 +578,7 @@ public class ItemDataLoader {
         manaTrinket.setCategory("accessory");
         manaTrinket.setAccessorySlot("trinket");
         manaTrinket.setSpritesheet("itens/spritesheet_itens.png");
-        manaTrinket.setTileX(5);
+        manaTrinket.setTileX(6);
         manaTrinket.setTileY(2);
         manaTrinket.setBonusMaxMana(50);
         manaTrinket.setBonusManaRegen(3);
@@ -408,12 +594,27 @@ public class ItemDataLoader {
         precisionEarring.setCategory("accessory");
         precisionEarring.setAccessorySlot("trinket");
         precisionEarring.setSpritesheet("itens/spritesheet_itens.png");
-        precisionEarring.setTileX(6);
+        precisionEarring.setTileX(7);
         precisionEarring.setTileY(2);
         precisionEarring.setBonusCriticalChance(0.05f);
         precisionEarring.setBonusCriticalDamage(0.10f);
         accessories.put(precisionEarring.getId(), precisionEarring);
         allItems.put(precisionEarring.getId(), precisionEarring);
+
+        // Amuleto de Mana (Trinket)
+        ItemDefinition manaAmulet = new ItemDefinition();
+        manaAmulet.setId("amulet_of_mana");
+        manaAmulet.setName("Amuleto de Mana");
+        manaAmulet.setDescription("Amuleto que reduz custo de mana de habilidades.");
+        manaAmulet.setCategory("accessory");
+        manaAmulet.setAccessorySlot("trinket");
+        manaAmulet.setSpritesheet("itens/spritesheet_itens.png");
+        manaAmulet.setTileX(8);
+        manaAmulet.setTileY(2);
+        manaAmulet.setBonusCooldownReduction(0.08f);
+        manaAmulet.setBonusManaRegen(2);
+        accessories.put(manaAmulet.getId(), manaAmulet);
+        allItems.put(manaAmulet.getId(), manaAmulet);
 
         logger.info("Loaded {} accessories", accessories.size());
     }

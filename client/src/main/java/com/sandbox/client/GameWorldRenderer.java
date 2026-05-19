@@ -927,7 +927,6 @@ public class GameWorldRenderer implements Screen {
         }
     }
 
-    // Método auxiliar para criar AttackDefinition a partir do ItemDefinition
     private AttackDefinition createAttackDefinitionFromWeapon(ItemDefinition weaponDef) {
         AttackDefinition def = new AttackDefinition();
 
@@ -936,27 +935,27 @@ public class GameWorldRenderer implements Screen {
         def.setAttackAnimation(weaponDef.getAttackAnimation());
         def.setRanged(weaponDef.isRanged());
 
+        // Usar os custos definidos no item
+        def.setManaCost(weaponDef.getManaCost());
+        def.setStaminaCost(weaponDef.getStaminaCost());
+
         if (weaponDef.isRanged()) {
-            // Ataque à distância
             def.setHitboxType(AttackHitboxType.CIRCLE);
             def.setRange(weaponDef.getProjectileRange());
             def.setRadius(24f);
             def.setDamageMultiplier(1.0f);
             def.setCooldownSeconds(1.0f / weaponDef.getAttackSpeed());
-            def.setStaminaCost(15f);
             def.setMaxTargets(1);
             def.setKnockbackPower(15f);
             def.setProjectileId(weaponDef.getProjectileId());
             def.setProjectileSpeed(weaponDef.getProjectileSpeed());
         } else {
-            // Ataque corpo a corpo
             def.setHitboxType(AttackHitboxType.RECTANGLE);
             def.setRange(64f);
             def.setWidth(48f);
             def.setHeight(32f);
             def.setDamageMultiplier(weaponDef.getDamage() / 10.0f);
             def.setCooldownSeconds(1.0f / weaponDef.getAttackSpeed());
-            def.setStaminaCost(15f);
             def.setMaxTargets(3);
             def.setKnockbackPower(30f);
         }

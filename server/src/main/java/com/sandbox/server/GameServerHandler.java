@@ -44,6 +44,7 @@ import java.sql.SQLException;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class GameServerHandler extends SimpleChannelInboundHandler<Object> {
     private static final Logger logger = LoggerFactory.getLogger(GameServerHandler.class);
@@ -1486,26 +1487,60 @@ public class GameServerHandler extends SimpleChannelInboundHandler<Object> {
             return;
         }
 
+        // Obter a definição do ataque baseado na arma
         AttackDefinition attackDef = getAttackDefinition(attackInfo.attackId);
         if (attackDef == null) {
             logger.warn("Unknown attack definition: {}", attackInfo.attackId);
             return;
         }
 
-        // Verificar stamina
-        if (attackDef.getStaminaCost() > 0 && currentPlayer.getCurrentStamina() < attackDef.getStaminaCost()) {
-            ChatMessage staminaMsg = new ChatMessage("SISTEMA", "SISTEMA",
-                    "Stamina insuficiente! Necessário: " + (int)attackDef.getStaminaCost());
-            sendPacket(ctx, staminaMsg);
+        // ========== VERIFICAR MANA ==========
+        if (attackDef.getManaCost() > 0 && currentPlayer.getCurrentMana() < attackDef.getManaCost()) {
+            ChatMessage manaMsg = new ChatMessage("SISTEMA", "SISTEMA",
+                    "Mana insuficiente! Necessário: " + (int)attackDef.getManaCost() +
+                            " | Atual: " + currentPlayer.getCurrentMana() + "/" + currentPlayer.getMaxMana());
+            sendPacket(ctx, manaMsg);
+            logger.info("Attack blocked - Insufficient mana for {}: need {}, have {}/{}",
+                    currentPlayer.getUsername(), attackDef.getManaCost(),
+                    currentPlayer.getCurrentMana(), currentPlayer.getMaxMana());
             return;
         }
 
-        // Consumir stamina
-        if (attackDef.getStaminaCost() > 0) {
-            currentPlayer.setCurrentStamina(currentPlayer.getCurrentStamina() - (int) attackDef.getStaminaCost());
+        // ========== VERIFICAR STAMINA ==========
+        if (attackDef.getStaminaCost() > 0 && currentPlayer.getCurrentStamina() < attackDef.getStaminaCost()) {
+            ChatMessage staminaMsg = new ChatMessage("SISTEMA", "SISTEMA",
+                    "Stamina insuficiente! Necessário: " + (int)attackDef.getStaminaCost() +
+                            " | Atual: " + currentPlayer.getCurrentStamina() + "/" + currentPlayer.getMaxStamina());
+            sendPacket(ctx, staminaMsg);
+            logger.info("Attack blocked - Insufficient stamina for {}: need {}, have {}/{}",
+                    currentPlayer.getUsername(), attackDef.getStaminaCost(),
+                    currentPlayer.getCurrentStamina(), currentPlayer.getMaxStamina());
+            return;
         }
 
-        // Calcular dano
+        // ========== CONSUMIR MANA ==========
+        if (attackDef.getManaCost() > 0) {
+            int newMana = currentPlayer.getCurrentMana() - (int) attackDef.getManaCost();
+            currentPlayer.setCurrentMana(newMana);
+            logger.info("Mana consumed by {}: {} -> {}/{} (cost: {})",
+                    currentPlayer.getUsername(),
+                    currentPlayer.getCurrentMana() + (int) attackDef.getManaCost(),
+                    newMana, currentPlayer.getMaxMana(),
+                    attackDef.getManaCost());
+        }
+
+        // ========== CONSUMIR STAMINA ==========
+        if (attackDef.getStaminaCost() > 0) {
+            int newStamina = currentPlayer.getCurrentStamina() - (int) attackDef.getStaminaCost();
+            currentPlayer.setCurrentStamina(newStamina);
+            logger.info("Stamina consumed by {}: {} -> {}/{} (cost: {})",
+                    currentPlayer.getUsername(),
+                    currentPlayer.getCurrentStamina() + (int) attackDef.getStaminaCost(),
+                    newStamina, currentPlayer.getMaxStamina(),
+                    attackDef.getStaminaCost());
+        }
+
+        // ========== CALCULAR DANO ==========
         updateCombatStatsFromEquipment(currentPlayer);
         CombatStats stats = currentPlayer.getCombatStats();
         int damage = stats.getBaseDamage() + stats.getWeaponDamageBonus() + stats.getStrengthBonus();
@@ -1513,25 +1548,25 @@ public class GameServerHandler extends SimpleChannelInboundHandler<Object> {
 
         boolean wasCritical = (int)(Math.random() * 100) < stats.getCriticalChance();
         if (wasCritical) {
-            damage = damage * stats.getCriticalDamage() / 100;
+            damage = (int)(damage * stats.getCriticalDamage() / 100);
         }
         damage = Math.max(1, damage);
 
         // Log do ataque
-        logger.info("⚔️ {} attacking with {} | Damage: {}{} | Stamina: {}/{}",
+        logger.info("⚔️ {} attacking with {} | Damage: {}{} | Mana: {}/{} | Stamina: {}/{}",
                 currentPlayer.getUsername(), attackDef.getName(), damage,
                 wasCritical ? " (CRITICAL!)" : "",
+                currentPlayer.getCurrentMana(), currentPlayer.getMaxMana(),
                 currentPlayer.getCurrentStamina(), currentPlayer.getMaxStamina());
 
-        // Iniciar cooldown (seta lastAttackTime)
+        // ========== INICIAR COOLDOWN ==========
         currentPlayer.executeAttack();
 
-        // UNIFICADO: SEMPRE PROJÉTIL
+        // ========== SPAWN DO PROJÉTIL ==========
         float projectileSpeed = attackDef.isRanged() ? attackDef.getProjectileSpeed() : 3000f;
         float projectileRange = attackDef.getRange();
-        String projectileType = attackDef.isRanged() ?
-                (attackDef.getProjectileId() != null ? attackDef.getProjectileId() : "arrow") :
-                "melee_slash";
+        String projectileType = attackDef.getProjectileId() != null ? attackDef.getProjectileId() :
+                (attackDef.isRanged() ? "arrow" : "melee_slash");
 
         ProjectileManager.getInstance().spawnProjectile(
                 currentPlayer, projectileType,
@@ -1540,7 +1575,7 @@ public class GameServerHandler extends SimpleChannelInboundHandler<Object> {
                 projectileSpeed, projectileRange, attackDef.isRanged()
         );
 
-        // Broadcast do efeito visual
+        // ========== BROADCAST DO EFEITO VISUAL ==========
         AttackBroadcast effect = new AttackBroadcast();
         effect.attackerId = currentPlayer.getId();
         effect.attackerName = currentPlayer.getUsername();
@@ -1551,12 +1586,19 @@ public class GameServerHandler extends SimpleChannelInboundHandler<Object> {
         effect.attackDef = attackDef;
         GameServerHandler.broadcastToAll(effect);
 
-        // Sincronizar estado do jogador com o cliente (cooldown, stamina, etc.)
+        // ========== SINCRONIZAR ESTADO DO JOGADOR ==========
         PlayerStatePacket stateUpdate = new PlayerStatePacket(currentPlayer);
         stateUpdate.currentAttackCooldown = currentPlayer.getCurrentAttackCooldown();
+        stateUpdate.fullSync = false;
         sendPacket(ctx, stateUpdate);
 
-        // Salvar no banco
+        logger.debug("State update sent to {} - HP: {}/{}, Mana: {}/{}, Stamina: {}/{}",
+                currentPlayer.getUsername(),
+                stateUpdate.currentHp, stateUpdate.maxHp,
+                stateUpdate.currentMana, stateUpdate.maxMana,
+                stateUpdate.currentStamina, stateUpdate.maxStamina);
+
+        // ========== SALVAR NO BANCO ==========
         GameWorld.getInstance().savePlayer(currentPlayer);
     }
 
@@ -1570,13 +1612,54 @@ public class GameServerHandler extends SimpleChannelInboundHandler<Object> {
     }
 
     private AttackDefinition getAttackDefinition(String attackId) {
-        switch (attackId) {
-            case "melee_sword": return AttackDefinition.createMeleeSword();
-            case "melee_dagger": return AttackDefinition.createMeleeDagger();
-            case "ranged_bow": return AttackDefinition.createRangedBow();
-            default: return null;
+        // Primeiro tenta buscar do cache de definições de ataque
+        if (attackDefinitionCache.containsKey(attackId)) {
+            return attackDefinitionCache.get(attackId);
         }
+
+        // Definir baseado no ID
+        AttackDefinition def = null;
+        switch (attackId) {
+            case "melee_simple_sword":
+            case "melee_iron_sword":
+            case "melee_great_sword":
+            case "melee_sword":
+                def = AttackDefinition.createMeleeSword();
+                break;
+            case "melee_dagger":
+                def = AttackDefinition.createMeleeDagger();
+                break;
+            case "melee_simple_axe":
+            case "melee_war_hammer":
+            case "melee_axe":
+                def = AttackDefinition.createMeleeAxe();
+                break;
+            case "ranged_simple_bow":
+            case "ranged_long_bow":
+            case "ranged_quick_bow":
+            case "ranged_crossbow":
+            case "ranged_bow":
+                def = AttackDefinition.createRangedBow();
+                break;
+            case "magic_fire_wand":
+            case "magic_ice_staff":
+            case "magic_lightning_rod":
+            case "magic_magic_staff":
+            case "magic_healing_staff":
+            case "magic_necromancer_wand":
+                def = AttackDefinition.createMagicAttack();
+                break;
+            default:
+                return null;
+        }
+
+        // Armazenar no cache
+        attackDefinitionCache.put(attackId, def);
+        return def;
     }
+
+    // Cache para definições de ataque
+    private final Map<String, AttackDefinition> attackDefinitionCache = new ConcurrentHashMap<>();
 
     @Override
     public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {

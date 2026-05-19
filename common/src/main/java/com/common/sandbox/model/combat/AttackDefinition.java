@@ -130,4 +130,42 @@ public class AttackDefinition implements Serializable {
         def.setProjectileSpeed(600f);
         return def;
     }
+
+    public static AttackDefinition createMagicAttack() {
+        AttackDefinition def = new AttackDefinition();
+        def.setId("magic_attack");
+        def.setName("Magia");
+        def.setAttackAnimation("cast");
+        def.setRanged(true);
+        def.setHitboxType(AttackHitboxType.CIRCLE);
+        def.setRange(500f);
+        def.setRadius(24f);
+        def.setDamageMultiplier(1.2f);
+        def.setCooldownSeconds(1.0f);
+        def.setMaxTargets(3);
+        def.setKnockbackPower(20f);
+        def.setHitboxDuration(0.3f);
+        def.setProjectileId("magic_bolt");
+        def.setProjectileSpeed(800f);
+        return def;
+    }
+
+    public static AttackDefinition createMeleeAxe() {
+        AttackDefinition def = new AttackDefinition();
+        def.setId("melee_axe");
+        def.setName("Machado");
+        def.setAttackAnimation("axe_swing");
+        def.setRanged(false);
+        def.setHitboxType(AttackHitboxType.RECTANGLE);
+        def.setRange(70f);
+        def.setWidth(55f);
+        def.setHeight(35f);
+        def.setDamageMultiplier(1.3f);
+        def.setCooldownSeconds(1.2f);
+        def.setMaxTargets(2);
+        def.setKnockbackPower(40f);
+        def.setHitboxDuration(0.4f);
+        def.setProjectileId("slash");
+        return def;
+    }
 }
