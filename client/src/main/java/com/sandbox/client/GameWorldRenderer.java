@@ -406,29 +406,100 @@ public class GameWorldRenderer implements Screen {
                 currentPlayer.setY(packet.y);
                 currentPlayer.setDirection(packet.direction);
 
-                // SE FOR FULL SYNC, atualizar TODOS os atributos (login, equip, unequip)
-                if (packet.fullSync) {
-                    // Confiar nos valores que o servidor já calculou
+                // ========== SEMPRE atualizar status (HP, Mana, Stamina) ==========
+                // O servidor é a fonte da verdade para os status atuais
+                if (packet.currentHp > 0 && packet.currentHp <= packet.maxHp) {
                     currentPlayer.setCurrentHp(packet.currentHp);
+                }
+                if (packet.currentMana >= 0 && packet.currentMana <= packet.maxMana) {
                     currentPlayer.setCurrentMana(packet.currentMana);
+                }
+                if (packet.currentStamina >= 0 && packet.currentStamina <= packet.maxStamina) {
                     currentPlayer.setCurrentStamina(packet.currentStamina);
+                }
 
-                    // Para que getMaxHp() retorne o valor correto, precisamos atualizar equipmentBonusMaxHp
-                    // Calculamos quanto de bônus de equipamento está ativo
+                // ========== SEMPRE atualizar gold, experiência e level ==========
+                if (packet.gold != currentPlayer.getGold()) {
+                    currentPlayer.setGold(packet.gold);
+                }
+                if (packet.experience != currentPlayer.getExperience()) {
+                    currentPlayer.setExperience(packet.experience);
+                }
+                if (packet.level != currentPlayer.getLevel()) {
+                    currentPlayer.setLevel(packet.level);
+                }
+                if (packet.attributePoints != currentPlayer.getAttributePoints()) {
+                    currentPlayer.setAttributePoints(packet.attributePoints);
+                }
+
+                // ========== ATUALIZAR UI SEMPRE ==========
+                if (playerUI != null) {
+                    playerUI.setHealth(currentPlayer.getHpPercentage() * 100);
+                    playerUI.setMana(currentPlayer.getManaPercentage() * 100);
+                    playerUI.setStamina(currentPlayer.getStaminaPercentage() * 100);
+                    playerUI.setGold(currentPlayer.getGold());
+
+                    // Atualizar labels de level e pontos
+                    playerUI.update(currentPlayer, getCurrentTerrainSpeed());
+                }
+
+                // ========== SE FOR FULL SYNC, atualizar atributos adicionais ==========
+                if (packet.fullSync) {
+                    // Calcular bônus de equipamento
                     int baseHp = 100 + currentPlayer.getBonusMaxHp() + ((currentPlayer.getLevel() - 1) * 10);
                     int equipmentBonus = packet.maxHp - baseHp;
                     currentPlayer.setEquipmentBonusMaxHp(equipmentBonus);
 
-                    // Atualizar UI
+                    // Calcular bônus de mana
+                    int baseMana = 50 + currentPlayer.getBonusMaxMana() + ((currentPlayer.getLevel() - 1) * 5);
+                    int equipmentBonusMana = packet.maxMana - baseMana;
+                    currentPlayer.setEquipmentBonusMaxMana(equipmentBonusMana);
+
+                    // Calcular bônus de stamina
+                    int baseStamina = 100 + currentPlayer.getBonusMaxStamina() + ((currentPlayer.getLevel() - 1) * 5);
+                    int equipmentBonusStamina = packet.maxStamina - baseStamina;
+                    currentPlayer.setEquipmentBonusMaxStamina(equipmentBonusStamina);
+
+                    // Atualizar UI com valores completos (max também)
                     if (playerUI != null) {
                         playerUI.setHealth(packet.currentHp, packet.maxHp);
                         playerUI.setMana(packet.currentMana, packet.maxMana);
                         playerUI.setStamina(packet.currentStamina, packet.maxStamina);
                         playerUI.setGold(packet.gold);
                     }
+
+                    // Forçar atualização completa da UI
+                    if (playerUI != null) {
+                        playerUI.forceUIUpdate();
+                    }
+
+                    logger.info("Full sync received for {} - HP: {}/{}, Mana: {}/{}, Stamina: {}/{}, AP: {}",
+                            currentPlayer.getUsername(),
+                            packet.currentHp, packet.maxHp,
+                            packet.currentMana, packet.maxMana,
+                            packet.currentStamina, packet.maxStamina,
+                            packet.attributePoints);
+                } else {
+                    // Log para debug de status atualizados
+                    logger.debug("Status update for {} - HP: {}/{}, Mana: {}/{}, Stamina: {}/{}",
+                            currentPlayer.getUsername(),
+                            packet.currentHp, packet.maxHp,
+                            packet.currentMana, packet.maxMana,
+                            packet.currentStamina, packet.maxStamina);
                 }
+
+                // Se o atributo points mudou, atualizar a janela de atributos se estiver aberta
+                if (playerUI != null && playerUI.isAttributesVisible()) {
+                    playerUI.refreshAttributes();
+                }
+
+                // Se o inventário mudou, atualizar a janela de inventário se estiver aberta
+                if (playerUI != null && playerUI.isInventoryVisible() && packet.fullSync) {
+                    playerUI.updateInventory(currentPlayer.getInventory(), currentPlayer.getGold());
+                }
+
             } else {
-                // Outro jogador - atualizar tudo (sempre)
+                // ========== OUTRO JOGADOR - atualizar tudo ==========
                 Player existing = otherPlayers.get(packet.playerId);
 
                 if (existing != null) {
@@ -872,7 +943,7 @@ public class GameWorldRenderer implements Screen {
             def.setRadius(24f);
             def.setDamageMultiplier(1.0f);
             def.setCooldownSeconds(1.0f / weaponDef.getAttackSpeed());
-            def.setStaminaCost(10f);
+            def.setStaminaCost(15f);
             def.setMaxTargets(1);
             def.setKnockbackPower(15f);
             def.setProjectileId(weaponDef.getProjectileId());
@@ -885,7 +956,7 @@ public class GameWorldRenderer implements Screen {
             def.setHeight(32f);
             def.setDamageMultiplier(weaponDef.getDamage() / 10.0f);
             def.setCooldownSeconds(1.0f / weaponDef.getAttackSpeed());
-            def.setStaminaCost(5f);
+            def.setStaminaCost(15f);
             def.setMaxTargets(3);
             def.setKnockbackPower(30f);
         }
